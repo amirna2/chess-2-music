@@ -1,11 +1,14 @@
+# Chess piece to MIDI instrument mapping (General MIDI program numbers)
+# Original working mapping from CLAUDE.md
 instruments:
-  P: 0   # Piano
-  N: 40  # Violin
-  B: 68  # Oboe
-  R: 69  # French Horn
-  Q: 0   # Piano
-  K: 19  # Organ
+  P: 0    # Piano
+  N: 40   # Violin
+  B: 68   # Oboe
+  R: 60   # French Horn
+  Q: 0    # Piano
+  K: 19   # Organ
 
+# Velocity (volume) settings for each piece type
 velocity:
   P: 40
   N: 50
@@ -14,23 +17,51 @@ velocity:
   Q: 70
   K: 60
 
+# Board file mapping to MIDI notes
 pitch_mapping:
-  a: 60
-  b: 62
-  c: 64
-  d: 65
-  e: 67
-  f: 69
-  g: 71
-  h: 72
+  a: 60  # C4
+  b: 62  # D4
+  c: 64  # E4
+  d: 65  # F4
+  e: 67  # G4
+  f: 69  # A4
+  g: 71  # B4
+  h: 72  # C5
 
+# Musical scale (semitone offsets from root note)
 scale: [0, 2, 4, 5, 7, 9, 11]  # C Major
 
+# Tempo progression throughout the game
 tempo:
-  opening: 140   # ply 1
-  middlegame: 120  # ply 11
-  endgame: 90    # ply 31
+  opening: 140     # ply 1 - fast opening
+  middlegame: 120  # ply 11 - moderate pace
+  endgame: 90      # ply 31 - slower, contemplative
 
+# Drone notes based on ECO opening classification
+drones:
+  enabled: false
+  instrument: 19      # Organ - perfect for sustained drones
+  eco_mapping:
+    A: 36            # C2 - Flank openings (English, irregular) - Tonic, stable
+    B: 43            # G2 - Semi-open games (1.e4 c5, c6, etc.) - Perfect 5th, stable
+    C: 40            # E2 - Open games (1.e4 e5) and French - Major 3rd, warm
+    D: 41            # F2 - Closed games, Queen's Gambit - Perfect 4th, tension
+    E: 38            # D2 - Indian defenses - Whole step, modern/floating
+  phases:
+    opening:
+      velocity: 25
+      duration: 16000
+      harmonies: []   # Single drone note
+    middlegame:
+      velocity: 20
+      duration: 16000
+      harmonies: [7]  # Add perfect 5th above base note
+    endgame:
+      velocity: 30
+      duration: 16000
+      harmonies: [12] # Add octave above for resolution
+
+# Note durations and timing
 durations:
   pawn_default: 240
   piece_default: 480
@@ -79,7 +110,7 @@ effects:
   capture:
     pitch_shift: 7
     velocity_change: -20
-    delay: 60
+    delay: 90
 
   check:
     pitch_shift: 6

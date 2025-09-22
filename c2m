@@ -1,0 +1,241 @@
+#!/bin/bash
+
+# Chess-to-Music convenience script
+
+show_help() {
+    echo "Chess-to-Music Converter"
+    echo ""
+    echo "Usage:"
+    echo "  ./c2m <pgn_file> [config_file]     Convert PGN to MIDI"
+    echo "  ./c2m to-mp3 <midi_file>           Convert MIDI to MP3"
+    echo "  ./c2m play <audio_file>             Play MP3 or MIDI file"
+    echo "  ./c2m demo                          Run demo conversion"
+    echo "  ./c2m list-games                    List available PGN files"
+    echo "  ./c2m list-midi                     List generated MIDI files"
+    echo "  ./c2m clean                         Remove generated MIDI files"
+    echo "  ./c2m clean-all                     Remove all generated audio files"
+    echo "  ./c2m help                          Show this help"
+    echo ""
+    echo "Examples:"
+    echo "  ./c2m data/game.pgn"
+    echo "  ./c2m data/game.pgn custom_config.yaml"
+    echo "  ./c2m to-mp3 data/game.mid"
+    echo "  ./c2m play data/game.mp3"
+    echo "  ./c2m play data/game.mid"
+    echo "  ./c2m demo"
+}
+
+convert_to_mp3() {
+    local midi_file="$1"
+
+    if [[ -z "$midi_file" ]]; then
+        echo "Error: Please specify MIDI file"
+        echo "Usage: ./c2m to-mp3 <midi_file>"
+        exit 1
+    fi
+
+    if [[ ! -f "$midi_file" ]]; then
+        echo "Error: MIDI file '$midi_file' not found"
+        exit 1
+    fi
+
+    echo "Converting $midi_file to MP3..."
+
+    local base_name=$(basename "$midi_file" .mid)
+    local dir_name=$(dirname "$midi_file")
+    local wav_file="$dir_name/$base_name.wav"
+    local mp3_file="$dir_name/$base_name.mp3"
+
+    # Try different conversion methods
+    local conversion_success=false
+
+    # 1. TiMidity++ (most reliable for batch conversion)
+    if command -v timidity >/dev/null 2>&1; then
+        echo "Converting with TiMidity++..."
+        if timidity "$midi_file" -Ow -o "$wav_file" >/dev/null 2>&1; then
+            conversion_success=true
+        fi
+    # 2. FluidSynth (if available with soundfont)
+    elif command -v fluidsynth >/dev/null 2>&1; then
+        local sf_path="/opt/homebrew/share/soundfonts/default.sf2"
+        if [[ -f "$sf_path" ]]; then
+            echo "Converting with FluidSynth..."
+            if fluidsynth -F "$wav_file" "$sf_path" "$midi_file" >/dev/null 2>&1; then
+                conversion_success=true
+            fi
+        fi
+    fi
+
+    if [[ "$conversion_success" = false ]]; then
+        echo "Error: No working MIDI converter found"
+        exit 1
+    fi
+
+    # Convert WAV to MP3
+    if command -v lame >/dev/null 2>&1; then
+        if lame "$wav_file" "$mp3_file" >/dev/null 2>&1 && rm "$wav_file"; then
+            echo "Created $mp3_file"
+        else
+            echo "Error: MP3 conversion failed"
+            exit 1
+        fi
+    else
+        echo "Warning: lame not found. WAV file saved as $wav_file"
+        echo "Install lame for MP3 conversion: brew install lame"
+    fi
+}
+
+convert_pgn() {
+    local pgn_file="$1"
+    local config_file="$2"
+
+    if [[ ! -f "$pgn_file" ]]; then
+        echo "Error: PGN file '$pgn_file' not found"
+        exit 1
+    fi
+
+    if [[ -n "$config_file" && ! -f "$config_file" ]]; then
+        echo "Error: Config file '$config_file' not found"
+        exit 1
+    fi
+
+    if [[ -n "$config_file" ]]; then
+        echo "Converting $pgn_file to MIDI with config $config_file..."
+        python3 c2m.py "$pgn_file" --config "$config_file"
+    else
+        echo "Converting $pgn_file to MIDI..."
+        python3 c2m.py "$pgn_file"
+    fi
+}
+
+list_games() {
+    echo "Available PGN files:"
+    find data -name "*.pgn" -type f | sort
+}
+
+list_midi() {
+    echo "Generated MIDI files:"
+    find data -name "*.mid" -type f | sort
+}
+
+clean_midi() {
+    echo "Cleaning generated MIDI files..."
+    find data -name "*.mid" -type f -delete
+    find . -name "*.pyc" -type f -delete
+    find . -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
+    echo "Done"
+}
+
+clean_all() {
+    echo "Cleaning all generated audio files..."
+    clean_midi
+    find data -name "*.wav" -type f -delete
+    find data -name "*.mp3" -type f -delete
+    echo "Done"
+}
+
+play_audio() {
+    local audio_file="$1"
+
+    if [[ -z "$audio_file" ]]; then
+        echo "Error: Please specify audio file"
+        echo "Usage: ./c2m play <audio_file>"
+        exit 1
+    fi
+
+    if [[ ! -f "$audio_file" ]]; then
+        echo "Error: Audio file '$audio_file' not found"
+        exit 1
+    fi
+
+    local ext="${audio_file##*.}"
+    case "$ext" in
+        "mp3"|"wav"|"m4a"|"aac")
+            echo "Playing $audio_file..."
+            afplay "$audio_file"
+            ;;
+        "mid"|"midi")
+            play_midi_file "$audio_file"
+            ;;
+        *)
+            echo "Error: Unsupported file type '$ext'"
+            echo "Supported formats: mp3, wav, m4a, aac, mid, midi"
+            exit 1
+            ;;
+    esac
+}
+
+play_midi_file() {
+    local midi_file="$1"
+
+    echo "Playing MIDI file $midi_file..."
+
+    # Try different MIDI players in order of preference
+    # 1. QuickTime Player (native macOS, best compatibility)
+    if [[ -d "/Applications/QuickTime Player.app" ]]; then
+        echo "Using QuickTime Player..."
+        open -a "QuickTime Player" "$midi_file"
+    # 2. Generic open command (uses default MIDI handler)
+    elif command -v open >/dev/null 2>&1; then
+        echo "Using system default MIDI player..."
+        open "$midi_file"
+    # 3. TiMidity++ (traditional fallback)
+    elif command -v timidity >/dev/null 2>&1; then
+        echo "Using TiMidity++..."
+        timidity "$midi_file"
+    # 4. FluidSynth (if available with soundfont)
+    elif command -v fluidsynth >/dev/null 2>&1; then
+        local sf_path="/opt/homebrew/share/soundfonts/default.sf2"
+        if [[ -f "$sf_path" ]]; then
+            echo "Using FluidSynth..."
+            fluidsynth -ni "$sf_path" "$midi_file"
+        else
+            echo "FluidSynth available but no soundfont found."
+            echo "No MIDI player available. Trying system default..."
+            open "$midi_file" 2>/dev/null || echo "Failed to play MIDI file"
+        fi
+    else
+        echo "No MIDI player found. Install options:"
+        echo "  brew install timidity"
+        echo "  brew install fluid-synth"
+        exit 1
+    fi
+}
+
+# Main script logic
+case "$1" in
+    "to-mp3")
+        convert_to_mp3 "$2"
+        ;;
+    "play")
+        play_audio "$2"
+        ;;
+    "demo")
+        convert_pgn "data/game.pgn"
+        ;;
+    "list-games")
+        list_games
+        ;;
+    "list-midi")
+        list_midi
+        ;;
+    "clean")
+        clean_midi
+        ;;
+    "clean-all")
+        clean_all
+        ;;
+    "help"|"-h"|"--help"|"")
+        show_help
+        ;;
+    *)
+        # Assume it's a PGN file
+        if [[ "$1" == *.pgn ]]; then
+            convert_pgn "$1" "$2"
+        else
+            echo "Error: Unknown command or invalid file type: $1"
+            echo "Run './c2m help' for usage information"
+            exit 1
+        fi
+        ;;
+esac
