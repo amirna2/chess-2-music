@@ -6,6 +6,7 @@ import re
 import csv
 import pathlib
 import yaml
+import argparse
 
 def load_config(config_file="config.yaml"):
     """Load configuration from YAML file."""
@@ -64,14 +65,40 @@ def get_opening_name(game, eco_map):
     return eco_map.get(eco_code, "Unknown Opening")
 
 def main():
-    if len(sys.argv) < 2:
-        print("Usage: python3 c2m.py <game.pgn>")
+    parser = argparse.ArgumentParser(
+        description="Convert chess games (PGN) to MIDI music files",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  python3 c2m.py data/game.pgn
+  python3 c2m.py data/game.pgn --config custom_config.yaml
+  python3 c2m.py data/game.pgn -c my_settings.yaml
+        """
+    )
+
+    parser.add_argument('pgn_file',
+                       help='Path to the PGN file to convert')
+    parser.add_argument('-c', '--config',
+                       default='config.yaml',
+                       help='Path to configuration YAML file (default: config.yaml)')
+    parser.add_argument('-o', '--output',
+                       help='Output MIDI file path (default: <pgn_file>.mid)')
+
+    args = parser.parse_args()
+
+    # Validate PGN file exists
+    if not pathlib.Path(args.pgn_file).exists():
+        print(f"Error: PGN file '{args.pgn_file}' not found")
         sys.exit(1)
 
-    pgn_file = sys.argv[1]
-    config = load_config()
+    # Validate config file exists
+    if not pathlib.Path(args.config).exists():
+        print(f"Error: Config file '{args.config}' not found")
+        sys.exit(1)
 
-    with open(pgn_file) as pgn:
+    config = load_config(args.config)
+
+    with open(args.pgn_file) as pgn:
         game = chess.pgn.read_game(pgn)
 
     eco_map = load_eco_map("./openings")  # folder with a.tsv … e.tsv
@@ -143,7 +170,12 @@ def main():
             check_note = min(note + check_effect['pitch_shift'], 127)
             add_note(track, program, check_note, check_effect['velocity'], duration, pan)
 
-    out_name = pgn_file.rsplit(".", 1)[0] + "_music.mid"
+    # Determine output filename
+    if args.output:
+        out_name = args.output
+    else:
+        out_name = args.pgn_file.rsplit(".", 1)[0] + ".mid"
+
     mid.save(out_name)
     print(f"Saved MIDI to {out_name}")
 
