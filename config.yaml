@@ -5,19 +5,19 @@ instruments:
     octave_shift: 0
   N:
     program: 40   # Violin
-    octave_shift: 0
+    octave_shift: 7
   B:
     program: 68   # Oboe
-    octave_shift: -6 # Lower by one octave
+    octave_shift: -5
   R:
     program: 60   # French Horn
-    octave_shift: -6 # Lower by one octave
+    octave_shift: -24
   Q:
     program: 0    # Piano
     octave_shift: 0
   K:
     program: 19   # Organ
-    octave_shift: -6 # Lower by one octave
+    octave_shift: 0
 
 # Velocity (volume) settings for each piece type
 velocity:

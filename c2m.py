@@ -47,11 +47,11 @@ def move_to_note(move, board, config):
     dest = move.uci()[2:]
     file, rank = dest[0], int(dest[1])
     base_pitch = config['pitch_mapping'][file]
-    note = base_pitch + (rank - 1) * 3 - 12 # lower octave
+    note = base_pitch + (rank - 1) * 3
     return snap_to_scale(note, config['scale'])
 
-def add_note(track, program, note, velocity, duration, pan=64, time_offset=0):
-    track.append(mido.Message("program_change", program=program, time=time_offset))
+def add_note(track, program, note, velocity, duration, pan=64, delay=0):
+    track.append(mido.Message("program_change", program=program, time=delay))
     track.append(mido.Message("control_change", control=10, value=pan, time=0))
     track.append(mido.Message("note_on", note=note, velocity=velocity, time=0))
     track.append(mido.Message("note_off", note=note, velocity=velocity, time=duration))
@@ -100,15 +100,13 @@ def main():
     board = game.board()
     node = game  # needed to access comments in sync with moves
 
-    # Musical timing structure
-    current_time = 0
-    beat_duration = 480  # Quarter note length (480 ticks)
+    # Track timing for staggered notes
 
     for ply, move in enumerate(game.mainline_moves(), start=1):
         node = node.variation(0)       # advance node alongside move
         comment = node.comment         # extract PGN comment (timestamps)
 
-        note = move_to_note(move, board, config)
+        base_note = move_to_note(move, board, config)
         piece = board.piece_at(move.from_square).symbol().upper()
         velocity = config['velocity'].get(piece, 80)
 
@@ -116,9 +114,10 @@ def main():
         if isinstance(instrument_config, dict):
             program = instrument_config.get('program', 0)
             octave_shift = instrument_config.get('octave_shift', 0)
-            note += octave_shift
+            note = base_note + octave_shift  # Apply octave shift AFTER snap_to_scale
         else:
             program = instrument_config or 0
+            note = base_note
 
         ts = extract_timestamp(comment)
         if ts is not None:
@@ -140,8 +139,9 @@ def main():
         elif ply == 31:
             set_tempo(track, config['tempo']['endgame'])
 
-        add_note(track, program, note, velocity, duration, pan, current_time)
-        current_time = beat_duration  # Next note starts on next beat
+        # Use small stagger delay for main note (not absolute time)
+        stagger_delay = 60 if ply > 1 else 0  # First note has no delay
+        add_note(track, program, note, velocity, duration, pan, stagger_delay)
 
         if nag in config['effects']['nag']:
             effect = config['effects']['nag'][nag]
