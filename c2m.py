@@ -7,10 +7,75 @@ import csv
 import pathlib
 import yaml
 
+def get_optimal_octave_shift(program, base_midpoint):
+    """Expert-level orchestral register placement based on Spiegel-level knowledge."""
+
+    # Standard orchestral registers (MIDI note targets for optimal timbre)
+    REGISTER_TARGETS = {
+        # STRINGS - treble to bass progression
+        (40, 44, 45): 79,    # Violin family - treble register (G5)
+        (41, 48, 49): 65,    # Viola/ensemble - alto register (F4)
+        (42,): 50,           # Cello - tenor register (D3)
+        (43,): 40,           # Contrabass - bass register (E2)
+
+        # WOODWINDS - soprano to bass
+        (72, 73): 84,        # Piccolo/Flute - soprano register (C6)
+        (68, 69): 74,        # Oboe/English Horn - mezzo register (D5)
+        (71,): 72,           # Clarinet - alto register (C5)
+        (70,): 55,           # Bassoon - bass register (G3)
+
+        # BRASS - standard orchestral placement
+        (56, 59): 69,        # Trumpet - tenor register (A4)
+        (60,): 55,           # French Horn - alto register (G3)
+        (57,): 48,           # Trombone - bass register (C3)
+        (58,): 43,           # Tuba - contrabass register (G2)
+
+        # KEYBOARDS/PIANO - preserve board mapping
+        (0, 1, 2, 3, 4, 5, 6, 7, 16, 17, 18, 19, 20, 21, 22, 23): base_midpoint,
+
+        # PERCUSSION - preserve board mapping
+        (112, 113, 114, 115, 116, 117, 118, 119, 47): base_midpoint,
+
+        # PLUCKED STRINGS
+        (24, 25, 26, 27, 28, 29, 30, 31): 64,  # Guitars - standard guitar range
+        (32, 33, 34, 35, 36, 37, 38, 39): 41,  # Bass - bass register
+        (46,): 60,           # Harp - wide range centered on C4
+
+        # SAXOPHONE FAMILY
+        (64,): 72,           # Soprano Sax - alto register
+        (65,): 65,           # Alto Sax - tenor register
+        (66,): 60,           # Tenor Sax - bass register
+        (67,): 53,           # Baritone Sax - low bass register
+    }
+
+    # Find matching register target
+    for programs, target_midpoint in REGISTER_TARGETS.items():
+        if program in programs:
+            return round(target_midpoint - base_midpoint)
+
+    # Default: no shift for synths, FX, and unknown instruments
+    return 0
+
+
 def load_config(config_file="config.yaml"):
     """Load configuration from YAML file."""
     with open(config_file, 'r') as f:
-        return yaml.safe_load(f)
+        config = yaml.safe_load(f)
+
+    # Calculate current base range midpoint
+    pitch_values = list(config['pitch_mapping'].values())
+    base_low = min(pitch_values)
+    base_high = max(pitch_values) + 21  # +21 for rank 8 calculation
+    base_midpoint = (base_low + base_high) / 2
+
+    # Apply expert orchestral register placement
+    for piece, instrument_config in config['instruments'].items():
+        if isinstance(instrument_config, dict) and 'program' in instrument_config:
+            program = instrument_config['program']
+            optimal_shift = get_optimal_octave_shift(program, base_midpoint)
+            instrument_config['octave_shift'] = optimal_shift
+
+    return config
 
 
 def extract_nag_code(comment):
@@ -138,6 +203,11 @@ def main():
             set_tempo(track, config['tempo']['middlegame'])
         elif ply == 31:
             set_tempo(track, config['tempo']['endgame'])
+
+        # Debug output
+        note_name = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"][note % 12]
+        octave = note // 12 - 1
+        print(f"Ply {ply}: {piece} {move.uci()} -> Note {note} ({note_name}{octave}) Program {program} Vel {velocity}")
 
         # Use small stagger delay for main note (not absolute time)
         stagger_delay = 60 if ply > 1 else 0  # First note has no delay
