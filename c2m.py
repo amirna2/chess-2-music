@@ -236,6 +236,12 @@ def add_note(track, program, note, velocity, duration, pan=64, delay=0):
     track.append(mido.Message("note_on", note=note, velocity=velocity, time=0))
     track.append(mido.Message("note_off", note=note, velocity=velocity, time=duration))
 
+def add_arpeggio_note(track, note, velocity, duration, pan=64, delay=0):
+    """Add arpeggio note without changing instrument program."""
+    track.append(mido.Message("control_change", control=10, value=pan, time=delay))
+    track.append(mido.Message("note_on", note=note, velocity=velocity, time=0))
+    track.append(mido.Message("note_off", note=note, velocity=velocity, time=duration))
+
 def add_arpeggio_fadeout(track, program, pan=64):
     """Add graceful fadeout when arpeggio is interrupted."""
     # Let arpeggio naturally complete - don't use volume control changes
@@ -341,7 +347,7 @@ def generate_thinking_arpeggio(
                 # Add the note - ensure it ends before next note starts
                 delay = 0 if note_in_phase == 0 and phase_num == 0 else ticks_between_notes
                 actual_duration = min(note_duration, ticks_between_notes - 20) if ticks_between_notes > 20 else 20
-                add_note(track, program, note, velocity, actual_duration, pan, delay)
+                add_arpeggio_note(track, note, velocity, actual_duration, pan, delay)
 
                 current_time += ticks_between_notes
                 step_index += 1
