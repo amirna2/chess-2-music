@@ -3,15 +3,15 @@ instruments:
   P:
     program: 0    # Piano
   N:
-    program: 40   # Violin
+    program: 38   # Synth Bass 1
   B:
     program: 71   # Clarinet
   R:
-    program: 60   # French Horn
+    program: 47   # Timpani
   Q:
-    program: 0    # Piano
+    program: 40   # Violin
   K:
-    program: 19   # Organ
+    program: 74   # Recorder
 
 # Velocity (volume) settings for each piece type
 velocity:
@@ -70,9 +70,9 @@ drones:
 durations:
   pawn_default: 240
   piece_default: 480
-  timestamp_multiplier: 120
-  min_duration: 60
-  max_duration: 1920
+  timestamp_multiplier: 400  # Much longer - notes overlap naturally
+  min_duration: 200         # Longer minimum for flow
+  max_duration: 3840        # Allow longer contemplative notes
 
 effects:
   nag:
