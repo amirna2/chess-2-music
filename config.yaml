@@ -1,12 +1,23 @@
 # Chess piece to MIDI instrument mapping (General MIDI program numbers)
-# Original working mapping from CLAUDE.md
 instruments:
-  P: 0    # Piano
-  N: 40   # Violin
-  B: 68   # Oboe
-  R: 60   # French Horn
-  Q: 0    # Piano
-  K: 19   # Organ
+  P:
+    program: 0    # Piano
+    octave_shift: 0
+  N:
+    program: 40   # Violin
+    octave_shift: 0
+  B:
+    program: 68   # Oboe
+    octave_shift: -6 # Lower by one octave
+  R:
+    program: 60   # French Horn
+    octave_shift: -6 # Lower by one octave
+  Q:
+    program: 0    # Piano
+    octave_shift: 0
+  K:
+    program: 19   # Organ
+    octave_shift: -6 # Lower by one octave
 
 # Velocity (volume) settings for each piece type
 velocity:
@@ -122,5 +133,5 @@ effects:
     duration: 960
 
 panning:
-  white: 40
+  white: 46
   black: 87

@@ -25,9 +25,23 @@ def extract_timestamp(comment):
     return None
 
 def snap_to_scale(note, scale):
-    while note % 12 not in set(scale):
-        note += 1
-    return min(note, 127)
+    """Snap note to the nearest pitch in the provided musical scale."""
+    scale_notes = sorted(list(set(scale)))
+    note_pitch_class = note % 12
+
+    # Find the closest scale pitch class
+    closest_pitch = min(scale_notes, key=lambda x: min(abs(note_pitch_class - x), 12 - abs(note_pitch_class - x)))
+
+    # Calculate the difference and adjust the original note
+    diff = closest_pitch - note_pitch_class
+    # Handle wraparound case (e.g., B to C)
+    if diff > 6:
+        diff -= 12
+    if diff < -6:
+        diff += 12
+
+    new_note = note + diff
+    return min(new_note, 127)
 
 def move_to_note(move, board, config):
     dest = move.uci()[2:]
@@ -86,9 +100,9 @@ def main():
     board = game.board()
     node = game  # needed to access comments in sync with moves
 
-    # Track time for staggered notes
+    # Musical timing structure
     current_time = 0
-    note_spacing = 60  # Time between note starts - faster for smoother flow
+    beat_duration = 480  # Quarter note length (480 ticks)
 
     for ply, move in enumerate(game.mainline_moves(), start=1):
         node = node.variation(0)       # advance node alongside move
@@ -97,7 +111,14 @@ def main():
         note = move_to_note(move, board, config)
         piece = board.piece_at(move.from_square).symbol().upper()
         velocity = config['velocity'].get(piece, 80)
-        program = config['instruments'].get(piece, 0)
+
+        instrument_config = config['instruments'].get(piece)
+        if isinstance(instrument_config, dict):
+            program = instrument_config.get('program', 0)
+            octave_shift = instrument_config.get('octave_shift', 0)
+            note += octave_shift
+        else:
+            program = instrument_config or 0
 
         ts = extract_timestamp(comment)
         if ts is not None:
@@ -120,12 +141,13 @@ def main():
             set_tempo(track, config['tempo']['endgame'])
 
         add_note(track, program, note, velocity, duration, pan, current_time)
-        current_time = note_spacing  # Next note starts after spacing interval
+        current_time = beat_duration  # Next note starts on next beat
 
         if nag in config['effects']['nag']:
             effect = config['effects']['nag'][nag]
             effect_program = effect.get('instrument', program)
-            effect_note = note + effect.get('octave_shift', 0) + effect.get('pitch_shift', 0)
+            raw_effect_note = note + effect.get('octave_shift', 0) + effect.get('pitch_shift', 0)
+            effect_note = snap_to_scale(raw_effect_note, config['scale'])
             effect_velocity = effect.get('velocity', velocity + effect.get('velocity_boost', 0) + effect.get('velocity_change', 0))
             effect_duration = int(duration * effect.get('duration_multiplier', effect.get('duration_ratio', 1)))
             effect_delay = effect.get('delay', 0)
@@ -134,7 +156,8 @@ def main():
 
         if board.is_capture(move):
             capture_effect = config['effects']['capture']
-            capture_note = min(note + capture_effect['pitch_shift'], 127)
+            raw_capture_note = note + capture_effect['pitch_shift']
+            capture_note = snap_to_scale(raw_capture_note, config['scale'])
             capture_velocity = velocity + capture_effect['velocity_change']
             add_note(track, program, capture_note, capture_velocity, duration, pan, capture_effect['delay'])
 
@@ -142,10 +165,12 @@ def main():
         if board.is_checkmate():
             checkmate_effect = config['effects']['checkmate']
             for n in checkmate_effect['chord']:
-                add_note(track, program, n, checkmate_effect['velocity'], checkmate_effect['duration'], pan)
+                checkmate_note = snap_to_scale(n, config['scale'])
+                add_note(track, program, checkmate_note, checkmate_effect['velocity'], checkmate_effect['duration'], pan)
         elif board.is_check():
             check_effect = config['effects']['check']
-            check_note = min(note + check_effect['pitch_shift'], 127)
+            raw_check_note = note + check_effect['pitch_shift']
+            check_note = snap_to_scale(raw_check_note, config['scale'])
             add_note(track, program, check_note, check_effect['velocity'], duration, pan)
 
     out_name = pgn_file.rsplit(".", 1)[0] + "_music.mid"
