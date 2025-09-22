@@ -84,7 +84,16 @@ def extract_nag_code(comment):
     nag_match = re.search(r'\$(\d+)', comment)
     return int(nag_match.group(1)) if nag_match else None
 
+def extract_clock_time(comment):
+    """Extract remaining clock time in seconds."""
+    m = re.search(r"\[%clk (\d+):(\d+):(\d+)\]", comment)
+    if m:
+        hours, minutes, seconds = int(m.group(1)), int(m.group(2)), int(m.group(3))
+        return hours * 3600 + minutes * 60 + seconds
+    return None
+
 def extract_timestamp(comment):
+    # Try timestamp format first (direct thinking time)
     m = re.search(r"\[%timestamp (\d+)\]", comment)
     if m:
         return int(m.group(1))
@@ -134,12 +143,13 @@ def compress_thinking_time(seconds, game_type):
 
     # Different compression based on game type
     if game_type == "blitz":
-        # Blitz: 0.1-5 seconds → 80-2000 ticks
-        if seconds <= 1:
-            return int(seconds * 400)
+        # Blitz: 0.1-120 seconds → 80-1200 ticks (more aggressive)
+        if seconds <= 2:
+            return int(seconds * 300)
         else:
-            compressed = 400 + (seconds - 1) * 300
-            return min(int(compressed), 2000)
+            # Logarithmic compression for long blitz thinks
+            compressed = 600 + math.log10(seconds) * 400
+            return min(int(compressed), 1200)
 
     elif game_type == "rapid":
         # Rapid: 0.1-30 seconds → 100-2800 ticks
@@ -150,12 +160,14 @@ def compress_thinking_time(seconds, game_type):
             return min(int(compressed), 2800)
 
     else:  # classical
-        # Classical: 0.1-1800+ seconds → 150-4000 ticks (logarithmic)
-        if seconds <= 3:
-            return int(seconds * 200)
+        # Classical: preserve timing ratios but cap for musical coherence
+        if seconds <= 2:
+            return int(seconds * 400)  # 0.8-1.6 seconds
+        elif seconds <= 30:
+            return int(800 + (seconds - 2) * 200)  # 1.6-7.2 seconds
         else:
-            compressed = 600 + math.log10(seconds) * 800
-            return min(int(compressed), 4000)
+            # Cap at ~8 seconds, drone handles the drama
+            return min(3600, int(800 + 28 * 200 + (seconds - 30) * 20))
 
 def snap_to_scale(note, scale):
     """Snap note to the nearest pitch in the provided musical scale."""
@@ -230,12 +242,26 @@ def main():
     mid = mido.MidiFile()
     white_track = mido.MidiTrack()
     black_track = mido.MidiTrack()
-    mid.tracks.extend([white_track, black_track])
+    drone_track = mido.MidiTrack()
+    mid.tracks.extend([white_track, black_track, drone_track])
+
+    # Initialize drone if enabled
+    if config['drones']['enabled']:
+        eco_code = game.headers.get("ECO", "A")
+        eco_letter = eco_code[0] if eco_code else "A"
+        drone_note = config['drones']['eco_mapping'].get(eco_letter, 36)
+        drone_program = config['drones']['instrument']
+
+        # Start opening drone
+        drone_track.append(mido.Message("program_change", program=drone_program, time=0))
+        drone_track.append(mido.Message("note_on", note=drone_note, velocity=config['drones']['phases']['opening']['velocity'], time=0))
 
     board = game.board()
     node = game  # needed to access comments in sync with moves
 
-    # Track timing for staggered notes
+    # Track timing for staggered notes and clock times
+    previous_clock_time = None
+    current_player_clock = None
 
     for ply, move in enumerate(game.mainline_moves(), start=1):
         node = node.variation(0)       # advance node alongside move
@@ -254,10 +280,24 @@ def main():
             program = instrument_config or 0
             note = base_note
 
+        # Calculate thinking time
+        thinking_time = None
+
+        # Try direct timestamp first
         ts = extract_timestamp(comment)
         if ts is not None:
-            # Use intelligent time compression based on game type
-            duration = compress_thinking_time(ts, game_type)
+            thinking_time = ts
+        else:
+            # Try clock time calculation
+            current_clock = extract_clock_time(comment)
+            if current_clock is not None and previous_clock_time is not None:
+                # Calculate elapsed time for current player
+                thinking_time = previous_clock_time - current_clock
+            previous_clock_time = current_clock
+
+        # Set duration based on thinking time
+        if thinking_time is not None and thinking_time > 0:
+            duration = compress_thinking_time(thinking_time, game_type)
         else:
             duration = config['durations']['pawn_default'] if piece == "P" else config['durations']['piece_default']
 
@@ -276,7 +316,7 @@ def main():
         # Debug output
         note_name = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"][note % 12]
         octave = note // 12 - 1
-        print(f"Ply {ply}: {piece} {move.uci()} -> Note {note} ({note_name}{octave}) Program {program} Vel {velocity}")
+        print(f"Ply {ply}: {piece} {move.uci()} -> Note {note} ({note_name}{octave}) Program {program} Vel {velocity} Dur {duration} ticks")
 
         # Use small stagger delay for main note (not absolute time)
         stagger_delay = 60 if ply > 1 else 0  # First note has no delay

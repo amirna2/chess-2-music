@@ -7,6 +7,7 @@ show_help() {
     echo ""
     echo "Usage:"
     echo "  ./c2m <pgn_file> [config_file]     Convert PGN to MIDI"
+    echo "  ./c2m <pgn_file> --play             Convert PGN→MIDI→MP3 and play"
     echo "  ./c2m to-mp3 <midi_file>           Convert MIDI to MP3"
     echo "  ./c2m play <audio_file>             Play MP3 or MIDI file"
     echo "  ./c2m demo                          Run demo conversion"
@@ -19,6 +20,7 @@ show_help() {
     echo "Examples:"
     echo "  ./c2m data/game.pgn"
     echo "  ./c2m data/game.pgn custom_config.yaml"
+    echo "  ./c2m data/game.pgn --play"
     echo "  ./c2m to-mp3 data/game.mid"
     echo "  ./c2m play data/game.mp3"
     echo "  ./c2m play data/game.mid"
@@ -87,24 +89,53 @@ convert_to_mp3() {
 
 convert_pgn() {
     local pgn_file="$1"
-    local config_file="$2"
+    local config_file_or_flag="$2"
 
     if [[ ! -f "$pgn_file" ]]; then
         echo "Error: PGN file '$pgn_file' not found"
         exit 1
     fi
 
-    if [[ -n "$config_file" && ! -f "$config_file" ]]; then
-        echo "Error: Config file '$config_file' not found"
-        exit 1
-    fi
-
-    if [[ -n "$config_file" ]]; then
-        echo "Converting $pgn_file to MIDI with config $config_file..."
-        python3 c2m.py "$pgn_file" --config "$config_file"
-    else
+    # Check if second argument is --play flag
+    if [[ "$config_file_or_flag" == "--play" ]]; then
         echo "Converting $pgn_file to MIDI..."
         python3 c2m.py "$pgn_file"
+
+        # Get the generated MIDI file name
+        local base_name=$(basename "$pgn_file" .pgn)
+        local dir_name=$(dirname "$pgn_file")
+        local midi_file="$dir_name/${base_name}_music.mid"
+
+        if [[ -f "$midi_file" ]]; then
+            echo "Converting MIDI to MP3..."
+            convert_to_mp3 "$midi_file"
+
+            # Get the MP3 file name
+            local mp3_file="$dir_name/${base_name}_music.mp3"
+            if [[ -f "$mp3_file" ]]; then
+                play_audio "$mp3_file"
+            else
+                play_audio "$midi_file"
+            fi
+        else
+            echo "Error: MIDI file not generated"
+            exit 1
+        fi
+    else
+        # Handle config file case
+        local config_file="$config_file_or_flag"
+        if [[ -n "$config_file" && ! -f "$config_file" ]]; then
+            echo "Error: Config file '$config_file' not found"
+            exit 1
+        fi
+
+        if [[ -n "$config_file" ]]; then
+            echo "Converting $pgn_file to MIDI with config $config_file..."
+            python3 c2m.py "$pgn_file" --config "$config_file"
+        else
+            echo "Converting $pgn_file to MIDI..."
+            python3 c2m.py "$pgn_file"
+        fi
     fi
 }
 

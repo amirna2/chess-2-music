@@ -1,17 +1,17 @@
 # Chess piece to MIDI instrument mapping (General MIDI program numbers)
 instruments:
   P:
-    program: 0    # Piano
+    program: 12   # flute
   N:
-    program: 38   # Synth Bass 1
+    program: 0   # Synth Bass 1
   B:
-    program: 71   # Clarinet
+    program: 0   # Clarinet
   R:
-    program: 47   # Timpani
+    program: 0   # Timpani
   Q:
-    program: 40   # Violin
+    program: 40  # Violin
   K:
-    program: 74   # Recorder
+    program: 19   # Recorder
 
 # Velocity (volume) settings for each piece type
 velocity:
@@ -44,7 +44,7 @@ tempo:
 
 # Drone notes based on ECO opening classification
 drones:
-  enabled: false
+  enabled: true
   instrument: 19      # Organ - perfect for sustained drones
   eco_mapping:
     A: 36            # C2 - Flank openings (English, irregular) - Tonic, stable
