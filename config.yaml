@@ -1,0 +1,95 @@
+instruments:
+  P: 0   # Piano
+  N: 40  # Violin
+  B: 68  # Oboe
+  R: 69  # French Horn
+  Q: 0   # Piano
+  K: 19  # Organ
+
+velocity:
+  P: 40
+  N: 50
+  B: 50
+  R: 60
+  Q: 70
+  K: 60
+
+pitch_mapping:
+  a: 60
+  b: 62
+  c: 64
+  d: 65
+  e: 67
+  f: 69
+  g: 71
+  h: 72
+
+scale: [0, 2, 4, 5, 7, 9, 11]  # C Major
+
+tempo:
+  opening: 140   # ply 1
+  middlegame: 120  # ply 11
+  endgame: 90    # ply 31
+
+durations:
+  pawn_default: 240
+  piece_default: 480
+  timestamp_multiplier: 120
+  min_duration: 60
+  max_duration: 1920
+
+effects:
+  nag:
+    1:  # Great move
+      octave_shift: 12
+      velocity_boost: 20
+      duration_ratio: 0.5
+      delay: 30
+    2:  # Mistake
+      instrument: 120
+      pitch_shift: -5
+      velocity_change: -30
+      delay: 120
+    3:  # Brilliant move
+      octave_shift: 24
+      velocity_boost: 40
+      duration_ratio: 0.25
+      delay: 15
+    4:  # Blunder
+      instrument: 120
+      pitch_shift: -12
+      velocity: 127
+      duration_multiplier: 2
+      delay: 60
+    5:  # Speculative/interesting move
+      octave_shift: 6
+      velocity_boost: 10
+      duration_ratio: 0.75
+      delay: 45
+    6:  # Inaccuracy
+      pitch_shift: -2
+      velocity_change: -10
+      delay: 60
+    7:  # Forced move
+      octave_shift: 0
+      velocity_boost: 15
+      duration_ratio: 0.4
+      delay: 0
+
+  capture:
+    pitch_shift: 7
+    velocity_change: -20
+    delay: 60
+
+  check:
+    pitch_shift: 6
+    velocity: 70
+
+  checkmate:
+    chord: [60, 64, 67]
+    velocity: 100
+    duration: 960
+
+panning:
+  white: 40
+  black: 87
