@@ -6,6 +6,7 @@ import re
 import csv
 import pathlib
 import yaml
+import math
 
 def get_optimal_octave_shift(program, base_midpoint):
     """Expert-level orchestral register placement based on Spiegel-level knowledge."""
@@ -89,6 +90,73 @@ def extract_timestamp(comment):
         return int(m.group(1))
     return None
 
+def detect_time_control(game):
+    """Detect game type from TimeControl header."""
+    time_control = game.headers.get("TimeControl", "")
+
+    if not time_control or time_control == "-":
+        return "unknown"
+
+    try:
+        # Handle different time control formats
+        if ":" in time_control:
+            # Format: "40/7200:1800" (moves/seconds:seconds)
+            first_part = time_control.split(":")[0]
+            if "/" in first_part:
+                base_time = int(first_part.split("/")[1])  # Get the seconds part
+            else:
+                base_time = int(first_part)
+        elif "/" in time_control:
+            # Format: "40/5400" (moves/seconds)
+            base_time = int(time_control.split("/")[1])
+        elif "+" in time_control:
+            # Format: "180+2" (seconds+increment)
+            base_time = int(time_control.split("+")[0])
+        else:
+            # Simple format: "180"
+            base_time = int(time_control)
+
+        if base_time <= 300:  # 5 minutes or less
+            return "blitz"
+        elif base_time <= 1800:  # 30 minutes or less
+            return "rapid"
+        else:
+            return "classical"
+
+    except (ValueError, IndexError):
+        # If parsing fails, default to unknown
+        return "unknown"
+
+def compress_thinking_time(seconds, game_type):
+    """Compress extreme time ranges to musical durations with logarithmic scaling."""
+    if seconds <= 0:
+        return 200  # Minimum duration
+
+    # Different compression based on game type
+    if game_type == "blitz":
+        # Blitz: 0.1-5 seconds → 80-2000 ticks
+        if seconds <= 1:
+            return int(seconds * 400)
+        else:
+            compressed = 400 + (seconds - 1) * 300
+            return min(int(compressed), 2000)
+
+    elif game_type == "rapid":
+        # Rapid: 0.1-30 seconds → 100-2800 ticks
+        if seconds <= 2:
+            return int(seconds * 300)
+        else:
+            compressed = 600 + math.log10(seconds) * 600
+            return min(int(compressed), 2800)
+
+    else:  # classical
+        # Classical: 0.1-1800+ seconds → 150-4000 ticks (logarithmic)
+        if seconds <= 3:
+            return int(seconds * 200)
+        else:
+            compressed = 600 + math.log10(seconds) * 800
+            return min(int(compressed), 4000)
+
 def snap_to_scale(note, scale):
     """Snap note to the nearest pitch in the provided musical scale."""
     scale_notes = sorted(list(set(scale)))
@@ -155,7 +223,9 @@ def main():
 
     eco_map = load_eco_map("./openings")  # folder with a.tsv … e.tsv
     opening_name = get_opening_name(game, eco_map)
+    game_type = detect_time_control(game)
     print(game.headers.get("ECO"), opening_name)
+    print(f"Game type: {game_type} (TimeControl: {game.headers.get('TimeControl', 'unknown')})")
 
     mid = mido.MidiFile()
     white_track = mido.MidiTrack()
@@ -186,9 +256,8 @@ def main():
 
         ts = extract_timestamp(comment)
         if ts is not None:
-            duration = max(config['durations']['min_duration'],
-                         min(ts * config['durations']['timestamp_multiplier'],
-                             config['durations']['max_duration']))
+            # Use intelligent time compression based on game type
+            duration = compress_thinking_time(ts, game_type)
         else:
             duration = config['durations']['pawn_default'] if piece == "P" else config['durations']['piece_default']
 

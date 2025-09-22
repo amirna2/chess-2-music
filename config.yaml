@@ -86,11 +86,12 @@ effects:
       pitch_shift: -5
       velocity_change: -30
       delay: 120
-    3:  # Brilliant move
-      octave_shift: 24
-      velocity_boost: 40
-      duration_ratio: 0.25
-      delay: 15
+    3:  # Brilliant move - APPLAUSE!
+      octave_shift: 0         # Keep natural pitch for applause
+      velocity_boost: 50      # Maximum volume
+      duration_ratio: 1.5     # Extended applause
+      delay: 0                # Immediate recognition
+      instrument: 126         # Applause - crowd goes wild!
     4:  # Blunder
       instrument: 120
       pitch_shift: -12
