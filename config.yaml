@@ -1,15 +1,15 @@
 # Chess piece to MIDI instrument mapping (General MIDI program numbers)
 instruments:
   P:
-    program: 12   # flute
+    program: 0  # flute
   N:
-    program: 0   # Synth Bass 1
+    program: 1   # Synth Bass 1
   B:
-    program: 0   # Clarinet
+    program: 2   # Clarinet
   R:
-    program: 0   # Timpani
+    program: 3   # Timpani
   Q:
-    program: 40  # Violin
+    program: 4  # Violin
   K:
     program: 19   # Recorder
 

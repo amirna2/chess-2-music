@@ -236,6 +236,150 @@ def add_note(track, program, note, velocity, duration, pan=64, delay=0):
     track.append(mido.Message("note_on", note=note, velocity=velocity, time=0))
     track.append(mido.Message("note_off", note=note, velocity=velocity, time=duration))
 
+def add_arpeggio_fadeout(track, program, pan=64):
+    """Add graceful fadeout when arpeggio is interrupted."""
+    # Let arpeggio naturally complete - don't use volume control changes
+    # as they persist and affect all subsequent notes on the track
+    pass
+
+def calculate_arpeggio_duration(thinking_time, game_type):
+    """Calculate compressed arpeggio duration with hard cap for practical MP3 conversion."""
+    MAX_ARPEGGIO_DURATION = 90  # Hard cap for MP3 conversion speed
+
+    if game_type == "blitz":
+        duration = thinking_time
+    elif game_type == "rapid":
+        if thinking_time <= 120:
+            duration = thinking_time
+        else:
+            duration = 120 + (thinking_time - 120) * 0.4
+    else:  # classical
+        if thinking_time <= 60:
+            duration = thinking_time
+        elif thinking_time <= 300:
+            duration = 60 + (thinking_time - 60) * 0.5
+        else:
+            duration = 180 + (thinking_time - 300) * 0.2
+
+    # Apply hard cap to keep MP3 conversion practical
+    return min(duration, MAX_ARPEGGIO_DURATION)
+
+def generate_thinking_arpeggio(
+    track,
+    thinking_duration_seconds,
+    piece_about_to_move,
+    source_square_note,
+    target_square_note,
+    config,
+    program,
+    game_type,
+    pan=64
+):
+    """Generate musical phrase during thinking time that builds toward the move."""
+
+    if thinking_duration_seconds < 10:  # Skip arpeggios for quick moves
+        return
+
+    # Use shared compression logic with hard cap
+    compressed_duration = calculate_arpeggio_duration(thinking_duration_seconds, game_type)
+
+    # Convert to MIDI ticks
+    total_ticks = int(compressed_duration * 480)  # 480 ticks per second
+
+    # Determine phrase structure based on thinking duration
+    if thinking_duration_seconds < 60:       # 10-60 seconds: Simple arpeggio
+        phase_structure = ["contemplative"]
+    elif thinking_duration_seconds < 300:   # 1-5 minutes: Two-phase buildup
+        phase_structure = ["contemplative", "building"]
+    elif thinking_duration_seconds < 900:   # 5-15 minutes: Three-phase development
+        phase_structure = ["contemplative", "building", "urgent"]
+    else:                                    # 15+ minutes: Full orchestral buildup
+        phase_structure = ["contemplative", "building", "urgent", "climactic"]
+
+    ticks_per_phase = total_ticks // len(phase_structure)
+
+    # Build harmonic progression from source to target
+    harmonic_steps = create_harmonic_progression(source_square_note, target_square_note, len(phase_structure) * 4)
+
+    current_time = 0
+    step_index = 0
+
+    for phase_num, phase in enumerate(phase_structure):
+        phase_ticks = ticks_per_phase
+
+        # Phase characteristics
+        if phase == "contemplative":
+            note_duration = 400  # Long notes
+            velocity_base = 30
+            notes_per_phase = 4
+        elif phase == "building":
+            note_duration = 240  # Medium notes
+            velocity_base = 45
+            notes_per_phase = 6
+        elif phase == "urgent":
+            note_duration = 120  # Short notes
+            velocity_base = 60
+            notes_per_phase = 8
+        else:  # climactic
+            note_duration = 60   # Very short notes
+            velocity_base = 75
+            notes_per_phase = 12
+
+        # Generate notes for this phase
+        ticks_between_notes = phase_ticks // notes_per_phase
+
+        for note_in_phase in range(notes_per_phase):
+            if step_index < len(harmonic_steps):
+                note = harmonic_steps[step_index]
+                note = snap_to_scale(note, config['scale'])
+
+                # Gradual velocity increase within phase
+                velocity_progression = note_in_phase / notes_per_phase
+                velocity = int(velocity_base + velocity_progression * 15)
+                velocity = min(velocity, 80)  # Cap to avoid overwhelming
+
+                # Add the note - ensure it ends before next note starts
+                delay = 0 if note_in_phase == 0 and phase_num == 0 else ticks_between_notes
+                actual_duration = min(note_duration, ticks_between_notes - 20) if ticks_between_notes > 20 else 20
+                add_note(track, program, note, velocity, actual_duration, pan, delay)
+
+                current_time += ticks_between_notes
+                step_index += 1
+
+def create_harmonic_progression(source_note, target_note, num_steps):
+    """Create harmonic progression from source to target note."""
+    progression = []
+
+    # Start with source note and its harmonics
+    progression.append(source_note)
+    progression.append(source_note + 4)  # Major third
+    progression.append(source_note + 7)  # Perfect fifth
+
+    # Calculate interval to target
+    interval = target_note - source_note
+
+    # Create smooth progression toward target
+    for i in range(4, num_steps - 3):
+        # Interpolate between source harmony and target
+        progress = i / (num_steps - 1)
+
+        # Mix of harmonic and melodic movement
+        if i % 3 == 0:
+            note = source_note + int(interval * progress)  # Direct melodic line
+        elif i % 3 == 1:
+            note = source_note + 4 + int(interval * progress * 0.7)  # Third harmony
+        else:
+            note = source_note + 7 + int(interval * progress * 0.5)  # Fifth harmony
+
+        progression.append(note)
+
+    # End with target note approach
+    progression.append(target_note + 7)  # Dominant approach
+    progression.append(target_note + 2)  # Leading tone
+    progression.append(target_note)      # Target resolution
+
+    return progression
+
 
 def set_tempo(track, bpm):
     mpqn = mido.bpm2tempo(bpm)
@@ -289,6 +433,10 @@ def main():
     drone_track = mido.MidiTrack()
     mid.tracks.extend([white_track, black_track, drone_track])
 
+    # Initialize track volumes to ensure they're not stuck at low levels
+    white_track.append(mido.Message("control_change", control=7, value=100, time=0))  # Set main volume
+    black_track.append(mido.Message("control_change", control=7, value=100, time=0))  # Set main volume
+
     # Initialize drone if enabled
     if config['drones']['enabled']:
         eco_code = game.headers.get("ECO", "A")
@@ -303,7 +451,10 @@ def main():
     board = game.board()
     node = game  # needed to access comments in sync with moves
 
-    # Track timing for staggered notes
+    # Track timing for staggered notes and arpeggio end times
+    white_arpeggio_end_time = 0
+    black_arpeggio_end_time = 0
+    current_midi_time = 0
 
     for ply, move in enumerate(game.mainline_moves(), start=1):
         node = node.variation(0)       # advance node alongside move
@@ -325,11 +476,33 @@ def main():
         # Get preprocessed thinking time
         thinking_time = timing_data.get(ply)
 
-        # Set duration based on thinking time
-        if thinking_time is not None:
-            duration = compress_thinking_time(thinking_time, game_type)
+        # Check if we need to fade out previous player's arpeggio
+        is_white_move = (ply % 2 == 1)
+
+        if is_white_move:
+            # White move - check if Black arpeggio is still playing
+            if current_midi_time < black_arpeggio_end_time:
+                # Add fadeout to black track
+                add_arpeggio_fadeout(black_track, program, pan)
+                black_arpeggio_end_time = current_midi_time  # Mark as ended
         else:
-            duration = config['durations']['pawn_default'] if piece == "P" else config['durations']['piece_default']
+            # Black move - check if White arpeggio is still playing
+            if current_midi_time < white_arpeggio_end_time:
+                # Add fadeout to white track
+                add_arpeggio_fadeout(white_track, program, pan)
+                white_arpeggio_end_time = current_midi_time  # Mark as ended
+
+
+        # Set duration for the actual move note
+        if thinking_time is not None:
+            # For moves with arpeggios, use shorter final note
+            duration = 240 if thinking_time >= 10 else compress_thinking_time(thinking_time, game_type)
+        else:
+            # Ensure first move has substantial duration to start the music
+            if ply == 1:
+                duration = 960  # Longer first move
+            else:
+                duration = config['durations']['pawn_default'] if piece == "P" else config['durations']['piece_default']
 
         nag = extract_nag_code(comment)
 
@@ -348,7 +521,7 @@ def main():
         octave = note // 12 - 1
         print(f"Ply {ply}: {piece} {move.uci()} -> Note {note} ({note_name}{octave}) Program {program} Vel {velocity} Dur {duration} ticks")
 
-        # Use small stagger delay for main note (not absolute time)
+        # Use small stagger delay for main note
         stagger_delay = 60 if ply > 1 else 0  # First note has no delay
         add_note(track, program, note, velocity, duration, pan, stagger_delay)
 
@@ -381,6 +554,23 @@ def main():
             raw_check_note = note + check_effect['pitch_shift']
             check_note = snap_to_scale(raw_check_note, config['scale'])
             add_note(track, program, check_note, check_effect['velocity'], duration, pan)
+
+        # Generate thinking arpeggio AFTER the move is played
+        if thinking_time is not None and thinking_time >= 10 and ply > 1:
+            source_note = move_to_note(move, board, config)  # Source square
+            target_note = base_note  # Destination square
+
+            generate_thinking_arpeggio(
+                track=track,
+                thinking_duration_seconds=thinking_time,
+                piece_about_to_move=piece,
+                source_square_note=source_note,
+                target_square_note=target_note,
+                config=config,
+                program=program,
+                game_type=game_type,
+                pan=pan
+            )
 
     out_name = pgn_file.rsplit(".", 1)[0] + "_music.mid"
     mid.save(out_name)
