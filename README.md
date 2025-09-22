@@ -1,6 +1,6 @@
 # Chess-to-Music Converter
 
-A Python tool that converts chess games in PGN format into MIDI music compositions. This project translates chess moves, piece types, game events, and move quality annotations into corresponding musical elements, inspired by Laurie Spiegel's pioneering work on algorithmic composition.
+A Python tool that converts chess games in PGN format into MIDI music compositions. This project translates chess moves, piece types, game events, and move quality annotations into corresponding musical elements, inspired by Laurie Spiegel's pioneering work on algorithmic composition and her Music Mouse software.
 
 ## Features
 

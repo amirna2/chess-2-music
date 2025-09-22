@@ -99,6 +99,41 @@ def extract_timestamp(comment):
         return int(m.group(1))
     return None
 
+def preprocess_timing_data(game):
+    """Preprocess all timing data before main loop."""
+    timing_data = {}  # ply_number -> thinking_time_seconds
+
+    white_prev_clock = None
+    black_prev_clock = None
+
+    node = game
+    for ply, move in enumerate(game.mainline_moves(), start=1):
+        node = node.variation(0)
+        comment = node.comment
+
+        # Try direct timestamp first
+        thinking_time = extract_timestamp(comment)
+
+        if thinking_time is None:
+            # Try clock calculation
+            current_clock = extract_clock_time(comment)
+            if current_clock is not None:
+                is_white_move = (ply % 2 == 1)
+
+                if is_white_move:
+                    if white_prev_clock is not None:
+                        thinking_time = white_prev_clock - current_clock
+                    white_prev_clock = current_clock
+                else:
+                    if black_prev_clock is not None:
+                        thinking_time = black_prev_clock - current_clock
+                    black_prev_clock = current_clock
+
+        if thinking_time is not None and thinking_time > 0:
+            timing_data[ply] = thinking_time
+
+    return timing_data
+
 def detect_time_control(game):
     """Detect game type from TimeControl header."""
     time_control = game.headers.get("TimeControl", "")
@@ -239,6 +274,15 @@ def main():
     print(game.headers.get("ECO"), opening_name)
     print(f"Game type: {game_type} (TimeControl: {game.headers.get('TimeControl', 'unknown')})")
 
+    # Preprocess all timing data
+    timing_data = preprocess_timing_data(game)
+
+    # Debug timing data
+    print("=== TIMING DEBUG ===")
+    for ply in sorted(timing_data.keys())[:10]:  # Show first 10 moves
+        print(f"Ply {ply}: {timing_data[ply]} seconds thinking time")
+    print("====================")
+
     mid = mido.MidiFile()
     white_track = mido.MidiTrack()
     black_track = mido.MidiTrack()
@@ -259,9 +303,7 @@ def main():
     board = game.board()
     node = game  # needed to access comments in sync with moves
 
-    # Track timing for staggered notes and clock times
-    previous_clock_time = None
-    current_player_clock = None
+    # Track timing for staggered notes
 
     for ply, move in enumerate(game.mainline_moves(), start=1):
         node = node.variation(0)       # advance node alongside move
@@ -280,23 +322,11 @@ def main():
             program = instrument_config or 0
             note = base_note
 
-        # Calculate thinking time
-        thinking_time = None
-
-        # Try direct timestamp first
-        ts = extract_timestamp(comment)
-        if ts is not None:
-            thinking_time = ts
-        else:
-            # Try clock time calculation
-            current_clock = extract_clock_time(comment)
-            if current_clock is not None and previous_clock_time is not None:
-                # Calculate elapsed time for current player
-                thinking_time = previous_clock_time - current_clock
-            previous_clock_time = current_clock
+        # Get preprocessed thinking time
+        thinking_time = timing_data.get(ply)
 
         # Set duration based on thinking time
-        if thinking_time is not None and thinking_time > 0:
+        if thinking_time is not None:
             duration = compress_thinking_time(thinking_time, game_type)
         else:
             duration = config['durations']['pawn_default'] if piece == "P" else config['durations']['piece_default']
