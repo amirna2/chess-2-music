@@ -8,6 +8,18 @@ import pathlib
 import yaml
 import math
 
+# MIDI channel assignments (0-15)
+CHANNELS = {
+    'white': 0,
+    'black': 1,
+    'drone': 2,
+    'arpeggio': 3,
+    'effects': 4,  # optional separate channel for NAG/capture/check accents
+}
+
+# Track which channels have had their program/pan initialized so we don't spam events
+_CHANNEL_INITIALIZED = set()
+
 def get_optimal_octave_shift(program, base_midpoint):
     """Expert-level orchestral register placement based on Spiegel-level knowledge."""
 
@@ -99,51 +111,48 @@ def extract_timestamp(comment):
         return int(m.group(1))
     return None
 
+def safe_get_emt(node):
+    """Safely obtain elapsed move time (EMT) from a python-chess node.
+
+    Uses the official Node.emt() API when available. Falls back to a local
+    regex parse of the node comment if running on an older python-chess
+    version or if multiple comment fragments are merged differently.
+    Returns float seconds or None.
+    """
+    # Preferred: python-chess provided API (added upstream)
+    try:
+        emt = node.emt()  # type: ignore[attr-defined]
+        if emt is not None:
+            return float(emt)
+    except AttributeError:
+        pass
+
+    # Fallback: manual regex on node.comment
+    comment_text = getattr(node, "comment", "") or ""
+    m = re.search(r"\[%emt\s+(?P<hours>\d+):(?P<minutes>\d+):(?P<seconds>\d+(?:\.\d+)?)\]", comment_text)
+    if m:
+        return (
+            int(m.group("hours")) * 3600
+            + int(m.group("minutes")) * 60
+            + float(m.group("seconds"))
+        )
+    return None
+
 def preprocess_timing_data(game):
-    """Preprocess all timing data before main loop."""
-    timing_data = {}  # ply_number -> thinking_time_seconds
+    """Collect elapsed move times (EMT) per ply using python-chess.
 
-    white_prev_clock = None
-    black_prev_clock = None
-    white_prev_timestamp = None
-    black_prev_timestamp = None
-
+    Returns dict: ply_number (1-based) -> elapsed move time in seconds (float).
+    """
+    timing_data = {}
     node = game
-    for ply, move in enumerate(game.mainline_moves(), start=1):
+    ply = 0
+    # Traverse the mainline by walking variations instead of re-parsing moves
+    while node.variations:
         node = node.variation(0)
-        comment = node.comment
-
-        # Try direct timestamp first - calculate delta from previous FOR SAME PLAYER
-        current_timestamp = extract_timestamp(comment)
-        thinking_time = None
-        is_white_move = (ply % 2 == 1)
-
-        if current_timestamp is not None:
-            if is_white_move:
-                if white_prev_timestamp is not None:
-                    thinking_time = current_timestamp - white_prev_timestamp
-                white_prev_timestamp = current_timestamp
-            else:
-                if black_prev_timestamp is not None:
-                    thinking_time = current_timestamp - black_prev_timestamp
-                black_prev_timestamp = current_timestamp
-        else:
-            # Try clock calculation
-            current_clock = extract_clock_time(comment)
-            if current_clock is not None:
-
-                if is_white_move:
-                    if white_prev_clock is not None:
-                        thinking_time = white_prev_clock - current_clock
-                    white_prev_clock = current_clock
-                else:
-                    if black_prev_clock is not None:
-                        thinking_time = black_prev_clock - current_clock
-                    black_prev_clock = current_clock
-
-        if thinking_time is not None and thinking_time > 0:
-            timing_data[ply] = thinking_time
-
+        ply += 1
+        emt = safe_get_emt(node)
+        if emt is not None and emt > 0:
+            timing_data[ply] = emt
     return timing_data
 
 def detect_time_control(game):
@@ -242,18 +251,32 @@ def move_to_note(move, board, config):
     note = base_pitch + (rank - 1) * 3
     return snap_to_scale(note, config['scale'])
 
-def add_note(track, program, note, velocity, duration, pan=64, delay=0):
-    track.append(mido.Message("program_change", program=program, time=delay))
-    track.append(mido.Message("control_change", control=10, value=pan, time=0))
-    track.append(mido.Message("note_on", note=note, velocity=velocity, time=0))
-    track.append(mido.Message("note_off", note=note, velocity=velocity, time=duration))
+def add_note(track, program, note, velocity, duration, pan=64, delay=0, channel=0, init_program=True):
+    """Add a note with optional initial program/pan setup per channel.
 
-def add_arpeggio_note(track, note, velocity, duration, pan=64, delay=0):
-    """Add arpeggio note with proper MIDI sequencing."""
-    # Add note_on with delay from previous message
-    track.append(mido.Message("note_on", note=note, velocity=velocity, time=delay))
-    # Add note_off exactly when this note should end
-    track.append(mido.Message("note_off", note=note, velocity=0, time=duration))
+    program changes are only inserted the first time we see a channel (or if init_program=True explicitly).
+    Pan is also only set once per channel to avoid overwriting spatial field repeatedly.
+    """
+    if channel not in _CHANNEL_INITIALIZED:
+        # First event on this channel: apply delay here so timing stays correct
+        if init_program:
+            track.append(mido.Message("program_change", program=program, channel=channel, time=delay))
+            delay = 0  # consumed
+        track.append(mido.Message("control_change", control=10, value=pan, channel=channel, time=0))
+        _CHANNEL_INITIALIZED.add(channel)
+    else:
+        # Subsequent note: if caller supplied delay, use on first note_on
+        if init_program:
+            track.append(mido.Message("program_change", program=program, channel=channel, time=delay))
+            delay = 0
+    # Note on/off
+    track.append(mido.Message("note_on", note=note, velocity=velocity, channel=channel, time=delay))
+    track.append(mido.Message("note_off", note=note, velocity=velocity, channel=channel, time=duration))
+
+def add_arpeggio_note(track, note, velocity, duration, pan=64, delay=0, channel=CHANNELS['arpeggio']):
+    """Add arpeggio note (channel-specific)."""
+    track.append(mido.Message("note_on", note=note, velocity=velocity, channel=channel, time=delay))
+    track.append(mido.Message("note_off", note=note, velocity=0, channel=channel, time=duration))
 
 def add_arpeggio_fadeout(track, program, pan=64):
     """Add graceful fadeout when arpeggio is interrupted."""
@@ -277,7 +300,7 @@ def calculate_arpeggio_duration(thinking_time, game_type):
 
 def generate_thinking_arpeggio(
     track,
-    thinking_duration_seconds,
+    thinking_time_seconds_raw,
     piece_about_to_move,
     source_square_note,
     target_square_note,
@@ -287,23 +310,23 @@ def generate_thinking_arpeggio(
     pan=64
 ):
     """Generate musical phrase during thinking time that builds toward the move."""
-
-    if thinking_duration_seconds < 10:  # Skip arpeggios for quick moves
+    # Only consider sufficiently long thinks
+    if thinking_time_seconds_raw < 10:
         return
 
-    # Use shared compression logic with hard cap
-    compressed_duration = calculate_arpeggio_duration(thinking_duration_seconds, game_type)
-    print(f"    Arpeggio: {thinking_duration_seconds}s thinking -> {compressed_duration}s compressed duration")
+    # Compress raw cognitive time to playable musical duration (seconds)
+    compressed_duration_seconds = calculate_arpeggio_duration(thinking_time_seconds_raw, game_type)
+    print(f"    Arpeggio: raw {thinking_time_seconds_raw:.1f}s -> compressed {compressed_duration_seconds:.2f}s")
 
-    # Convert to MIDI ticks
-    total_ticks = int(compressed_duration * 480)  # 480 ticks per second
+    # Convert to MIDI ticks (assumes 480 ppq)
+    total_ticks = int(compressed_duration_seconds * 480)
 
-    # Determine phrase structure based on thinking duration
-    if thinking_duration_seconds < 60:       # 10-60 seconds: Simple arpeggio
+    # Determine phrase structure based on RAW thinking duration (musical narrative tied to real time spent)
+    if thinking_time_seconds_raw < 60:       # 10-60 seconds: Simple arpeggio
         phase_structure = ["contemplative"]
-    elif thinking_duration_seconds < 300:   # 1-5 minutes: Two-phase buildup
+    elif thinking_time_seconds_raw < 300:   # 1-5 minutes: Two-phase buildup
         phase_structure = ["contemplative", "building"]
-    elif thinking_duration_seconds < 900:   # 5-15 minutes: Three-phase development
+    elif thinking_time_seconds_raw < 900:   # 5-15 minutes: Three-phase development
         phase_structure = ["contemplative", "building", "urgent"]
     else:                                    # 15+ minutes: Full orchestral buildup
         phase_structure = ["contemplative", "building", "urgent", "climactic"]
@@ -352,8 +375,8 @@ def generate_thinking_arpeggio(
 
                 # Add the note - proper MIDI timing
                 if note_in_phase == 0 and phase_num == 0:
-                    # First note of arpeggio - start after previous move completes
-                    delay = 240  # Brief pause after previous move
+                    # First note of arpeggio - small initial delay
+                    delay = 30
                 else:
                     # Subsequent notes - spacing between notes
                     delay = ticks_between_notes
@@ -362,6 +385,8 @@ def generate_thinking_arpeggio(
 
                 current_time += ticks_between_notes
                 step_index += 1
+
+    return total_ticks  # Inform caller how many ticks were consumed by arpeggio
 
 def create_harmonic_progression(source_note, target_note, num_steps):
     """Create harmonic progression from source to target note."""
@@ -448,7 +473,8 @@ def main():
     white_track = mido.MidiTrack()
     black_track = mido.MidiTrack()
     drone_track = mido.MidiTrack()
-    mid.tracks.extend([white_track, black_track, drone_track])
+    arpeggio_track = mido.MidiTrack()
+    mid.tracks.extend([white_track, black_track, drone_track, arpeggio_track])
 
     # Initialize track volumes to ensure they're not stuck at low levels
     white_track.append(mido.Message("control_change", control=7, value=100, time=0))  # Set main volume
@@ -462,16 +488,14 @@ def main():
         drone_program = config['drones']['instrument']
 
         # Start opening drone
-        drone_track.append(mido.Message("program_change", program=drone_program, time=0))
-        drone_track.append(mido.Message("note_on", note=drone_note, velocity=config['drones']['phases']['opening']['velocity'], time=0))
+    drone_track.append(mido.Message("program_change", program=drone_program, channel=CHANNELS['drone'], time=0))
+    drone_track.append(mido.Message("control_change", control=10, value=64, channel=CHANNELS['drone'], time=0))
+    drone_track.append(mido.Message("note_on", note=drone_note, velocity=config['drones']['phases']['opening']['velocity'], channel=CHANNELS['drone'], time=0))
 
     board = game.board()
     node = game  # needed to access comments in sync with moves
 
-    # Track timing for staggered notes and arpeggio end times
-    white_arpeggio_end_time = 0
-    black_arpeggio_end_time = 0
-    current_midi_time = 0
+    # (Arpeggio timing now managed locally per move; no cross-player overlap control yet)
 
     for ply, move in enumerate(game.mainline_moves(), start=1):
         node = node.variation(0)       # advance node alongside move
@@ -492,23 +516,6 @@ def main():
 
         # Get preprocessed thinking time
         thinking_time = timing_data.get(ply)
-
-        # Check if we need to fade out previous player's arpeggio
-        is_white_move = (ply % 2 == 1)
-
-        if is_white_move:
-            # White move - check if Black arpeggio is still playing
-            if current_midi_time < black_arpeggio_end_time:
-                # Add fadeout to black track
-                add_arpeggio_fadeout(black_track, program, pan)
-                black_arpeggio_end_time = current_midi_time  # Mark as ended
-        else:
-            # Black move - check if White arpeggio is still playing
-            if current_midi_time < white_arpeggio_end_time:
-                # Add fadeout to white track
-                add_arpeggio_fadeout(white_track, program, pan)
-                white_arpeggio_end_time = current_midi_time  # Mark as ended
-
 
         # Set duration for the actual move note
         if thinking_time is not None:
@@ -538,34 +545,36 @@ def main():
         octave = note // 12 - 1
         print(f"Ply {ply}: {piece} {move.uci()} -> Note {note} ({note_name}{octave}) Program {program} Vel {velocity} Dur {duration} ticks")
 
-        # Generate thinking arpeggio BEFORE this move if there was deep thinking
+        # Generate thinking arpeggio BEFORE this move if there was deep thinking (threshold 25s raw EMT)
         if thinking_time is not None and thinking_time >= 25:
-            print(f"*** GENERATING ARPEGGIO BEFORE Ply {ply}: {thinking_time} seconds thinking time ***")
+            print(f"*** GENERATING ARPEGGIO BEFORE Ply {ply}: raw EMT {thinking_time:.1f} seconds ***")
 
-            # Calculate exact arpeggio duration (compressed but proportional)
-            arpeggio_duration = calculate_arpeggio_duration(thinking_time, game_type)
-            arpeggio_ticks = int(arpeggio_duration * 480)
+            # Derive source square note (piece starting square) distinct from destination mapping
+            from_square = move.from_square
+            from_file = chess.FILE_NAMES[chess.square_file(from_square)]
+            from_rank = chess.square_rank(from_square) + 1
+            source_base_pitch = config['pitch_mapping'][from_file] + (from_rank - 1) * 3
+            source_square_note = snap_to_scale(source_base_pitch, config['scale'])
 
-            # Generate arpeggio with exact duration
-            generate_thinking_arpeggio(
-                track=track,
-                thinking_duration_seconds=arpeggio_duration,
+            arpeggio_ticks = generate_thinking_arpeggio(
+                track=arpeggio_track,
+                thinking_time_seconds_raw=thinking_time,
                 piece_about_to_move=piece,
-                source_square_note=move_to_note(move, board, config),
+                source_square_note=source_square_note,
                 target_square_note=base_note,
                 config=config,
                 program=program,
                 game_type=game_type,
                 pan=pan
-            )
-
-            # The move note must start AFTER the arpeggio ends
-            stagger_delay = arpeggio_ticks + 120  # Arpeggio duration + small gap
+            ) or 0
+            # Move note will follow shortly regardless of arpeggio length (separate track already carries buildup)
+            stagger_delay = 60  # constant small gap
         else:
             # No arpeggio - normal small delay
             stagger_delay = 60 if ply > 1 else 0
 
-        add_note(track, program, note, velocity, duration, pan, stagger_delay)
+        current_channel = CHANNELS['white'] if board.turn else CHANNELS['black']
+        add_note(track, program, note, velocity, duration, pan, stagger_delay, channel=current_channel)
 
         if nag in config['effects']['nag']:
             effect = config['effects']['nag'][nag]
@@ -575,27 +584,26 @@ def main():
             effect_velocity = effect.get('velocity', velocity + effect.get('velocity_boost', 0) + effect.get('velocity_change', 0))
             effect_duration = int(duration * effect.get('duration_multiplier', effect.get('duration_ratio', 1)))
             effect_delay = effect.get('delay', 0)
-            add_note(track, effect_program, effect_note, effect_velocity, effect_duration, pan, effect_delay)
-
+            add_note(track, effect_program, effect_note, effect_velocity, effect_duration, pan, effect_delay, channel=CHANNELS['effects'])
 
         if board.is_capture(move):
             capture_effect = config['effects']['capture']
             raw_capture_note = note + capture_effect['pitch_shift']
             capture_note = snap_to_scale(raw_capture_note, config['scale'])
             capture_velocity = velocity + capture_effect['velocity_change']
-            add_note(track, program, capture_note, capture_velocity, duration, pan, capture_effect['delay'])
+            add_note(track, program, capture_note, capture_velocity, duration, pan, capture_effect['delay'], channel=current_channel, init_program=False)
 
         board.push(move)
         if board.is_checkmate():
             checkmate_effect = config['effects']['checkmate']
             for n in checkmate_effect['chord']:
                 checkmate_note = snap_to_scale(n, config['scale'])
-                add_note(track, program, checkmate_note, checkmate_effect['velocity'], checkmate_effect['duration'], pan)
+                add_note(track, program, checkmate_note, checkmate_effect['velocity'], checkmate_effect['duration'], pan, channel=current_channel, init_program=False)
         elif board.is_check():
             check_effect = config['effects']['check']
             raw_check_note = note + check_effect['pitch_shift']
             check_note = snap_to_scale(raw_check_note, config['scale'])
-            add_note(track, program, check_note, check_effect['velocity'], duration, pan)
+            add_note(track, program, check_note, check_effect['velocity'], duration, pan, channel=current_channel, init_program=False)
 
 
     out_name = pgn_file.rsplit(".", 1)[0] + "_music.mid"
