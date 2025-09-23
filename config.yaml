@@ -11,7 +11,7 @@ instruments:
   Q:
     program: 4  # Violin
   K:
-    program: 19   # Recorder
+    program: 68   # Recorder
 
 # Velocity (volume) settings for each piece type
 velocity:

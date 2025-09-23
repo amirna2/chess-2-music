@@ -105,20 +105,32 @@ def preprocess_timing_data(game):
 
     white_prev_clock = None
     black_prev_clock = None
+    white_prev_timestamp = None
+    black_prev_timestamp = None
 
     node = game
     for ply, move in enumerate(game.mainline_moves(), start=1):
         node = node.variation(0)
         comment = node.comment
 
-        # Try direct timestamp first
-        thinking_time = extract_timestamp(comment)
+        # Try direct timestamp first - calculate delta from previous FOR SAME PLAYER
+        current_timestamp = extract_timestamp(comment)
+        thinking_time = None
+        is_white_move = (ply % 2 == 1)
 
-        if thinking_time is None:
+        if current_timestamp is not None:
+            if is_white_move:
+                if white_prev_timestamp is not None:
+                    thinking_time = current_timestamp - white_prev_timestamp
+                white_prev_timestamp = current_timestamp
+            else:
+                if black_prev_timestamp is not None:
+                    thinking_time = current_timestamp - black_prev_timestamp
+                black_prev_timestamp = current_timestamp
+        else:
             # Try clock calculation
             current_clock = extract_clock_time(comment)
             if current_clock is not None:
-                is_white_move = (ply % 2 == 1)
 
                 if is_white_move:
                     if white_prev_clock is not None:
@@ -237,10 +249,11 @@ def add_note(track, program, note, velocity, duration, pan=64, delay=0):
     track.append(mido.Message("note_off", note=note, velocity=velocity, time=duration))
 
 def add_arpeggio_note(track, note, velocity, duration, pan=64, delay=0):
-    """Add arpeggio note without changing instrument program."""
-    track.append(mido.Message("control_change", control=10, value=pan, time=delay))
-    track.append(mido.Message("note_on", note=note, velocity=velocity, time=0))
-    track.append(mido.Message("note_off", note=note, velocity=velocity, time=duration))
+    """Add arpeggio note with proper MIDI sequencing."""
+    # Add note_on with delay from previous message
+    track.append(mido.Message("note_on", note=note, velocity=velocity, time=delay))
+    # Add note_off exactly when this note should end
+    track.append(mido.Message("note_off", note=note, velocity=0, time=duration))
 
 def add_arpeggio_fadeout(track, program, pan=64):
     """Add graceful fadeout when arpeggio is interrupted."""
@@ -249,25 +262,17 @@ def add_arpeggio_fadeout(track, program, pan=64):
     pass
 
 def calculate_arpeggio_duration(thinking_time, game_type):
-    """Calculate compressed arpeggio duration with hard cap for practical MP3 conversion."""
-    MAX_ARPEGGIO_DURATION = 90  # Hard cap for MP3 conversion speed
+    """Calculate arpeggio duration based on pure cognitive complexity, not game type."""
+    MAX_ARPEGGIO_DURATION = 30  # Much shorter cap - arpeggios are musical ornaments
 
-    if game_type == "blitz":
-        duration = thinking_time
-    elif game_type == "rapid":
-        if thinking_time <= 120:
-            duration = thinking_time
-        else:
-            duration = 120 + (thinking_time - 120) * 0.4
-    else:  # classical
-        if thinking_time <= 60:
-            duration = thinking_time
-        elif thinking_time <= 300:
-            duration = 60 + (thinking_time - 60) * 0.5
-        else:
-            duration = 180 + (thinking_time - 300) * 0.2
+    # Pure cognitive time mapping - regardless of game format
+    if thinking_time <= 90:
+        duration = thinking_time * 0.3  # 30% of thinking time
+    elif thinking_time <= 300:  # 1.5-5 minutes
+        duration = 27 + (thinking_time - 90) * 0.1  # Gentle scaling
+    else:  # 5+ minutes (epic thinks)
+        duration = 48 + (thinking_time - 300) * 0.05  # Very gentle for longest thinks
 
-    # Apply hard cap to keep MP3 conversion practical
     return min(duration, MAX_ARPEGGIO_DURATION)
 
 def generate_thinking_arpeggio(
@@ -288,6 +293,7 @@ def generate_thinking_arpeggio(
 
     # Use shared compression logic with hard cap
     compressed_duration = calculate_arpeggio_duration(thinking_duration_seconds, game_type)
+    print(f"    Arpeggio: {thinking_duration_seconds}s thinking -> {compressed_duration}s compressed duration")
 
     # Convert to MIDI ticks
     total_ticks = int(compressed_duration * 480)  # 480 ticks per second
@@ -344,8 +350,13 @@ def generate_thinking_arpeggio(
                 velocity = int(velocity_base + velocity_progression * 15)
                 velocity = min(velocity, 80)  # Cap to avoid overwhelming
 
-                # Add the note - ensure it ends before next note starts
-                delay = 0 if note_in_phase == 0 and phase_num == 0 else ticks_between_notes
+                # Add the note - proper MIDI timing
+                if note_in_phase == 0 and phase_num == 0:
+                    # First note of arpeggio - start after previous move completes
+                    delay = 240  # Brief pause after previous move
+                else:
+                    # Subsequent notes - spacing between notes
+                    delay = ticks_between_notes
                 actual_duration = min(note_duration, ticks_between_notes - 20) if ticks_between_notes > 20 else 20
                 add_arpeggio_note(track, note, velocity, actual_duration, pan, delay)
 
@@ -527,8 +538,33 @@ def main():
         octave = note // 12 - 1
         print(f"Ply {ply}: {piece} {move.uci()} -> Note {note} ({note_name}{octave}) Program {program} Vel {velocity} Dur {duration} ticks")
 
-        # Use small stagger delay for main note
-        stagger_delay = 60 if ply > 1 else 0  # First note has no delay
+        # Generate thinking arpeggio BEFORE this move if there was deep thinking
+        if thinking_time is not None and thinking_time >= 25:
+            print(f"*** GENERATING ARPEGGIO BEFORE Ply {ply}: {thinking_time} seconds thinking time ***")
+
+            # Calculate exact arpeggio duration (compressed but proportional)
+            arpeggio_duration = calculate_arpeggio_duration(thinking_time, game_type)
+            arpeggio_ticks = int(arpeggio_duration * 480)
+
+            # Generate arpeggio with exact duration
+            generate_thinking_arpeggio(
+                track=track,
+                thinking_duration_seconds=arpeggio_duration,
+                piece_about_to_move=piece,
+                source_square_note=move_to_note(move, board, config),
+                target_square_note=base_note,
+                config=config,
+                program=program,
+                game_type=game_type,
+                pan=pan
+            )
+
+            # The move note must start AFTER the arpeggio ends
+            stagger_delay = arpeggio_ticks + 120  # Arpeggio duration + small gap
+        else:
+            # No arpeggio - normal small delay
+            stagger_delay = 60 if ply > 1 else 0
+
         add_note(track, program, note, velocity, duration, pan, stagger_delay)
 
         if nag in config['effects']['nag']:
@@ -561,22 +597,6 @@ def main():
             check_note = snap_to_scale(raw_check_note, config['scale'])
             add_note(track, program, check_note, check_effect['velocity'], duration, pan)
 
-        # Generate thinking arpeggio AFTER the move is played
-        if thinking_time is not None and thinking_time >= 10 and ply > 1:
-            source_note = move_to_note(move, board, config)  # Source square
-            target_note = base_note  # Destination square
-
-            generate_thinking_arpeggio(
-                track=track,
-                thinking_duration_seconds=thinking_time,
-                piece_about_to_move=piece,
-                source_square_note=source_note,
-                target_square_note=target_note,
-                config=config,
-                program=program,
-                game_type=game_type,
-                pan=pan
-            )
 
     out_name = pgn_file.rsplit(".", 1)[0] + "_music.mid"
     mid.save(out_name)
