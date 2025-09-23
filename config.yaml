@@ -1,17 +1,17 @@
 # Chess piece to MIDI instrument mapping (General MIDI program numbers)
 instruments:
   P:
-    program: 0  # flute
+    program: 40  # flute
   N:
-    program: 1   # Synth Bass 1
+    program: 14   # Synth Bass 1
   B:
-    program: 2   # Clarinet
+    program: 33   # Clarinet
   R:
-    program: 3   # Timpani
+    program: 47   # Timpani
   Q:
-    program: 4  # Violin
+    program: 46   # Harp
   K:
-    program: 68   # Recorder
+    program: 19   # Recorder
 
 # Velocity (volume) settings for each piece type
 velocity:
@@ -129,4 +129,4 @@ effects:
 
 panning:
   white: 46
-  black: 87
+  black: 81
