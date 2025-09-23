@@ -18,6 +18,8 @@ CHANNELS = {
 }
 
 _LAST_PROGRAM = {}
+ARP_PROGRAM = 24
+_ARP_PROGRAM_INITIALIZED = False
 
 def get_optimal_octave_shift(program, base_midpoint):
     """Expert-level orchestral register placement based on Spiegel-level knowledge."""
@@ -251,19 +253,16 @@ def move_to_note(move, board, config):
     return snap_to_scale(note, config['scale'])
 
 def add_note(track, program, note, velocity, duration, pan=64, delay=0, channel=0, init_program=True):
-    """Add a note, ensuring pan is enforced every time and program changes only when needed.
-
-    Some synths may ignore persistent pan after repeated program changes; so we resend pan.
-    """
-    # Program change only if requested and changed
+    """Add a note with the delay applied to the NOTE ON (not swallowed by program/pan)."""
+    original_delay = delay
+    # Program change only if needed; never consume the musical delay here
     if init_program and (_LAST_PROGRAM.get(channel) != program):
-        track.append(mido.Message("program_change", program=program, channel=channel, time=delay))
-        delay = 0
+        track.append(mido.Message("program_change", program=program, channel=channel, time=0))
         _LAST_PROGRAM[channel] = program
-    # Always reassert pan for safety
-    track.append(mido.Message("control_change", control=10, value=pan, channel=channel, time=delay))
-    delay = 0
-    track.append(mido.Message("note_on", note=note, velocity=velocity, channel=channel, time=0))
+    # Reassert pan (0 delta)
+    track.append(mido.Message("control_change", control=10, value=pan, channel=channel, time=0))
+    # Apply the scheduled delay to the sounding event
+    track.append(mido.Message("note_on", note=note, velocity=velocity, channel=channel, time=original_delay))
     track.append(mido.Message("note_off", note=note, velocity=velocity, channel=channel, time=duration))
 
 def add_arpeggio_note(track, note, velocity, duration, pan=64, delay=0, channel=CHANNELS['arpeggio']):
@@ -277,7 +276,7 @@ def add_arpeggio_fadeout(track, program, pan=64):
     # as they persist and affect all subsequent notes on the track
     pass
 
-def calculate_arpeggio_duration(thinking_time, game_type):
+def calculate_arpeggio_duration(thinking_time):
     """Calculate arpeggio duration based on pure cognitive complexity, not game type."""
     MAX_ARPEGGIO_DURATION = 30  # Much shorter cap - arpeggios are musical ornaments
 
@@ -301,7 +300,8 @@ def generate_thinking_arpeggio(
     program,
     game_type,
     pan=64,
-    first_note_delay=0
+    first_note_delay=0,
+    ticks_per_second=960,
 ):
     """Generate musical phrase during thinking time that builds toward the move."""
     # Only consider sufficiently long thinks (guard)
@@ -309,11 +309,11 @@ def generate_thinking_arpeggio(
         return 0
 
     # Compress raw cognitive time to playable musical duration (seconds)
-    compressed_duration_seconds = calculate_arpeggio_duration(thinking_time_seconds_raw, game_type)
+    compressed_duration_seconds = calculate_arpeggio_duration(thinking_time_seconds_raw)
     print(f"    Arpeggio: raw {thinking_time_seconds_raw:.1f}s -> compressed {compressed_duration_seconds:.2f}s")
 
-    # Convert to MIDI ticks (assumes 480 ppq)
-    total_ticks = int(compressed_duration_seconds * 480)
+    # Convert to MIDI ticks using current tempo (ticks_per_second derived from BPM * PPQ / 60)
+    total_ticks = int(compressed_duration_seconds * ticks_per_second)
 
     # Determine phrase structure based on RAW thinking duration (musical narrative tied to real time spent)
     if thinking_time_seconds_raw < 60:       # 10-60 seconds: Simple arpeggio
@@ -354,8 +354,10 @@ def generate_thinking_arpeggio(
             velocity_base = 75
             notes_per_phase = 12
 
-        # Generate notes for this phase
-        ticks_between_notes = phase_ticks // notes_per_phase
+        # Generate notes for this phase with closer spacing
+        # Reduce spacing between notes for a more fluid arpeggio
+        base_note_spacing = min(120, phase_ticks // (notes_per_phase * 2))  # Much tighter spacing
+        ticks_between_notes = max(60, base_note_spacing)  # Minimum 60 ticks between notes
 
         for note_in_phase in range(notes_per_phase):
             if step_index < len(harmonic_steps):
@@ -373,7 +375,8 @@ def generate_thinking_arpeggio(
                     delay = first_note_delay
                 else:
                     delay = ticks_between_notes
-                actual_duration = min(note_duration, ticks_between_notes - 20) if ticks_between_notes > 20 else 20
+                guard = ticks_between_notes - 20 if ticks_between_notes > 20 else 20
+                actual_duration = min(note_duration, guard)
                 add_arpeggio_note(track, note, velocity, actual_duration, pan, delay)
 
                 current_time += ticks_between_notes
@@ -443,6 +446,7 @@ def main():
 
     debug_pan = any(arg == '--debug-pan' for arg in sys.argv[2:])
     trace_arps = any(arg == '--trace-arps' for arg in sys.argv[2:])
+    force_arps = any(arg == '--force-arps' for arg in sys.argv[2:])
     pgn_file = sys.argv[1]
     config = load_config()
 
@@ -500,6 +504,8 @@ def main():
     base_gap = 120  # gap after a move note before any thinking arpeggio starts
     global_time_ticks = 0  # conceptual main timeline (not strictly needed per track but for debug)
     arpeggio_track_time = 0  # accumulated time position within arpeggio track
+    # Track current tempo (BPM) for tempo-aware arpeggio tick scaling
+    current_bpm = config['tempo']['opening']
 
     # Initialize channel program/pan once (remove hard L/R debug). Use config panning.
     pan_white = config.get('panning', {}).get('white', 64)
@@ -507,7 +513,7 @@ def main():
     # Provide default arpeggio pan centered unless later customized
     pan_arpeggio = 64
 
-    scheduled_arps = []  # collect (before_ply, next_emt, compressed_secs, start_tick, end_tick)
+    scheduled_arps = []  # collect dicts for summary (ply, emt, compressed, start_tick, end_tick, move_tick)
 
     for idx, move in enumerate(moves_list, start=1):
         ply = idx
@@ -527,8 +533,11 @@ def main():
             program = instrument_config or 0
             note = base_note
 
-        # Get preprocessed thinking time
+        # Get preprocessed thinking time (EMT refers to time spent BEFORE this move)
         thinking_time = timing_data.get(ply)
+        # Optionally override for testing to force early arpeggios
+        if force_arps and ply in (2, 4):  # simple hack: force arps on ply 2 and 4
+            thinking_time = max(thinking_time or 0, 40.0)  # ensure above threshold
 
         # Set duration for the actual move note
         if thinking_time is not None:
@@ -548,90 +557,88 @@ def main():
 
         if ply == 1:
             set_tempo(track, config['tempo']['opening'])
+            current_bpm = config['tempo']['opening']
         elif ply == 11:
             set_tempo(track, config['tempo']['middlegame'])
+            current_bpm = config['tempo']['middlegame']
         elif ply == 31:
             set_tempo(track, config['tempo']['endgame'])
+            current_bpm = config['tempo']['endgame']
 
         # Debug output
         note_name = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"][note % 12]
         octave = note // 12 - 1
-        print(f"Ply {ply}: {piece} {move.uci()} -> Note {note} ({note_name}{octave}) Program {program} Vel {velocity} Dur {duration} ticks  @main_tick {global_time_ticks}")
+        # PRE-MOVE ARPEGGIO MODEL
+        # If this side just thought for a long time (thinking_time), we represent that by an arpeggio that
+        # occupies time BEFORE the move note is heard.
+        ARP_THRESHOLD = 25.0 if not force_arps else 5.0  # lower threshold when forcing
+        arpeggio_total_ticks = 0
+        if thinking_time and thinking_time >= ARP_THRESHOLD:
+            # Derive source (piece's origin square BEFORE move) and target (destination) notes
+            from_square = move.from_square
+            from_file = chess.FILE_NAMES[chess.square_file(from_square)]
+            from_rank = chess.square_rank(from_square) + 1
+            source_base_pitch = config['pitch_mapping'][from_file] + (from_rank - 1) * 3
+            source_square_note = snap_to_scale(source_base_pitch, config['scale'])
+            target_square_note = base_note
 
-        # Schedule the move note now (we use stagger_delay to represent time since previous event on this track)
-        stagger_delay = base_gap if ply > 1 else 0
-        current_channel = CHANNELS['white'] if board.turn else CHANNELS['black']
-        add_note(track, program, note, velocity, duration, pan, stagger_delay, channel=current_channel)
+            compressed_secs = calculate_arpeggio_duration(thinking_time)
+            ticks_per_second = PPQ * current_bpm / 60.0
 
-        move_end_tick = global_time_ticks + stagger_delay + duration
-
-        # LOOKAHEAD TRACE (informational even if no arpeggio)
-        if trace_arps and ply < total_plies:
-            nxt_emt = timing_data.get(ply + 1)
-            if nxt_emt is not None:
-                if nxt_emt >= 25:
-                    comp_dbg = calculate_arpeggio_duration(nxt_emt, game_type)
-                    print(f"[TRACE] Gap after ply {ply}: next ply {ply+1} EMT={nxt_emt:.1f}s -> arpeggio compressed {comp_dbg:.2f}s candidate")
-                else:
-                    print(f"[TRACE] Gap after ply {ply}: next ply {ply+1} EMT={nxt_emt:.1f}s -> no arpeggio (below threshold)")
+            # Arpeggio starts at current global_time_ticks and ends at global_time_ticks + arpeggio_total_ticks
+            # Compute delay needed on arpeggio track
+            if arpeggio_track_time <= global_time_ticks:
+                first_delay = global_time_ticks - arpeggio_track_time
             else:
-                print(f"[TRACE] Gap after ply {ply}: next ply {ply+1} EMT=unknown -> no arpeggio")
+                # Arpeggio track somehow ahead (overlap) -> start immediately
+                first_delay = 0
 
-        # LOOKAHEAD: examine next ply's EMT to decide arpeggio filling BEFORE next move note
-        if ply < total_plies:
-            next_ply = ply + 1
-            next_emt = timing_data.get(next_ply)
-            if next_emt and next_emt >= 25:  # deep think threshold
-                # Determine source (current move destination as starting color's square) and target (next move destination)
-                # We need next move target square note for harmonic goal
-                next_move = moves_list[idx]  # zero-based idx corresponds to ply
-                next_base_note = move_to_note(next_move, board, config)
-
-                # Use current move target as source for contemplation
-                from_square = move.to_square
-                from_file = chess.FILE_NAMES[chess.square_file(from_square)]
-                from_rank = chess.square_rank(from_square) + 1
-                source_base_pitch = config['pitch_mapping'][from_file] + (from_rank - 1) * 3
-                source_square_note = snap_to_scale(source_base_pitch, config['scale'])
-
-                compressed_secs = calculate_arpeggio_duration(next_emt, game_type)
-                arpeggio_total_ticks = int(compressed_secs * PPQ)
-
-                # Arpeggio should start right after this move's note (move_end_tick) and finish just before next move's note.
-                # For now, we don't extend global timeline artificially; we just place arpeggio events relative to arpeggio_track_time.
-                desired_start_tick = move_end_tick
-                # Advance arpeggio track if it's behind desired start
-                if arpeggio_track_time < desired_start_tick:
-                    first_delay = desired_start_tick - arpeggio_track_time
+            print(f"[ARP-BEFORE PLY {ply}] EMT {thinking_time:.1f}s compressed {compressed_secs:.2f}s start_tick={global_time_ticks}")
+            # Initialize arpeggio program once for distinct timbre
+            global _ARP_PROGRAM_INITIALIZED
+            if not _ARP_PROGRAM_INITIALIZED:
+                arpeggio_track.append(mido.Message("program_change", program=ARP_PROGRAM, channel=CHANNELS['arpeggio'], time=0))
+                arpeggio_track.append(mido.Message("control_change", control=10, value=64, channel=CHANNELS['arpeggio'], time=0))
+                _ARP_PROGRAM_INITIALIZED = True
+            arpeggio_total_ticks = generate_thinking_arpeggio(
+                track=arpeggio_track,
+                thinking_time_seconds_raw=thinking_time,
+                piece_about_to_move=piece,
+                source_square_note=source_square_note,
+                target_square_note=target_square_note,
+                config=config,
+                program=ARP_PROGRAM,
+                game_type=game_type,
+                pan=pan_arpeggio,
+                first_note_delay=first_delay,
+                ticks_per_second=ticks_per_second,
+            )
+            print(f"    -> Arpeggio consumed {arpeggio_total_ticks} ticks ends_at={global_time_ticks + arpeggio_total_ticks}")
+            arpeggio_track_time = global_time_ticks + arpeggio_total_ticks
+            scheduled_arps.append({
+                'ply': ply,
+                'emt': thinking_time,
+                'compressed_secs': compressed_secs,
+                'start_tick': global_time_ticks,
+                'end_tick': global_time_ticks + arpeggio_total_ticks,
+                'move_tick': global_time_ticks + arpeggio_total_ticks
+            })
+        else:
+            if trace_arps:
+                if thinking_time is None:
+                    print(f"[ARP-BEFORE PLY {ply}] no EMT -> skip")
                 else:
-                    first_delay = 0  # overlap or continuous texture
+                    print(f"[ARP-BEFORE PLY {ply}] EMT {thinking_time:.1f}s below threshold ({ARP_THRESHOLD}) -> skip")
 
-                print(f"[ARP] Scheduled BEFORE ply {next_ply}: EMT {next_emt:.1f}s compressed {compressed_secs:.2f}s start_tick={desired_start_tick} first_delay={first_delay} length_ticks={arpeggio_total_ticks}")
-
-                generate_thinking_arpeggio(
-                    track=arpeggio_track,
-                    thinking_time_seconds_raw=next_emt,
-                    piece_about_to_move=piece,
-                    source_square_note=source_square_note,
-                    target_square_note=next_base_note,
-                    config=config,
-                    program=program,
-                    game_type=game_type,
-                    pan=pan_arpeggio,
-                    first_note_delay=first_delay
-                )
-                # Update arpeggio track time to end of this arpeggio phrase
-                arpeggio_track_time = desired_start_tick + arpeggio_total_ticks
-                scheduled_arps.append({
-                    'before_ply': next_ply,
-                    'emt': next_emt,
-                    'compressed_secs': compressed_secs,
-                    'start_tick': desired_start_tick,
-                    'end_tick': desired_start_tick + arpeggio_total_ticks
-                })
-
-        # Advance main timeline notionally by the stagger + duration
-        global_time_ticks = move_end_tick
+        # Now schedule the move note AFTER any arpeggio time plus a small gap
+        post_arp_gap = 30  # slight breathing space
+        move_start_tick = global_time_ticks + arpeggio_total_ticks + (post_arp_gap if arpeggio_total_ticks else 0)
+        # Delay relative to last event in this piece-color track assumed at or before global_time_ticks
+        track_current_time = global_time_ticks  # since we keep global timeline linear for moves
+        delay_for_move = move_start_tick - track_current_time
+        current_channel = CHANNELS['white'] if board.turn else CHANNELS['black']
+        add_note(track, program, note, velocity, duration, pan, delay_for_move, channel=current_channel)
+        print(f"Ply {ply}: {piece} {move.uci()} -> Note {note} ({note_name}{octave}) Program {program} Vel {velocity} Dur {duration} ticks  @move_tick {move_start_tick}")
 
         if nag in config['effects']['nag']:
             effect = config['effects']['nag'][nag]
@@ -651,6 +658,7 @@ def main():
             add_note(track, program, capture_note, capture_velocity, duration, pan, capture_effect['delay'], channel=current_channel, init_program=False)
 
         board.push(move)
+
         if board.is_checkmate():
             checkmate_effect = config['effects']['checkmate']
             for n in checkmate_effect['chord']:
@@ -662,19 +670,22 @@ def main():
             check_note = snap_to_scale(raw_check_note, config['scale'])
             add_note(track, program, check_note, check_effect['velocity'], duration, pan, channel=current_channel, init_program=False)
 
+        move_end_tick = move_start_tick + duration
+        global_time_ticks = move_end_tick + base_gap
+
 
     out_name = pgn_file.rsplit(".", 1)[0] + "_music.mid"
     mid.save(out_name)
     print(f"Saved MIDI to {out_name}")
 
     if trace_arps:
-        print("=== ARPEGGIO SCHEDULE SUMMARY ===")
+        print("=== ARPEGGIO SCHEDULE SUMMARY (PRE-MOVE) ===")
         if not scheduled_arps:
             print("(none)")
         else:
             for entry in scheduled_arps:
-                print(f"Before ply {entry['before_ply']}: EMT {entry['emt']:.1f}s -> {entry['compressed_secs']:.2f}s ticks {entry['start_tick']} - {entry['end_tick']}")
-        print("==================================")
+                print(f"PLY {entry['ply']}: EMT {entry['emt']:.1f}s -> {entry['compressed_secs']:.2f}s ticks {entry['start_tick']} - {entry['end_tick']} move_at {entry['move_tick']}")
+        print("=============================================")
 
     if debug_pan:
         print("=== MIDI CHANNEL / PAN ANALYSIS ===")

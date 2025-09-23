@@ -1,26 +1,26 @@
 # Chess piece to MIDI instrument mapping (General MIDI program numbers)
 instruments:
   P:
-    program: 40  # flute
+    program: 40  # Violin
   N:
     program: 14   # Synth Bass 1
   B:
-    program: 33   # Clarinet
+    program: 33   # Electric Bass (finger)
   R:
-    program: 47   # Timpani
+    program: 98   # Syth Drum
   Q:
     program: 46   # Harp
   K:
-    program: 19   # Recorder
+    program: 60   # French Horn
 
 # Velocity (volume) settings for each piece type
 velocity:
-  P: 40
-  N: 50
-  B: 50
-  R: 60
-  Q: 70
-  K: 60
+  P: 30
+  N: 40
+  B: 40
+  R: 70
+  Q: 90
+  K: 100
 
 # Board file mapping to MIDI notes
 pitch_mapping:
@@ -44,8 +44,8 @@ tempo:
 
 # Drone notes based on ECO opening classification
 drones:
-  enabled: true
-  instrument: 19      # Organ - perfect for sustained drones
+  enabled: false
+  instrument: 61      # Organ - perfect for sustained drones
   eco_mapping:
     A: 36            # C2 - Flank openings (English, irregular) - Tonic, stable
     B: 43            # G2 - Semi-open games (1.e4 c5, c6, etc.) - Perfect 5th, stable
@@ -54,15 +54,15 @@ drones:
     E: 38            # D2 - Indian defenses - Whole step, modern/floating
   phases:
     opening:
-      velocity: 25
+      velocity: 90
       duration: 16000
       harmonies: []   # Single drone note
     middlegame:
-      velocity: 20
+      velocity: 30
       duration: 16000
       harmonies: [7]  # Add perfect 5th above base note
     endgame:
-      velocity: 30
+      velocity: 45
       duration: 16000
       harmonies: [12] # Add octave above for resolution
 
