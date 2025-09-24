@@ -16,6 +16,7 @@ CHANNELS = {
     'white': 0,
     'black': 1,
     'drone': 2,
+    'arpeggio': 3,  # thinking time arpeggios
     'effects': 4,  # optional separate channel for NAG/capture/check accents
     'white_drone': 5,
     'black_drone': 6,
@@ -79,18 +80,18 @@ def format_note(note: int) -> str:
     names = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
     return f"{names[note % 12]}{note // 12 - 1}"
 
-def print_move_line(ply, side, san, piece, note, program, velocity, duration, start_tick, thinking_time=None, compressed_window=None):
+def print_move_line(ply, side, san, piece, note, program, velocity, duration, start_tick, thinking_time=None, compressed_window=None, arpeggio_pattern=None):
     """Print a single move line in tabular form.
 
     Prints a header once on first invocation.
     Columns:
-      PLY | Side | SAN | EMT(s) | CWin(s) | Expr | Note | Pitch | Prog | Vel | Dur(t) | StartTick
+      PLY | Side | SAN | EMT(s) | CWin(s) | Expr | Arp | Note | Pitch | Prog | Vel | Dur(t) | StartTick
     """
     # One-time header
     if not getattr(print_move_line, "_header_printed", False):
         # Define columns with widths matching the data row formatting
         col_defs = [
-            ("PLY", 3), ("Side", 5), ("SAN", 8), ("EMT(s)", 6), ("CWin(s)", 6), ("Expr", 6),
+            ("PLY", 3), ("Side", 5), ("SAN", 8), ("EMT(s)", 6), ("CWin(s)", 6), ("Expr", 6), ("Arp", 4),
             ("Note", 4), ("Pitch", 5), ("Prog", 4), ("Vel", 3), ("Dur(t)", 6), ("StartTick", 9)
         ]
         header = " | ".join(f"{name:<{w}}" for name, w in col_defs)
@@ -112,9 +113,19 @@ def print_move_line(ply, side, san, piece, note, program, velocity, duration, st
         'checkmate': 'mate', 'check': 'check', 'capture': 'capt', 'epic': 'epic', 'long': 'long', 'none': '--'
     }
     expr = abbrev_map.get(expr_full, expr_full[:6])
+    # Format arpeggio pattern for display
+    arp_display = "--"
+    if arpeggio_pattern:
+        # Abbreviate pattern names to fit in 4 characters
+        arp_abbrev = {
+            'micro': 'mcro', 'short': 'shrt', 'medium': 'med',
+            'long': 'long', 'epic': 'epic'
+        }
+        arp_display = arp_abbrev.get(arpeggio_pattern, arpeggio_pattern[:4])
+
     line = (
-        f"{ply:03d} | {side:<5} | {san_disp:<8} | {tt:>6} | {cw:>6} | {expr:<6} | {note:>4} | {note_str:<5} | "
-        f"{program:>4} | {velocity:>3} | {duration:>6} | {start_tick:>9}"
+        f"{ply:03d} | {side:<5} | {san_disp:<8} | {tt:>6} | {cw:>6} | {expr:<6} | {arp_display:<4} | "
+        f"{note:>4} | {note_str:<5} | {program:>4} | {velocity:>3} | {duration:>6} | {start_tick:>9}"
     )
     print(line)
 
@@ -469,6 +480,146 @@ def classify_move_expression(thinking_time: float | None, san: str, nag: int | N
 
     return tag, forced_phase
 
+def classify_arpeggio_pattern(thinking_time: float | None, cfg: dict) -> dict | None:
+    """Classify which arpeggio pattern to use based on thinking time.
+
+    Returns the pattern configuration dict, or None if arpeggios disabled
+    or thinking time doesn't warrant arpeggio activity.
+    """
+    if thinking_time is None or thinking_time <= 0:
+        return None
+
+    arp_cfg = cfg.get('thinking_arpeggios', {})
+    if not arp_cfg.get('enable', False):
+        return None
+
+    patterns = arp_cfg.get('patterns', {})
+
+    # Find the appropriate pattern based on time thresholds
+    # Check in order: epic, long, medium, short, micro
+    pattern_names = ['epic', 'long', 'medium', 'short', 'micro']
+
+    for pattern_name in pattern_names:
+        pattern_cfg = patterns.get(pattern_name, {})
+        min_secs = pattern_cfg.get('min_seconds', 0)
+        max_secs = pattern_cfg.get('max_seconds', float('inf'))
+
+        if min_secs <= thinking_time < max_secs:
+            # Return the pattern config with additional metadata
+            return {
+                'name': pattern_name,
+                'pattern': pattern_cfg.get('pattern', [0, 4, 7]),
+                'rate_ticks': pattern_cfg.get('rate_ticks', 120),
+                'velocity_modifier': pattern_cfg.get('velocity_modifier', 0),
+                'base_velocity': arp_cfg.get('velocity_base', 45)
+            }
+
+    # Fallback to micro pattern if no match (shouldn't happen with proper config)
+    micro_cfg = patterns.get('micro', {})
+    return {
+        'name': 'micro',
+        'pattern': micro_cfg.get('pattern', [0, 4, 7]),
+        'rate_ticks': micro_cfg.get('rate_ticks', 120),
+        'velocity_modifier': micro_cfg.get('velocity_modifier', 0),
+        'base_velocity': arp_cfg.get('velocity_base', 45)
+    }
+
+def generate_thinking_arpeggios(arpeggio_track, thinking_time: float | None, compressed_ticks: int,
+                               pattern_config: dict | None, eco_note: int, cfg: dict,
+                               next_move_note: int | None = None, drone_phase: str = 'idle') -> int:
+    """Generate arpeggio patterns during thinking time window.
+
+    Returns the number of ticks consumed (should equal compressed_ticks).
+    """
+    if pattern_config is None or compressed_ticks <= 0:
+        return 0
+
+    arp_cfg = cfg.get('thinking_arpeggios', {})
+    if not arp_cfg.get('enable', False):
+        return 0
+
+    channel = CHANNELS['arpeggio']
+    pattern_degrees = pattern_config['pattern']
+    rate_ticks = pattern_config['rate_ticks']
+    base_velocity = pattern_config['base_velocity']
+    velocity_modifier = pattern_config['velocity_modifier']
+
+    # Apply drone phase modulations
+    phase_mods = arp_cfg.get('phase_modifiers', {}).get(drone_phase, {})
+    rate_multiplier = phase_mods.get('rate_multiplier', 1.0)
+    velocity_boost = phase_mods.get('velocity_boost', 0)
+
+    # Adjust rate based on phase
+    effective_rate = max(10, int(rate_ticks * rate_multiplier))
+
+    # Calculate how many notes we can fit in the compressed window
+    note_count = max(1, compressed_ticks // effective_rate)
+
+    # If harmonize_with_next_move is enabled, bias toward next move's harmony
+    root_note = eco_note
+    if arp_cfg.get('harmonize_with_next_move', False) and next_move_note is not None:
+        # Subtle bias - blend 70% eco note, 30% next move note
+        # This creates anticipatory harmony
+        root_note = int(eco_note * 0.7 + next_move_note * 0.3)
+
+    # Generate note pattern, snapping to scale
+    scale = cfg.get('scale', [0, 2, 4, 5, 7, 9, 11])
+
+    ticks_used = 0
+    crescendo = arp_cfg.get('crescendo', False)
+
+    # Set instrument program for arpeggio channel
+    arp_instrument = arp_cfg.get('instrument', 46)
+    if _LAST_PROGRAM.get(channel) != arp_instrument:
+        arpeggio_track.append(mido.Message("program_change", program=arp_instrument, channel=channel, time=0))
+        _LAST_PROGRAM[channel] = arp_instrument
+
+    # Add pan setting from config
+    arp_pan = cfg.get('panning', {}).get('arpeggio', 64)
+    arpeggio_track.append(mido.Message("control_change", control=10, value=arp_pan, channel=channel, time=0))
+
+    for i in range(note_count):
+        # Cycle through pattern degrees
+        degree_index = i % len(pattern_degrees)
+        scale_degree = pattern_degrees[degree_index]
+
+        # Calculate actual note
+        candidate_note = root_note + scale_degree
+        arp_note = snap_to_scale(candidate_note, scale)
+
+        # Calculate velocity with crescendo
+        velocity = base_velocity + velocity_modifier + velocity_boost
+        if crescendo and note_count > 1:
+            # Gradual crescendo from 80% to 120% of base velocity
+            crescendo_factor = 0.8 + (0.4 * i / (note_count - 1))
+            velocity = int(velocity * crescendo_factor)
+
+        velocity = max(1, min(127, velocity))
+
+        # Note duration - slightly shorter than interval for articulation
+        note_duration = max(10, int(effective_rate * 0.8))
+
+        # Add time delay for first note, subsequent notes are spaced by effective_rate
+        time_delay = effective_rate if i > 0 else 0
+
+        # Add note messages
+        arpeggio_track.append(mido.Message("note_on", note=arp_note, velocity=velocity, channel=channel, time=time_delay))
+        arpeggio_track.append(mido.Message("note_off", note=arp_note, velocity=0, channel=channel, time=note_duration))
+
+        ticks_used += effective_rate
+
+        # If we're close to filling the window, stop
+        if ticks_used + effective_rate > compressed_ticks:
+            break
+
+    # Fill any remaining time with silence
+    remaining_ticks = compressed_ticks - ticks_used
+    if remaining_ticks > 0:
+        # Add a dummy control message to advance time
+        arpeggio_track.append(mido.Message("control_change", control=7, value=base_velocity, channel=channel, time=remaining_ticks))
+
+    return compressed_ticks
+
 def snap_to_scale(note, scale):
     """Snap note to the nearest pitch in the provided musical scale."""
     scale_notes = sorted(list(set(scale)))
@@ -759,12 +910,17 @@ def main():
     white_track = mido.MidiTrack()
     black_track = mido.MidiTrack()
     drone_track = mido.MidiTrack()
-    mid.tracks.extend([white_track, black_track, drone_track])
+    arpeggio_track = mido.MidiTrack()
+    mid.tracks.extend([white_track, black_track, drone_track, arpeggio_track])
 
     # Initialize track volumes to ensure they're not stuck at low levels
     # Channel-specific volumes
     white_track.append(mido.Message("control_change", channel=CHANNELS['white'], control=7, value=100, time=0))
     black_track.append(mido.Message("control_change", channel=CHANNELS['black'], control=7, value=100, time=0))
+
+    # Initialize arpeggio track volume
+    arp_base_velocity = config.get('thinking_arpeggios', {}).get('velocity_base', 45)
+    arpeggio_track.append(mido.Message("control_change", channel=CHANNELS['arpeggio'], control=7, value=arp_base_velocity, time=0))
 
     # Initialize drone if enabled
     drone_base_note = None
@@ -815,6 +971,9 @@ def main():
         ply = idx
         node = node.variation(0)       # advance node alongside move
         comment = node.comment         # extract PGN comment (timestamps)
+
+        # Reset arpeggio pattern for this move
+        print_move_line._last_arpeggio_pattern = None
 
         base_note = move_to_note(move, board, config)
         raw_piece = board.piece_at(move.from_square)
@@ -891,6 +1050,23 @@ def main():
                     channel=CHANNELS['drone'],
                     override_phase=None  # force idle even if expression forces escalation for dramatic moves
                 )
+
+                # Generate arpeggios during micro think window
+                pattern_config = classify_arpeggio_pattern(thinking_time, config)
+                if pattern_config:
+                    print_move_line._last_arpeggio_pattern = pattern_config.get('name', 'none')
+                    next_move_note = move_to_note(move, board, config) if len(moves_list) > idx else None
+                    generate_thinking_arpeggios(
+                        arpeggio_track=arpeggio_track,
+                        thinking_time=thinking_time,
+                        compressed_ticks=think_window_ticks,
+                        pattern_config=pattern_config,
+                        eco_note=drone_base_note or 36,
+                        cfg=config,
+                        next_move_note=next_move_note,
+                        drone_phase='idle'  # micro thinks always use idle phase
+                    )
+
                 global_time_ticks += think_window_ticks
             # Small think gating ( >1s and <= threshold )
             elif thinking_time <= small_threshold:
@@ -905,8 +1081,30 @@ def main():
                 # classify expression for logging but skip window scheduling
                 expr_tag, forced_phase = classify_move_expression(thinking_time, board.san(move) if board.is_legal(move) else move.uci(), nag, config)
                 print_move_line._last_expr = expr_tag
-                # fall through without scheduling think_window_ticks
-                pass
+
+                # For small thinks, check if arpeggios are enabled independently
+                pattern_config = classify_arpeggio_pattern(thinking_time, config)
+                if pattern_config:
+                    print_move_line._last_arpeggio_pattern = pattern_config.get('name', 'none')
+                    # Create a small window for arpeggios even if drone doesn't get one
+                    compressed_secs = thinking_time * 0.5  # Compress to 50% for small thinks
+                    ticks_per_second = PPQ * current_bpm / 60.0
+                    small_arp_ticks = max(480, int(compressed_secs * ticks_per_second))  # Minimum 1 second
+
+                    next_move_note = move_to_note(move, board, config) if len(moves_list) > idx else None
+                    generate_thinking_arpeggios(
+                        arpeggio_track=arpeggio_track,
+                        thinking_time=thinking_time,
+                        compressed_ticks=small_arp_ticks,
+                        pattern_config=pattern_config,
+                        eco_note=drone_base_note or 36,
+                        cfg=config,
+                        next_move_note=next_move_note,
+                        drone_phase='idle'  # small thinks use idle
+                    )
+                    # Add small window to global timeline
+                    global_time_ticks += small_arp_ticks
+                    think_window_ticks = small_arp_ticks  # For logging consistency
             else:
                 # If we were in small think mode and now leaving, restore phase velocity
                 if small_think_active:
@@ -940,6 +1138,44 @@ def main():
                         channel=CHANNELS['drone'],
                         override_phase=forced_phase
                     )
+
+                    # Generate arpeggios during thinking window - determine drone phase for interaction
+                    pattern_config = classify_arpeggio_pattern(thinking_time, config)
+                    if pattern_config:
+                        print_move_line._last_arpeggio_pattern = pattern_config.get('name', 'none')
+                        # Determine the actual drone phase being used
+                        dm_cfg = config.get("drone_modulation", {})
+                        swell_min = dm_cfg.get("swell_min_seconds", 30)
+                        tension_min = dm_cfg.get("tension_min_seconds", 120)
+                        pulse_min = dm_cfg.get("pulse_min_seconds", 600)
+
+                        active_drone_phase = 'idle'
+                        if thinking_time >= pulse_min:
+                            active_drone_phase = 'pulses'
+                        elif thinking_time >= tension_min:
+                            active_drone_phase = 'tension'
+                        elif thinking_time >= swell_min:
+                            active_drone_phase = 'swell'
+
+                        # Use forced_phase if it escalates beyond natural phase
+                        if forced_phase:
+                            hierarchy = ['idle', 'swell', 'tension', 'pulses']
+                            if (forced_phase in hierarchy and active_drone_phase in hierarchy and
+                                hierarchy.index(forced_phase) > hierarchy.index(active_drone_phase)):
+                                active_drone_phase = forced_phase
+
+                        next_move_note = move_to_note(move, board, config) if len(moves_list) > idx else None
+                        generate_thinking_arpeggios(
+                            arpeggio_track=arpeggio_track,
+                            thinking_time=thinking_time,
+                            compressed_ticks=think_window_ticks,
+                            pattern_config=pattern_config,
+                            eco_note=drone_base_note or 36,
+                            cfg=config,
+                            next_move_note=next_move_note,
+                            drone_phase=active_drone_phase
+                        )
+
                     global_time_ticks += think_window_ticks
         else:
             # still classify so column isn't blank
@@ -958,7 +1194,6 @@ def main():
         last_channel_time = track_times[current_channel]
         delay_for_move = max(0, move_start_tick - last_channel_time)
         add_note(track, program, note, velocity, duration, pan, delay_for_move, channel=current_channel)
-        # Advance this track's time to end of the note
         track_times[current_channel] = last_channel_time + delay_for_move + duration
 
         # (No deferred cleanup needed)
@@ -969,6 +1204,8 @@ def main():
                     compressed_window = map_think_time_to_playback_seconds(thinking_time, config)
                 except Exception:
                     compressed_window = None
+            # Get the arpeggio pattern that was used (if any)
+            arpeggio_pattern = getattr(print_move_line, "_last_arpeggio_pattern", None)
             print_move_line(
                 ply=ply,
                 side='White' if board.turn else 'Black',
@@ -980,7 +1217,8 @@ def main():
                 duration=duration,
                 start_tick=move_start_tick,
                 thinking_time=thinking_time,
-                compressed_window=compressed_window
+                compressed_window=compressed_window,
+                arpeggio_pattern=arpeggio_pattern
             )
         MOVE_EVENTS.append({
             'ply': ply,

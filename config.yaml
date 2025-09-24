@@ -65,7 +65,7 @@ tempo:
 # The drone notes are chosen to provide a stable harmonic base that complements the piece melodies.
 # The drone changes subtly through the game phases to reflect the evolving nature of the game.
 drones:
-  enabled: false
+  enabled: true
   instrument: 48
   eco_mapping:
     A: 36            # C2 - Flank openings (English, irregular) - Tonic, stable
@@ -150,6 +150,71 @@ expression_modulation:
   # If true, we only upscale phase (never downgrade). If false, forced phase overrides unconditionally.
   only_escalate: true
 
+# Thinking Time Arpeggios - Musical patterns that play during thinking periods
+# Represents mental activity and calculation during player contemplation
+# Works in harmony with the drone system to create rich textures during think time
+thinking_arpeggios:
+  enable: true
+  instrument: 46              # Harp - back to subtle texture
+  channel: 3                  # Dedicated MIDI channel
+  velocity_base: 55           # Moderate volume - audible but not dominant
+
+  # Arpeggio patterns based on thinking time duration
+  # Each pattern defines the scale degrees and timing for different think lengths
+  patterns:
+    micro:  # 1-5 seconds - minimal activity
+      min_seconds: 1.0
+      max_seconds: 5.0
+      pattern: [0, 4, 7]      # Simple major triad
+      rate_ticks: 120         # Slower, more sparse
+      velocity_modifier: -10  # Quieter (45 velocity)
+
+    short:  # 5-30 seconds - gentle activity
+      min_seconds: 5.0
+      max_seconds: 30.0
+      pattern: [0, 4, 7, 12]  # Triad + octave
+      rate_ticks: 100
+      velocity_modifier: -5   # Slightly quieter (50 velocity)
+
+    medium: # 30-120 seconds - building complexity
+      min_seconds: 30.0
+      max_seconds: 120.0
+      pattern: [0, 2, 4, 7, 9, 12]  # Pentatonic scale
+      rate_ticks: 80
+      velocity_modifier: 5
+
+    long:   # 120-600 seconds - full activity
+      min_seconds: 120.0
+      max_seconds: 600.0
+      pattern: [0, 2, 4, 5, 7, 9, 11, 12]  # Full major scale
+      rate_ticks: 60
+      velocity_modifier: 8
+
+    epic:   # 600+ seconds - maximum complexity
+      min_seconds: 600.0
+      max_seconds: 9999.0
+      pattern: [0, 2, 4, 5, 7, 9, 11, 12, 14, 16]  # Extended range
+      rate_ticks: 45
+      velocity_modifier: 12
+
+  # Dynamic behavior options
+  crescendo: true             # Gradually increase intensity toward move
+  harmonize_with_next_move: true  # Bias pattern toward upcoming move harmony
+  sync_with_drone_phases: true    # Adapt to drone modulation phases
+
+  # Interaction with drone modulation phases
+  phase_modifiers:
+    swell:
+      rate_multiplier: 0.8    # Slightly slower during swell
+      velocity_boost: 5
+    tension:
+      rate_multiplier: 1.2    # Faster during tension
+      velocity_boost: 10
+      add_chromatic: true     # Add passing tones
+    pulses:
+      sync_to_pulse: true     # Lock to pulse rhythm
+      velocity_boost: 15
+
 
 # Note durations and timing
 dynamic_durations:
@@ -222,4 +287,5 @@ effects:
 panning:
   white: 46
   black: 81
+  arpeggio: 64  # Center arpeggios
 
