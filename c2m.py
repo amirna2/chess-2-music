@@ -23,6 +23,55 @@ CHANNELS = {
 
 _LAST_PROGRAM = {}
 
+
+def calculate_move_distance(move, board):
+    """Calculate the actual distance a piece travels."""
+    from_square = move.from_square
+    to_square = move.to_square
+
+    from_file = chess.square_file(from_square)
+    from_rank = chess.square_rank(from_square)
+    to_file = chess.square_file(to_square)
+    to_rank = chess.square_rank(to_square)
+
+    # For most pieces, use Chebyshev distance (max of file/rank difference)
+    # This matches how pieces move in chess
+    file_dist = abs(to_file - from_file)
+    rank_dist = abs(to_rank - from_rank)
+
+    piece = board.piece_at(from_square)
+    if piece and piece.piece_type == chess.KNIGHT:
+        # Knight always moves "3" in the L-shape sense
+        # (2+1 squares in L pattern)
+        return 3
+    else:
+        # King, Queen, Rook, Bishop: maximum of file/rank distance
+        # Pawn: will be 1 or 2 based on actual move
+        return max(file_dist, rank_dist)
+
+def move_distance_to_duration(distance, piece_type, config):
+    """Convert move distance to musical duration."""
+
+    # Base duration per square of movement
+    ticks_per_square = config["dynamic_durations"].get('ticks_per_square', 120)
+
+    # Minimum duration so even 1-square moves are audible
+    min_duration = config["dynamic_durations"].get('min_duration', 240)
+
+    # Calculate base duration
+    duration = max(min_duration, distance * ticks_per_square)
+
+    # Optional: piece-specific adjustments
+    piece_modifiers = config["dynamic_durations"].get('piece_modifiers', {})
+    if piece_type in piece_modifiers:
+        duration = int(duration * piece_modifiers[piece_type])
+
+    # Cap maximum duration
+    max_duration = config["dynamic_durations"].get('max_duration', 960)
+
+    return min(duration, max_duration)
+
+
 # Logging / tracking structures
 MOVE_EVENTS = []  # Stores dicts: start_tick, note, duration, piece, program, channel, ply, side
 
@@ -790,16 +839,9 @@ def main():
         thinking_time = timing_data.get(ply)
 
         # Set duration for the actual move note
-        if thinking_time is not None:
-            # Use shorter final note for moves with thinking time
-            duration = 240 if thinking_time >= 10 else compress_thinking_time(thinking_time, game_type)
-        else:
-            # Ensure first move has substantial duration to start the music
-            if ply == 1:
-                duration = 960  # Longer first move
-            else:
-                duration = config['durations']['pawn_default'] if piece == "P" else config['durations']['piece_default']
-
+        move_distance = calculate_move_distance(move, board)
+        duration = move_distance_to_duration(move_distance, piece.lower(), config)
+        duration = int(duration * config["dynamic_durations"]["piece_modifiers"][piece.lower()])
         nag = extract_nag_code(comment)
 
         track = white_track if board.turn else black_track

@@ -3,15 +3,15 @@ instruments:
   P:
     program: 46  # Trumpet - bright and clear for pawns
   N:
-    program: 46
+    program: 35 # Fretless Bass - smooth and agile for knights
   B:
-    program: 46
+    program: 49 # String Ensemble 2 - warm and flowing for bishops
   R:
-    program: 46
+    program: 18 # Rock Organ - strong and steady for rooks
   Q:
-    program: 46
+    program: 40 # Violin - expressive and dominant for queen
   K:
-    program: 46
+    program: 0 # Acoustic Grand Piano - regal and foundational for king
 
 # Pitch mapping configuration
 # pitch_mode options:
@@ -65,7 +65,7 @@ tempo:
 # The drone notes are chosen to provide a stable harmonic base that complements the piece melodies.
 # The drone changes subtly through the game phases to reflect the evolving nature of the game.
 drones:
-  enabled: true
+  enabled: false
   instrument: 48
   eco_mapping:
     A: 36            # C2 - Flank openings (English, irregular) - Tonic, stable
@@ -152,12 +152,19 @@ expression_modulation:
 
 
 # Note durations and timing
-durations:
-  pawn_default: 240
-  piece_default: 480
-  timestamp_multiplier: 400  # Much longer - notes overlap naturally
-  min_duration: 200         # Longer minimum for flow
-  max_duration: 3840        # Allow longer contemplative notes
+dynamic_durations:
+  ticks_per_square: 120     # Each square of movement = 120 ticks
+  min_duration: 240         # Even 1-square moves get this minimum
+  max_duration: 2000        # Cap maximum duration to avoid overly long notes
+  castling_duration: 960    # Special duration for castling
+  en_passant_duration: 480  # Special duration for en passant
+  piece_modifiers:          # Multipliers for piece types
+    p: 1.0                  # Pawn - no change
+    n: 1.2                  # Knight - slightly longer
+    b: 1.3                  # Bishop - moderately longer
+    r: 1.4                  # Rook - longer
+    q: 1.5                  # Queen - longest
+    k: 1.0                  # King - standard duration
 
 effects:
   nag:
