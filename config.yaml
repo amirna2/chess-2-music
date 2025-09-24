@@ -159,3 +159,11 @@ drone_modulation:
   pulse_rise: 10            # Rise above base CC7
   pulse_count: 4            # Number of dip-rise cycles
   pulse_rate_ticks: 240     # Ticks between pulse events (tempo dependent perceived rate)
+  windowed:
+    enable: true            # If false, revert to instantaneous modulation (no pre-move stretch)
+    reference_seconds: 600  # Real thinking time that maps to reference_window_seconds
+    reference_window_seconds: 15  # Compressed window length for reference_seconds think
+    max_window_seconds: 22  # Hard cap for any single think window
+    min_trigger_seconds: 1.0  # Ignore windows shorter than this real think time
+    curve: log              # 'log' or 'pow'
+    pow_exponent: 0.6       # Used only when curve == 'pow'

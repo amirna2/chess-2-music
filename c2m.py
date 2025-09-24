@@ -32,7 +32,7 @@ def format_note(note: int) -> str:
     names = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
     return f"{names[note % 12]}{note // 12 - 1}"
 
-def print_move_line(ply, side, san, piece, note, program, velocity, duration, start_tick, thinking_time=None, arpeggio_ticks=0):
+def print_move_line(ply, side, san, piece, note, program, velocity, duration, start_tick, thinking_time=None, compressed_window=None, arpeggio_ticks=0):
     """Print a single move line in tabular form.
 
     Prints a header once on first invocation.
@@ -42,10 +42,10 @@ def print_move_line(ply, side, san, piece, note, program, velocity, duration, st
     # One-time header
     if not getattr(print_move_line, "_header_printed", False):
         header = (
-            "PLY | Side  | SAN      | EMT(s) | Note | Pitch | Prog | Vel | Dur(t) | Arp(t) | StartTick"
+            "PLY | Side  | SAN      | EMT(s) | CWin(s) | Note | Pitch | Prog | Vel | Dur(t) | Arp(t) | StartTick"
         )
         ruler = (
-            "----+-------+----------+--------+------+-------+------+-----+--------+--------+----------"
+            "----+-------+----------+--------+--------+------+-------+------+-----+--------+--------+----------"
         )
         print(header)
         print(ruler)
@@ -53,11 +53,12 @@ def print_move_line(ply, side, san, piece, note, program, velocity, duration, st
 
     note_str = format_note(note)
     tt = f"{thinking_time:.1f}" if thinking_time is not None else "--"
+    cw = f"{compressed_window:.2f}" if (compressed_window is not None and compressed_window > 0) else "--"
     arp = f"{arpeggio_ticks}" if arpeggio_ticks else "--"
     # Ensure SAN fits column (truncate with ellipsis if very long)
     san_disp = san if len(san) <= 8 else san[:7] + "…"
     line = (
-        f"{ply:03d} | {side:<5} | {san_disp:<8} | {tt:>6} | {note:>4} | {note_str:<5} | "
+        f"{ply:03d} | {side:<5} | {san_disp:<8} | {tt:>6} | {cw:>6} | {note:>4} | {note_str:<5} | "
         f"{program:>4} | {velocity:>3} | {duration:>6} | {arp:>6} | {start_tick:>9}"
     )
     print(line)
@@ -299,6 +300,50 @@ def compress_thinking_time(seconds, game_type):
             # Very short cap - just hint at the thinking, don't dominate
             return min(1800, int(400 + 58 * 50 + (seconds - 60) * 5))  # ~4 seconds max
 
+def map_think_time_to_playback_seconds(think_seconds: float, cfg: dict) -> float:
+        """Return musically useful compressed window seconds for a thinking duration.
+
+        New model (bigger, more expressive):
+            window = reference_window_seconds * curve_ratio( min(think, reference_seconds) / reference_seconds )
+        curve options:
+            - log: ratio = log1p(think)/log1p(reference_seconds) (smooth, slower start)
+            - pow: ratio = (think/reference_seconds) ** pow_exponent (faster early growth if exponent < 1)
+
+        Config (optional, under drone_modulation.windowed):
+            reference_seconds (default 600)
+            reference_window_seconds (default 15)
+            max_window_seconds (default reference_window_seconds or larger)
+            curve: 'log' or 'pow' (default 'log')
+            pow_exponent: (default 0.6)
+            min_trigger_seconds (default 1.0)
+        """
+        if think_seconds is None or think_seconds <= 0:
+                return 0.0
+        dm_cfg = cfg.get('drone_modulation', {})
+        win_cfg = dm_cfg.get('windowed', {}) if isinstance(dm_cfg.get('windowed'), dict) else {}
+        if win_cfg and not win_cfg.get('enable', True):
+            return 0.0
+
+        ref_seconds = float(win_cfg.get('reference_seconds', 600.0))
+        ref_window = float(win_cfg.get('reference_window_seconds', 15.0))
+        max_window = float(win_cfg.get('max_window_seconds', max(ref_window, 15.0)))
+        curve = win_cfg.get('curve', 'log')
+        pow_exp = float(win_cfg.get('pow_exponent', 0.6))
+        min_trigger = float(win_cfg.get('min_trigger_seconds', 1.0))
+
+        if think_seconds < min_trigger:
+                return 0.0
+
+        x = min(think_seconds, ref_seconds)
+        if curve == 'pow':
+                base_ratio = (x / ref_seconds) ** pow_exp if ref_seconds > 0 else 0.0
+        else:  # log (default)
+                denom = math.log1p(ref_seconds)
+                base_ratio = (math.log1p(x) / denom) if denom > 0 else 0.0
+
+        window = ref_window * base_ratio
+        return min(max_window, window)
+
 def snap_to_scale(note, scale):
     """Snap note to the nearest pitch in the provided musical scale."""
     scale_notes = sorted(list(set(scale)))
@@ -431,6 +476,83 @@ def modulate_drone_for_thinking(drone_track, thinking_time: float | None, ply: i
         return post_move
 
     return []
+
+def schedule_drone_think_window(drone_track, compressed_ticks: int, think_seconds: float, cfg: dict,
+                                eco_note: int, base_velocity: int, channel=None):
+    """Insert a pre-move drone-only window spanning compressed_ticks with modulation reflecting think_seconds.
+
+    This actually advances time (via delta 'time' fields) before the move note is placed.
+    Phases precedence: pulses > tension > swell > idle.
+    """
+    if compressed_ticks <= 0 or think_seconds <= 0:
+        return 0
+    dm_cfg = cfg.get('drone_modulation', {})
+    ch = channel if channel is not None else CHANNELS['drone']
+    swell_min = dm_cfg.get('swell_min_seconds', 30)
+    tension_min = dm_cfg.get('tension_min_seconds', 120)
+    pulse_min = dm_cfg.get('pulse_min_seconds', 600)
+    swell_amount = dm_cfg.get('swell_amount', 20)
+    tension_interval = dm_cfg.get('tension_interval', 6)
+    tension_velocity = dm_cfg.get('tension_velocity', 60)
+    pulse_drop = dm_cfg.get('pulse_drop', -25)
+    pulse_rise = dm_cfg.get('pulse_rise', 10)
+    pulse_count = max(1, dm_cfg.get('pulse_count', 4))
+
+    def clamp_cc(v):
+        return max(0, min(127, v))
+
+    # Pulses
+    if think_seconds >= pulse_min:
+        pair_span = compressed_ticks // pulse_count if pulse_count > 0 else compressed_ticks
+        low_val = clamp_cc(base_velocity + pulse_drop)
+        high_val = clamp_cc(base_velocity + pulse_rise)
+        used = 0
+        for _ in range(pulse_count):
+            drone_track.append(mido.Message('control_change', control=7, value=low_val, channel=ch, time=(0 if used == 0 else 0)))
+            half = max(1, pair_span // 2)
+            drone_track.append(mido.Message('control_change', control=7, value=high_val, channel=ch, time=half))
+            end_delta = pair_span - half
+            drone_track.append(mido.Message('control_change', control=7, value=base_velocity, channel=ch, time=end_delta))
+            used += pair_span
+        tail = compressed_ticks - used
+        if tail > 0:
+            drone_track.append(mido.Message('control_change', control=7, value=base_velocity, channel=ch, time=tail))
+        return compressed_ticks
+
+    # Tension
+    if think_seconds >= tension_min:
+        swell_part = compressed_ticks * 20 // 100
+        sustain_part = compressed_ticks * 60 // 100
+        release_part = compressed_ticks - swell_part - sustain_part
+        if swell_part > 0:
+            mid_val = clamp_cc(base_velocity + swell_amount // 2)
+            peak_val = clamp_cc(base_velocity + swell_amount)
+            half = max(1, swell_part // 2)
+            drone_track.append(mido.Message('control_change', control=7, value=mid_val, channel=ch, time=0))
+            drone_track.append(mido.Message('control_change', control=7, value=peak_val, channel=ch, time=half))
+            drone_track.append(mido.Message('control_change', control=7, value=base_velocity, channel=ch, time=swell_part - half))
+        tension_note = eco_note + tension_interval
+        drone_track.append(mido.Message('note_on', note=tension_note, velocity=tension_velocity, channel=ch, time=0))
+        drone_track.append(mido.Message('note_off', note=tension_note, velocity=0, channel=ch, time=sustain_part))
+        if release_part > 0:
+            drone_track.append(mido.Message('control_change', control=7, value=base_velocity, channel=ch, time=release_part))
+        return compressed_ticks
+
+    # Swell only
+    if think_seconds >= swell_min:
+        mid_val = clamp_cc(base_velocity + swell_amount // 2)
+        peak_val = clamp_cc(base_velocity + swell_amount)
+        third = max(1, compressed_ticks // 3)
+        last = compressed_ticks - 2 * third
+        drone_track.append(mido.Message('control_change', control=7, value=mid_val, channel=ch, time=0))
+        drone_track.append(mido.Message('control_change', control=7, value=peak_val, channel=ch, time=third))
+        drone_track.append(mido.Message('control_change', control=7, value=base_velocity, channel=ch, time=third))
+        drone_track.append(mido.Message('control_change', control=7, value=base_velocity, channel=ch, time=last))
+        return compressed_ticks
+
+    # Idle wait
+    drone_track.append(mido.Message('control_change', control=7, value=base_velocity, channel=ch, time=compressed_ticks))
+    return compressed_ticks
 
 def add_note(track, program, note, velocity, duration, pan=64, delay=0, channel=0, init_program=True):
     """Add a note with the delay applied to the NOTE ON (not swallowed by program/pan)."""
@@ -798,24 +920,30 @@ def main():
             set_tempo(track, config['tempo']['endgame'])
             current_bpm = config['tempo']['endgame']
 
-        # Debug output
-        note_name = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"][note % 12]
-        octave = note // 12 - 1
-
-        # Drone modulation (replace or complement arpeggios)
-        post_drone_msgs = []
-        if config.get('drone_modulation', {}).get('enable') and config['drones']['enabled']:
+        # Debug output (unused variables suppressed purposely)
+        # Insert compressed thinking window BEFORE any move/arpeggio notes so timeline reflects cognition
+        think_window_ticks = 0
+        if thinking_time and config.get('drone_modulation', {}).get('enable') and config['drones']['enabled']:
             current_phase = get_phase_for_ply(ply)
-            phase_cfg = config['drones']['phases'].get(current_phase, {})
-            phase_velocity = phase_cfg.get('velocity', base_drone_velocity or 90)
-            post_drone_msgs = modulate_drone_for_thinking(
-                drone_track=drone_track,
-                thinking_time=thinking_time,
-                ply=ply,
-                eco_note=drone_base_note or 36,
-                config=config,
-                base_velocity=phase_velocity,
-            )
+            compressed_secs = map_think_time_to_playback_seconds(thinking_time, config)
+            if compressed_secs > 0:
+                ticks_per_second = PPQ * current_bpm / 60.0
+                think_window_ticks = int(compressed_secs * ticks_per_second)
+                phase_cfg = config['drones']['phases'].get(current_phase, {})
+                phase_velocity = phase_cfg.get('velocity', base_drone_velocity or 90)
+                schedule_drone_think_window(
+                    drone_track=drone_track,
+                    compressed_ticks=think_window_ticks,
+                    think_seconds=thinking_time,
+                    cfg=config,
+                    eco_note=drone_base_note or 36,
+                    base_velocity=phase_velocity,
+                    channel=CHANNELS['drone']
+                )
+                global_time_ticks += think_window_ticks
+
+        # No legacy immediate modulation / cleanup anymore
+        post_drone_msgs = []
 
         # PRE-MOVE ARPEGGIO MODEL (disabled if drone modulation active)
         arp_cfg = config.get('arpeggios', {})
@@ -886,21 +1014,14 @@ def main():
         current_channel = CHANNELS['white'] if board.turn else CHANNELS['black']
         add_note(track, program, note, velocity, duration, pan, delay_for_move, channel=current_channel)
 
-        # Defer drone cleanup to coincide with move onset (keeps modulation until move starts)
-        if post_drone_msgs:
-            first = True
-            for msg in post_drone_msgs:
-                # Only the first cleanup gets a delay aligning with move_start_tick - global_time_ticks
-                # Reconstruct message safely without duplicating 'type'
-                msg_dict = msg.dict().copy()
-                # Remove keys managed explicitly
-                msg_dict.pop('time', None)
-                msg_type = msg_dict.pop('type', msg.type)
-                # Build new message with adjusted time
-                new_time = delay_for_move if first else 0
-                drone_track.append(mido.Message(msg_type, time=new_time, **msg_dict))
-                first = False
+        # (No deferred cleanup needed)
         if not args.no_move_log:
+            compressed_window = None
+            if thinking_time is not None:
+                try:
+                    compressed_window = map_think_time_to_playback_seconds(thinking_time, config)
+                except Exception:
+                    compressed_window = None
             print_move_line(
                 ply=ply,
                 side='White' if board.turn else 'Black',
@@ -912,9 +1033,9 @@ def main():
                 duration=duration,
                 start_tick=move_start_tick,
                 thinking_time=thinking_time,
+                compressed_window=compressed_window,
                 arpeggio_ticks=arpeggio_total_ticks
             )
-
         MOVE_EVENTS.append({
             'ply': ply,
             'side': 'White' if board.turn else 'Black',
