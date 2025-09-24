@@ -4,16 +4,22 @@ A Python tool that converts chess games in PGN format into MIDI music compositio
 
 ## Features
 
-- **Chess Game Processing**: Parses PGN files and analyzes moves using `python-chess`
-- **MIDI Generation**: Creates multi-track MIDI files with `mido` (separate tracks for white/black players)
-- **Opening Recognition**: Identifies chess openings using ECO codes from Lichess database
+- **EMT-Aware Timing**: Uses per-move elapsed move time (EMT) to shape pre-move “thinking windows”
+- **Windowed Drone Layer**: Expands / compresses a sustained drone section proportional to think time (log / pow curve)
+- **Expression Modulation**: Classifies upcoming move (brilliant, blunder, check, forced, long, epic) to scale window & escalate modulation phases
+- **Phase-Based Drone Dynamics**: Idle → swell → tension (tritone) → pulses for very long thinks
+- **Short-Think Gating**: Ultra-fast moves ≤ 1s get a 1:1 micro-window; small thinks ≤ threshold stay flat (no jitter)
+- **Chess Game Processing**: Parses PGN & annotations with `python-chess`
+- **Opening Recognition**: ECO-based base drone pitch & harmonies
 - **Musical Mapping**:
-  - Chess pieces → MIDI instruments
-  - Board squares → musical pitches
-  - Move timing → note duration
-  - Move quality (NAG codes) → harmonic variations
-  - Game events (captures, checks, checkmate) → special musical effects
-- **Audio Export**: Convert MIDI to MP3 via built-in utilities
+  - Pieces → configurable MIDI programs + automatic orchestral register shifts
+  - Squares → pitch via selectable mapping modes
+  - NAG & SAN markers → accents / effects
+  - Captures, check, mate → dedicated musical gestures
+- **Arpeggio Layer (optional)**: Legacy subtle background texture (disabled when drone modulation enabled)
+- **Rich Move Log**: Tabular output with EMT, compressed window seconds, expression tag, timing ticks
+- **Time Compression Summary**: Shows total EMT vs condensed musical window time & compression ratio
+- **Audio Export**: Convert MIDI to MP3 via Makefile helpers
 
 ## Quick Start
 
@@ -73,20 +79,28 @@ make clean-all    # Remove all audio files
 
 ## CLI Options
 
-```
-usage: c2m.py [-h] [-c CONFIG] [-o OUTPUT] pgn_file
+Current script flags (`python3 c2m.py --help`):
 
-Convert chess games (PGN) to MIDI music files
+```
+usage: c2m.py [-h] [--config CONFIG] [--output OUTPUT] [--play] [--sheet]
+              [--no-move-log] [--track-stats] [--trace-arps]
+              pgn_file
+
+Convert a PGN with EMT annotations into an expressive multi-track MIDI: includes drone thinking windows, expression-based scaling, and timing summary.
 
 positional arguments:
-  pgn_file              Path to the PGN file to convert
+  pgn_file              Input PGN with EMT/time comments (mainline only)
 
 options:
   -h, --help            show this help message and exit
-  -c CONFIG, --config CONFIG
-                        Path to configuration YAML file (default: config.yaml)
-  -o OUTPUT, --output OUTPUT
-                        Output MIDI file path (default: <pgn_file>.mid)
+  --config CONFIG       Path to configuration YAML (default: config.yaml)
+  --output OUTPUT, -o OUTPUT
+                        Explicit output MIDI path (default: <pgn_basename>_music.mid)
+  --play                After render, attempt to play the MIDI file (system opener)
+  --sheet               Print first measures as ASCII sheet at end
+  --no-move-log         Suppress per-move tabular log
+  --track-stats         Print per-track basic statistics summary
+  --trace-arps          Verbose tracing for any (legacy) arpeggio generation
 ```
 
 ## Musical Mapping

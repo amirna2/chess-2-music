@@ -27,7 +27,7 @@ velocity:
   P: 50   # Pawns - much louder from 30
   N: 65   # Knights - boosted from 40
   B: 65   # Bishops - boosted from 40
-  R: 85  # Rooks - boosted from 70
+  R: 85   # Rooks - boosted from 70
   Q: 100  # Queen - boosted from 90
   K: 127  # King - maximum velocity from 100
 
@@ -51,11 +51,7 @@ tempo:
   middlegame: 120  # ply 11 - moderate pace
   endgame: 90      # ply 31 - slower, contemplative
 
-# Arpeggio behavior
-arpeggios:
-  threshold_seconds: 45     # Minimum EMT to trigger pre-move arpeggio (classical long think)
-  enable: false              # Master switch
-  max_compressed_seconds: 4 # Musical cap after compression
+## (Arpeggio layer removed) -- legacy block intentionally deleted
 
 # Drone notes based on ECO opening classification
 drones:

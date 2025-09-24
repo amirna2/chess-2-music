@@ -8,6 +8,7 @@ import pathlib
 import yaml
 import math
 import argparse
+import subprocess
 from collections import defaultdict
 
 # MIDI channel assignments (0-15)
@@ -94,14 +95,20 @@ def build_ascii_sheet(events, ppq, max_measures=24):
     return lines
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Chess to Music MIDI Converter")
-    parser.add_argument('pgn_file', help='Input PGN with EMT/time comments')
-    parser.add_argument('--config', default='config.yaml', help='Config YAML path')
-    parser.add_argument('--force-arps', action='store_true', help='(Deprecated) Previously forced early arpeggios')
-    parser.add_argument('--sheet', action='store_true', help='Print ASCII measure sheet at end')
-    parser.add_argument('--no-move-log', action='store_true', help='Suppress per-move logging lines')
-    parser.add_argument('--track-stats', action='store_true', help='Print track statistics summary')
-    parser.add_argument('--trace-arps', action='store_true', help='Verbose arpeggio tracing')
+    parser = argparse.ArgumentParser(
+        description=(
+            "Convert a PGN with EMT annotations into an expressive multi-track MIDI: "
+            "includes drone thinking windows, expression-based scaling, and timing summary."
+        )
+    )
+    parser.add_argument('pgn_file', help='Input PGN with EMT/time comments (mainline only)')
+    parser.add_argument('--config', default='config.yaml', help='Path to configuration YAML (default: config.yaml)')
+    parser.add_argument('--output', '-o', help='Explicit output MIDI path (default: <pgn_basename>_music.mid)')
+    parser.add_argument('--play', action='store_true', help='After render, attempt to play the MIDI file (macOS: open / Linux: xdg-open)')
+    parser.add_argument('--sheet', action='store_true', help='Print first measures as ASCII sheet at end')
+    parser.add_argument('--no-move-log', action='store_true', help='Suppress per-move tabular move/event log')
+    parser.add_argument('--track-stats', action='store_true', help='Print per-track basic statistics summary')
+    # Arpeggio tracing removed (legacy layer deleted)
     return parser.parse_args()
 
 def get_optimal_octave_shift(program, base_midpoint):
@@ -310,48 +317,53 @@ def compress_thinking_time(seconds, game_type):
             return min(1800, int(400 + 58 * 50 + (seconds - 60) * 5))  # ~4 seconds max
 
 def map_think_time_to_playback_seconds(think_seconds: float, cfg: dict) -> float:
-        """Return musically useful compressed window seconds for a thinking duration.
+    """Return musically useful compressed window seconds for a thinking duration.
 
-        New model (bigger, more expressive):
-            window = reference_window_seconds * curve_ratio( min(think, reference_seconds) / reference_seconds )
-        curve options:
-            - log: ratio = log1p(think)/log1p(reference_seconds) (smooth, slower start)
-            - pow: ratio = (think/reference_seconds) ** pow_exponent (faster early growth if exponent < 1)
+    New model (bigger, more expressive):
+        window = reference_window_seconds * curve_ratio( min(think, reference_seconds) / reference_seconds )
+    curve options:
+        - log: ratio = log1p(think)/log1p(reference_seconds) (smooth, slower start)
+        - pow: ratio = (think/reference_seconds) ** pow_exponent (faster early growth if exponent < 1)
 
-        Config (optional, under drone_modulation.windowed):
-            reference_seconds (default 600)
-            reference_window_seconds (default 15)
-            max_window_seconds (default reference_window_seconds or larger)
-            curve: 'log' or 'pow' (default 'log')
-            pow_exponent: (default 0.6)
-            min_trigger_seconds (default 1.0)
-        """
-        if think_seconds is None or think_seconds <= 0:
-                return 0.0
-        dm_cfg = cfg.get('drone_modulation', {})
-        win_cfg = dm_cfg.get('windowed', {}) if isinstance(dm_cfg.get('windowed'), dict) else {}
-        if win_cfg and not win_cfg.get('enable', True):
-            return 0.0
+    Config (optional, under drone_modulation.windowed):
+        reference_seconds (default 600)
+        reference_window_seconds (default 15)
+        max_window_seconds (default reference_window_seconds or larger)
+        curve: 'log' or 'pow' (default 'log')
+        pow_exponent: (default 0.6)
+        min_trigger_seconds (default 1.0)
+    Special rule:
+        If think_seconds <= 1.0 we return the raw EMT (a 1:1 micro-window) instead of suppressing.
+    """
+    if think_seconds is None or think_seconds <= 0:
+        return 0.0
+    if think_seconds <= 1.0:
+        return think_seconds
 
-        ref_seconds = float(win_cfg.get('reference_seconds', 600.0))
-        ref_window = float(win_cfg.get('reference_window_seconds', 15.0))
-        max_window = float(win_cfg.get('max_window_seconds', max(ref_window, 15.0)))
-        curve = win_cfg.get('curve', 'log')
-        pow_exp = float(win_cfg.get('pow_exponent', 0.6))
-        min_trigger = float(win_cfg.get('min_trigger_seconds', 1.0))
+    dm_cfg = cfg.get('drone_modulation', {})
+    win_cfg = dm_cfg.get('windowed', {}) if isinstance(dm_cfg.get('windowed'), dict) else {}
+    if win_cfg and not win_cfg.get('enable', True):
+        return 0.0
 
-        if think_seconds < min_trigger:
-                return 0.0
+    ref_seconds = float(win_cfg.get('reference_seconds', 600.0))
+    ref_window = float(win_cfg.get('reference_window_seconds', 15.0))
+    max_window = float(win_cfg.get('max_window_seconds', max(ref_window, 15.0)))
+    curve = win_cfg.get('curve', 'log')
+    pow_exp = float(win_cfg.get('pow_exponent', 0.6))
+    min_trigger = float(win_cfg.get('min_trigger_seconds', 1.0))
 
-        x = min(think_seconds, ref_seconds)
-        if curve == 'pow':
-                base_ratio = (x / ref_seconds) ** pow_exp if ref_seconds > 0 else 0.0
-        else:  # log (default)
-                denom = math.log1p(ref_seconds)
-                base_ratio = (math.log1p(x) / denom) if denom > 0 else 0.0
+    if think_seconds < min_trigger:
+        return 0.0
 
-        window = ref_window * base_ratio
-        return min(max_window, window)
+    x = min(think_seconds, ref_seconds)
+    if curve == 'pow':
+        base_ratio = (x / ref_seconds) ** pow_exp if ref_seconds > 0 else 0.0
+    else:  # log (default)
+        denom = math.log1p(ref_seconds)
+        base_ratio = (math.log1p(x) / denom) if denom > 0 else 0.0
+
+    window = ref_window * base_ratio
+    return min(max_window, window)
 
 def classify_move_expression(thinking_time: float | None, san: str, nag: int | None, cfg: dict) -> tuple[str, str | None]:
     """Classify emotional/expression tag for upcoming move.
@@ -872,9 +884,8 @@ def get_opening_name(game, eco_map):
 def main():
     args = parse_args()
     pgn_file = args.pgn_file
-    trace_arps = args.trace_arps
-    if args.force_arps:
-        print('[DEPRECATED] --force-arps ignored: use arpeggios.threshold_seconds in config.yaml instead.')
+    trace_arps = False  # legacy disabled
+    # --force-arps removed (deprecated); legacy behavior now fully controlled by config.
     debug_pan = args.track_stats  # repurpose old flag
     config = load_config(args.config)
 
@@ -894,8 +905,8 @@ def main():
     white_track = mido.MidiTrack()
     black_track = mido.MidiTrack()
     drone_track = mido.MidiTrack()
-    arpeggio_track = mido.MidiTrack()
-    mid.tracks.extend([white_track, black_track, drone_track, arpeggio_track])
+    # Arpeggio track removed
+    mid.tracks.extend([white_track, black_track, drone_track])
 
     # Initialize track volumes to ensure they're not stuck at low levels
     # Channel-specific volumes
@@ -934,7 +945,7 @@ def main():
     PPQ = 480
     base_gap = 120  # gap after a move note before any thinking arpeggio starts
     global_time_ticks = 0  # conceptual main timeline (not strictly needed per track but for debug)
-    arpeggio_track_time = 0  # accumulated time position within arpeggio track
+    # Arpeggio timing removed
     # Maintain per-track elapsed time (ticks) for white/black move tracks
     track_times = {CHANNELS['white']: 0, CHANNELS['black']: 0}
     # Track current tempo (BPM) for tempo-aware arpeggio tick scaling
@@ -946,7 +957,7 @@ def main():
     # Provide default arpeggio pan centered unless later customized
     pan_arpeggio = 64
 
-    scheduled_arps = []  # collect dicts for summary (ply, emt, compressed, start_tick, end_tick, move_tick)
+    # scheduled_arps removed
     # Aggregate timing stats
     total_emt_seconds = 0.0
     total_condensed_seconds = 0.0
@@ -1021,8 +1032,31 @@ def main():
             # Determine base velocity for current phase
             phase_cfg_base = config['drones']['phases'].get(current_phase, {})
             phase_velocity_base = phase_cfg_base.get('velocity', base_drone_velocity or 90)
-            # Small think gating
-            if thinking_time <= small_threshold:
+            # Special case: very small think (<=1s) -> create an idle window equal to EMT (no compression)
+            if thinking_time <= 1.0:
+                compressed_secs = thinking_time  # one-to-one mapping
+                expr_tag, forced_phase = classify_move_expression(thinking_time, board.san(move) if board.is_legal(move) else move.uci(), nag, config)
+                print_move_line._last_expr = expr_tag
+                # Totals
+                total_emt_seconds += thinking_time
+                total_condensed_seconds += compressed_secs
+                # Schedule window (idle baseline – do not escalate even if forced_phase suggests; keep it subtle)
+                ticks_per_second = PPQ * current_bpm / 60.0
+                think_window_ticks = int(compressed_secs * ticks_per_second)
+                # Use idle by passing think_seconds=0.5 (below swell_min) but we still want duration, so call with original
+                schedule_drone_think_window(
+                    drone_track=drone_track,
+                    compressed_ticks=think_window_ticks,
+                    think_seconds=thinking_time,  # natural phase logic will resolve to 'idle'
+                    cfg=config,
+                    eco_note=drone_base_note or 36,
+                    base_velocity=phase_velocity_base,
+                    channel=CHANNELS['drone'],
+                    override_phase=None  # force idle even if expression forces escalation for dramatic moves
+                )
+                global_time_ticks += think_window_ticks
+            # Small think gating ( >1s and <= threshold )
+            elif thinking_time <= small_threshold:
                 # Enter small think mode: ensure drone CC7 set to flat value once
                 flat_vel = max(0, min(127, phase_velocity_base + flat_offset))
                 if not small_think_active:
@@ -1080,70 +1114,8 @@ def main():
         # No legacy immediate modulation / cleanup anymore
         post_drone_msgs = []
 
-        # PRE-MOVE ARPEGGIO MODEL (disabled if drone modulation active)
-        arp_cfg = config.get('arpeggios', {})
-        ARP_THRESHOLD = arp_cfg.get('threshold_seconds', 45)
-        arpeggio_total_ticks = 0
-        arps_allowed = arp_cfg.get('enable', True) and not (config.get('drone_modulation', {}).get('enable'))
-        if arps_allowed and thinking_time and thinking_time >= ARP_THRESHOLD:
-            # Derive source (piece's origin square BEFORE move) and target (destination) notes
-            from_square = move.from_square
-            from_file = chess.FILE_NAMES[chess.square_file(from_square)]
-            from_rank = chess.square_rank(from_square) + 1
-
-            # Reconstruct pseudo-move for source square to reuse mapping logic uniformly
-            class _Tmp:  # minimal shim for reuse
-                def __init__(self, f, r):
-                    self._uci = f"a1{f}{r}"  # dummy prefix
-                def uci(self):
-                    return self._uci
-
-            temp_move = _Tmp(from_file, from_rank)
-            source_square_note = move_to_note(temp_move, board, config)
-            target_square_note = base_note
-
-            compressed_secs = calculate_arpeggio_duration(thinking_time)
-            ticks_per_second = PPQ * current_bpm / 60.0
-
-            if arpeggio_track_time <= global_time_ticks:
-                first_delay = global_time_ticks - arpeggio_track_time
-            else:
-                first_delay = 0
-
-            global _ARP_PROGRAM_INITIALIZED
-            if not _ARP_PROGRAM_INITIALIZED:
-                arpeggio_track.append(mido.Message("program_change", program=ARP_PROGRAM, channel=CHANNELS['arpeggio'], time=0))
-                arpeggio_track.append(mido.Message("control_change", control=10, value=64, channel=CHANNELS['arpeggio'], time=0))
-                _ARP_PROGRAM_INITIALIZED = True
-            arpeggio_total_ticks = generate_thinking_arpeggio(
-                track=arpeggio_track,
-                thinking_time_seconds_raw=thinking_time,
-                piece_about_to_move=piece,
-                source_square_note=source_square_note,
-                target_square_note=target_square_note,
-                config=config,
-                program=ARP_PROGRAM,
-                game_type=game_type,
-                pan=pan_arpeggio,
-                first_note_delay=first_delay,
-                ticks_per_second=ticks_per_second,
-                trace=trace_arps,
-            )
-            if trace_arps:
-                print(f"    -> Arpeggio consumed {arpeggio_total_ticks} ticks ends_at={global_time_ticks + arpeggio_total_ticks}")
-            arpeggio_track_time = global_time_ticks + arpeggio_total_ticks
-            scheduled_arps.append({
-                'ply': ply,
-                'emt': thinking_time,
-                'compressed_secs': compressed_secs,
-                'start_tick': global_time_ticks,
-                'end_tick': global_time_ticks + arpeggio_total_ticks,
-                'move_tick': global_time_ticks + arpeggio_total_ticks
-            })
-        # Now schedule the move note AFTER any arpeggio time plus a small gap.
-        # The desired absolute start tick for the move (shared global timeline)
-        post_arp_gap = 10  # slight breathing space
-        move_start_tick = global_time_ticks + arpeggio_total_ticks + (post_arp_gap if arpeggio_total_ticks else 0)
+        # No arpeggio layer: schedule move immediately after any drone window
+        move_start_tick = global_time_ticks
         current_channel = CHANNELS['white'] if board.turn else CHANNELS['black']
         # Use per-track accumulated time to compute the delta
         last_channel_time = track_times[current_channel]
@@ -1172,7 +1144,7 @@ def main():
                 start_tick=move_start_tick,
                 thinking_time=thinking_time,
                 compressed_window=compressed_window,
-                arpeggio_ticks=arpeggio_total_ticks
+                arpeggio_ticks=0
             )
         MOVE_EVENTS.append({
             'ply': ply,
@@ -1222,9 +1194,19 @@ def main():
             global_time_ticks = candidate_global
 
 
-    out_name = pgn_file.rsplit(".", 1)[0] + "_music.mid"
+    out_name = args.output if args.output else (pgn_file.rsplit(".", 1)[0] + "_music.mid")
     mid.save(out_name)
     print(f"Saved MIDI to {out_name}")
+    if args.play:
+        try:
+            if sys.platform.startswith('darwin'):
+                subprocess.Popen(['open', out_name])
+            elif sys.platform.startswith('linux'):
+                subprocess.Popen(['xdg-open', out_name])
+            elif sys.platform.startswith('win'):
+                os.startfile(out_name)  # type: ignore[attr-defined]
+        except Exception as e:
+            print(f"[WARN] Could not auto-play MIDI: {e}")
 
     if args.sheet:
         print("\n=== ASCII MOVE SHEET (first measures) ===")
@@ -1242,14 +1224,7 @@ def main():
         print(f" Total move notes: {len(MOVE_EVENTS)}")
         print("========================")
 
-    if trace_arps:
-        print("=== ARPEGGIO SCHEDULE SUMMARY (PRE-MOVE) ===")
-        if not scheduled_arps:
-            print("(none)")
-        else:
-            for entry in scheduled_arps:
-                print(f"PLY {entry['ply']}: EMT {entry['emt']:.1f}s -> {entry['compressed_secs']:.2f}s ticks {entry['start_tick']} - {entry['end_tick']} move_at {entry['move_tick']}")
-        print("=============================================")
+    # (Arpeggio summary removed)
 
     if debug_pan:
         print("=== MIDI CHANNEL / PAN ANALYSIS ===")
