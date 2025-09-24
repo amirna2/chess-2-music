@@ -16,15 +16,12 @@ CHANNELS = {
     'white': 0,
     'black': 1,
     'drone': 2,
-    'arpeggio': 3,
     'effects': 4,  # optional separate channel for NAG/capture/check accents
     'white_drone': 5,
     'black_drone': 6,
 }
 
 _LAST_PROGRAM = {}
-ARP_PROGRAM = 94  # Pad 7 (halo) - ethereal, subtle ambient pad perfect for background arpeggios
-_ARP_PROGRAM_INITIALIZED = False
 
 # Logging / tracking structures
 MOVE_EVENTS = []  # Stores dicts: start_tick, note, duration, piece, program, channel, ply, side
@@ -33,19 +30,19 @@ def format_note(note: int) -> str:
     names = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
     return f"{names[note % 12]}{note // 12 - 1}"
 
-def print_move_line(ply, side, san, piece, note, program, velocity, duration, start_tick, thinking_time=None, compressed_window=None, arpeggio_ticks=0):
+def print_move_line(ply, side, san, piece, note, program, velocity, duration, start_tick, thinking_time=None, compressed_window=None):
     """Print a single move line in tabular form.
 
     Prints a header once on first invocation.
     Columns:
-      PLY | Side | SAN | EMT(s) | Note | Pitch | Prog | Vel | Dur(t) | Arp(t) | StartTick
+      PLY | Side | SAN | EMT(s) | CWin(s) | Expr | Note | Pitch | Prog | Vel | Dur(t) | StartTick
     """
     # One-time header
     if not getattr(print_move_line, "_header_printed", False):
         # Define columns with widths matching the data row formatting
         col_defs = [
             ("PLY", 3), ("Side", 5), ("SAN", 8), ("EMT(s)", 6), ("CWin(s)", 6), ("Expr", 6),
-            ("Note", 4), ("Pitch", 5), ("Prog", 4), ("Vel", 3), ("Dur(t)", 6), ("Arp(t)", 6), ("StartTick", 9)
+            ("Note", 4), ("Pitch", 5), ("Prog", 4), ("Vel", 3), ("Dur(t)", 6), ("StartTick", 9)
         ]
         header = " | ".join(f"{name:<{w}}" for name, w in col_defs)
         ruler = "-+-".join('-'*w for _, w in col_defs)
@@ -56,7 +53,6 @@ def print_move_line(ply, side, san, piece, note, program, velocity, duration, st
     note_str = format_note(note)
     tt = f"{thinking_time:.1f}" if thinking_time is not None else "--"
     cw = f"{compressed_window:.2f}" if (compressed_window is not None and compressed_window > 0) else "--"
-    arp = f"{arpeggio_ticks}" if arpeggio_ticks else "--"
     # Ensure SAN fits column (truncate with ellipsis if very long)
     san_disp = san if len(san) <= 8 else san[:7] + "…"
     expr_full = getattr(print_move_line, "_last_expr", "--") or "--"
@@ -69,7 +65,7 @@ def print_move_line(ply, side, san, piece, note, program, velocity, duration, st
     expr = abbrev_map.get(expr_full, expr_full[:6])
     line = (
         f"{ply:03d} | {side:<5} | {san_disp:<8} | {tt:>6} | {cw:>6} | {expr:<6} | {note:>4} | {note_str:<5} | "
-        f"{program:>4} | {velocity:>3} | {duration:>6} | {arp:>6} | {start_tick:>9}"
+        f"{program:>4} | {velocity:>3} | {duration:>6} | {start_tick:>9}"
     )
     print(line)
 
@@ -108,7 +104,6 @@ def parse_args():
     parser.add_argument('--sheet', action='store_true', help='Print first measures as ASCII sheet at end')
     parser.add_argument('--no-move-log', action='store_true', help='Suppress per-move tabular move/event log')
     parser.add_argument('--track-stats', action='store_true', help='Print per-track basic statistics summary')
-    # Arpeggio tracing removed (legacy layer deleted)
     return parser.parse_args()
 
 def get_optimal_octave_shift(program, base_midpoint):
@@ -307,7 +302,7 @@ def compress_thinking_time(seconds, game_type):
             return min(int(compressed), 2800)
 
     else:  # classical
-        # Classical: Much more aggressive compression - arpeggios are background texture only
+        # Classical: Much more aggressive compression - thinking windows are background texture only
         if seconds <= 2:
             return int(seconds * 200)  # 0.4-0.8 seconds
         elif seconds <= 60:
@@ -672,198 +667,6 @@ def add_note(track, program, note, velocity, duration, pan=64, delay=0, channel=
     track.append(mido.Message("note_on", note=note, velocity=velocity, channel=channel, time=original_delay))
     track.append(mido.Message("note_off", note=note, velocity=velocity, channel=channel, time=duration))
 
-def add_arpeggio_note(track, note, velocity, duration, pan=64, delay=0, channel=CHANNELS['arpeggio']):
-    """Add arpeggio note with organ-like legato and atmospheric effects."""
-    # Minimal atmospheric effects - arpeggios should be very subtle background
-    if delay > 0:
-        # Very occasional and subtle expression changes
-        if (note % 16) == 0:  # Much less frequent expression
-            expression_value = min(60 + (note % 10), 80)  # Much subtler range
-            track.append(mido.Message("control_change", control=11, value=expression_value, channel=channel, time=delay))
-            delay = 0
-
-        # Rare, minimal modulation
-        if (note % 24) == 0:  # Very infrequent modulation
-            modulation_value = min(10 + (note % 8), 25)  # Very subtle
-            track.append(mido.Message("control_change", control=1, value=modulation_value, channel=channel, time=delay))
-            delay = 0
-
-    track.append(mido.Message("note_on", note=note, velocity=velocity, channel=channel, time=delay))
-    track.append(mido.Message("note_off", note=note, velocity=0, channel=channel, time=duration))
-
-def add_arpeggio_fadeout(track, program, pan=64):
-    """Add graceful fadeout when arpeggio is interrupted."""
-    # Let arpeggio naturally complete - don't use volume control changes
-    # as they persist and affect all subsequent notes on the track
-    pass
-
-def calculate_arpeggio_duration(thinking_time):
-    """Calculate arpeggio duration based on pure cognitive complexity, not game type."""
-    MAX_ARPEGGIO_DURATION = 6  # Much shorter cap - was 30, now 6 seconds max
-
-    # Pure cognitive time mapping - regardless of game format
-    if thinking_time <= 90:
-        duration = thinking_time * 0.1  # Reduced from 0.3 to 0.1
-    elif thinking_time <= 300:  # 1.5-5 minutes
-        duration = 9 + (thinking_time - 90) * 0.05  # Gentler scaling
-    else:  # 5+ minutes (epic thinks)
-        duration = 19.5 + (thinking_time - 300) * 0.02  # Very gentle
-
-    return min(duration, MAX_ARPEGGIO_DURATION)
-
-def generate_thinking_arpeggio(
-    track,
-    thinking_time_seconds_raw,
-    piece_about_to_move,
-    source_square_note,
-    target_square_note,
-    config,
-    program,
-    game_type,
-    pan=64,
-    first_note_delay=0,
-    ticks_per_second=960,
-    trace=False,
-):
-    """Generate musical phrase during thinking time that builds toward the move."""
-    # Only consider sufficiently long thinks (guard)
-    if thinking_time_seconds_raw < 10:
-        return 0
-
-    # Compress raw cognitive time to playable musical duration (seconds)
-    compressed_duration_seconds = calculate_arpeggio_duration(thinking_time_seconds_raw)
-
-    # FIXED: Much shorter musical duration to avoid overwhelming the piece
-    # Scale down by tempo - faster tempos get proportionally shorter arpeggios
-    current_bpm = ticks_per_second * 60 / 480  # Derive BPM from ticks_per_second
-    tempo_scale = min(1.0, 100.0 / current_bpm)  # Scale down for fast tempos
-    musical_duration = min(compressed_duration_seconds * tempo_scale, 8.0)  # Cap at 8 seconds
-
-    if trace:
-        print(f"    Arpeggio: raw {thinking_time_seconds_raw:.1f}s -> compressed {compressed_duration_seconds:.2f}s -> musical {musical_duration:.2f}s")
-
-    # Convert to MIDI ticks using current tempo
-    total_ticks = int(musical_duration * ticks_per_second)
-
-    # Determine phrase structure based on RAW thinking duration (musical narrative tied to real time spent)
-    if thinking_time_seconds_raw < 60:       # 10-60 seconds: Simple arpeggio
-        phase_structure = ["contemplative"]
-    elif thinking_time_seconds_raw < 300:   # 1-5 minutes: Two-phase buildup
-        #phase_structure = ["contemplative", "building"]
-         phase_structure = ["contemplative"]
-    elif thinking_time_seconds_raw < 900:   # 5-15 minutes: Three-phase development
-        phase_structure = ["contemplative"]
-        #phase_structure = ["contemplative", "building", "urgent"]
-    else:
-        phase_structure = ["contemplative"]                                     # 15+ minutes: Full orchestral buildup
-        #phase_structure = ["contemplative", "building", "urgent", "climactic"]
-
-    ticks_per_phase = total_ticks // len(phase_structure)
-
-    # Build harmonic progression from source to target
-    harmonic_steps = create_harmonic_progression(source_square_note, target_square_note, len(phase_structure) * 4)
-
-    current_time = 0
-    step_index = 0
-
-    for phase_num, phase in enumerate(phase_structure):
-        phase_ticks = ticks_per_phase
-
-        # Phase characteristics - boosted velocities for better overall volume
-        if phase == "contemplative":
-            note_duration = 300  # Shorter notes
-            velocity_base = 45   # Boosted from 25
-            notes_per_phase = 2  # Much fewer notes
-        elif phase == "building":
-            note_duration = 200  # Medium notes
-            velocity_base = 40   # Boosted from 20
-            notes_per_phase = 3  # Fewer notes
-        elif phase == "urgent":
-            note_duration = 120  # Short notes
-            velocity_base = 50   # Boosted from 25
-            notes_per_phase = 4  # Still fewer
-        else:  # climactic
-            note_duration = 80   # Very short notes
-            velocity_base = 60   # Boosted from 30
-            notes_per_phase = 6  # Half the original
-
-        # Generate notes for this phase with overlapping, eerie spacing
-        # Create atmospheric, overlapping notes for spacey effect
-        base_note_spacing = min(80, phase_ticks // (notes_per_phase * 3))  # Even tighter spacing
-        ticks_between_notes = max(40, base_note_spacing)  # Very close notes
-
-        for note_in_phase in range(notes_per_phase):
-            if step_index < len(harmonic_steps):
-                note = harmonic_steps[step_index]
-                note = snap_to_scale(note, config['scale'])
-
-                # Boosted velocity pattern for better overall volume
-                velocity_progression = note_in_phase / notes_per_phase
-                base_velocity = int(velocity_base + velocity_progression * 10)  # Larger range for dynamics
-                # Moderate velocity variation
-                velocity_variation = (-2 + (step_index % 5)) if step_index > 0 else 0
-                velocity = max(35, min(75, base_velocity + velocity_variation))  # Much louder overall
-
-                # Add the note - proper MIDI timing
-                if phase_num == 0 and note_in_phase == 0:
-                    # Use externally provided first_note_delay so caller controls alignment
-                    delay = first_note_delay
-                else:
-                    delay = ticks_between_notes
-
-                # Create continuous, overlapping notes for organ-like legato effect
-                # Each note overlaps with the next to create seamless flow
-                if note_in_phase < notes_per_phase - 1:  # Not the last note in phase
-                    # Overlap with next note for seamless connection
-                    continuous_duration = ticks_between_notes + (ticks_between_notes // 2)
-                else:
-                    # Last note in phase - extend to connect with next phase or end smoothly
-                    continuous_duration = ticks_between_notes * 2
-
-                # Ensure notes are long enough for organ-like sustain
-                actual_duration = max(continuous_duration, 300)  # Minimum organ-like sustain
-
-                add_arpeggio_note(track, note, velocity, actual_duration, pan, delay)
-
-                current_time += ticks_between_notes
-                step_index += 1
-
-    return total_ticks  # Inform caller how many ticks were consumed by arpeggio
-
-def create_harmonic_progression(source_note, target_note, num_steps):
-    """Create harmonic progression from source to target note."""
-    progression = []
-
-    # Start with source note and its harmonics
-    progression.append(source_note)
-    progression.append(source_note + 4)  # Major third
-    progression.append(source_note + 7)  # Perfect fifth
-
-    # Calculate interval to target
-    interval = target_note - source_note
-
-    # Create smooth progression toward target
-    for i in range(4, num_steps - 3):
-        # Interpolate between source harmony and target
-        progress = i / (num_steps - 1)
-
-        # Mix of harmonic and melodic movement
-        if i % 3 == 0:
-            note = source_note + int(interval * progress)  # Direct melodic line
-        elif i % 3 == 1:
-            note = source_note + 4 + int(interval * progress * 0.7)  # Third harmony
-        else:
-            note = source_note + 7 + int(interval * progress * 0.5)  # Fifth harmony
-
-        progression.append(note)
-
-    # End with target note approach
-    progression.append(target_note + 7)  # Dominant approach
-    progression.append(target_note + 2)  # Leading tone
-    progression.append(target_note)      # Target resolution
-
-    return progression
-
 
 def set_tempo(track, bpm):
     mpqn = mido.bpm2tempo(bpm)
@@ -888,8 +691,6 @@ def get_opening_name(game, eco_map):
 def main():
     args = parse_args()
     pgn_file = args.pgn_file
-    trace_arps = False  # legacy disabled
-    # --force-arps removed (deprecated); legacy behavior now fully controlled by config.
     debug_pan = args.track_stats  # repurpose old flag
     config = load_config(args.config)
 
@@ -909,7 +710,6 @@ def main():
     white_track = mido.MidiTrack()
     black_track = mido.MidiTrack()
     drone_track = mido.MidiTrack()
-    # Arpeggio track removed
     mid.tracks.extend([white_track, black_track, drone_track])
 
     # Initialize track volumes to ensure they're not stuck at low levels
@@ -939,29 +739,22 @@ def main():
     board = game.board()
     node = game  # needed to access comments in sync with moves
 
-    # (Arpeggio timing now managed locally per move; no cross-player overlap control yet)
-
     # Collect moves into list for lookahead scheduling
     moves_list = list(game.mainline_moves())
     total_plies = len(moves_list)
 
     # Timeline tracking (ticks). We treat each move's note as a discrete musical event spaced by a base_gap.
     PPQ = 480
-    base_gap = 10  # gap after a move note before any thinking arpeggio starts
+    base_gap = 10  # gap after a move note before any thinking window starts
     global_time_ticks = 0  # conceptual main timeline (not strictly needed per track but for debug)
-    # Arpeggio timing removed
     # Maintain per-track elapsed time (ticks) for white/black move tracks
     track_times = {CHANNELS['white']: 0, CHANNELS['black']: 0}
-    # Track current tempo (BPM) for tempo-aware arpeggio tick scaling
+    # Track current tempo (BPM) for tempo-aware scaling
     current_bpm = config['tempo']['opening']
 
-    # Initialize channel program/pan once (remove hard L/R debug). Use config panning.
+    # Initialize channel program/pan once. Use config panning.
     pan_white = config.get('panning', {}).get('white', 64)
     pan_black = config.get('panning', {}).get('black', 64)
-    # Provide default arpeggio pan centered unless later customized
-    pan_arpeggio = 64
-
-    # scheduled_arps removed
     # Aggregate timing stats
     total_emt_seconds = 0.0
     total_condensed_seconds = 0.0
@@ -995,12 +788,10 @@ def main():
 
         # Get preprocessed thinking time (EMT refers to time spent BEFORE this move)
         thinking_time = timing_data.get(ply)
-        # Optionally override for testing to force early arpeggios
-        # (legacy force-arps hack removed)
 
         # Set duration for the actual move note
         if thinking_time is not None:
-            # For moves with arpeggios, use shorter final note
+            # Use shorter final note for moves with thinking time
             duration = 240 if thinking_time >= 10 else compress_thinking_time(thinking_time, game_type)
         else:
             # Ensure first move has substantial duration to start the music
@@ -1025,7 +816,7 @@ def main():
             current_bpm = config['tempo']['endgame']
 
         # Debug output (unused variables suppressed purposely)
-        # Insert compressed thinking window BEFORE any move/arpeggio notes so timeline reflects cognition
+        # Insert compressed thinking window BEFORE any move notes so timeline reflects cognition
         think_window_ticks = 0
         if thinking_time and config.get('drone_modulation', {}).get('enable') and config['drones']['enabled']:
             current_phase = get_phase_for_ply(ply)
@@ -1118,7 +909,7 @@ def main():
         # No legacy immediate modulation / cleanup anymore
         post_drone_msgs = []
 
-        # No arpeggio layer: schedule move immediately after any drone window
+        # Schedule move immediately after any drone window
         move_start_tick = global_time_ticks
         current_channel = CHANNELS['white'] if board.turn else CHANNELS['black']
         # Use per-track accumulated time to compute the delta
@@ -1147,8 +938,7 @@ def main():
                 duration=duration,
                 start_tick=move_start_tick,
                 thinking_time=thinking_time,
-                compressed_window=compressed_window,
-                arpeggio_ticks=0
+                compressed_window=compressed_window
             )
         MOVE_EVENTS.append({
             'ply': ply,
@@ -1192,7 +982,7 @@ def main():
             add_note(track, program, check_note, check_effect['velocity'], duration, pan, channel=current_channel, init_program=False)
 
         move_end_tick = move_start_tick + duration
-        # Advance global timeline (shared) only if this move pushes it forward beyond existing arpeggio or previous move timeline
+        # Advance global timeline (shared) only if this move pushes it forward beyond existing previous move timeline
         candidate_global = move_end_tick + base_gap
         if candidate_global > global_time_ticks:
             global_time_ticks = candidate_global
@@ -1227,8 +1017,6 @@ def main():
             print(f" {side}: {cnt} move notes")
         print(f" Total move notes: {len(MOVE_EVENTS)}")
         print("========================")
-
-    # (Arpeggio summary removed)
 
     if debug_pan:
         print("=== MIDI CHANNEL / PAN ANALYSIS ===")

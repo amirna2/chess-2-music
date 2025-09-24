@@ -65,7 +65,7 @@ tempo:
 # The drone notes are chosen to provide a stable harmonic base that complements the piece melodies.
 # The drone changes subtly through the game phases to reflect the evolving nature of the game.
 drones:
-  enabled: false
+  enabled: true
   instrument: 48
   eco_mapping:
     A: 36            # C2 - Flank openings (English, irregular) - Tonic, stable
