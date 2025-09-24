@@ -18,7 +18,7 @@ CHANNELS = {
 }
 
 _LAST_PROGRAM = {}
-ARP_PROGRAM = 24
+ARP_PROGRAM = 94  # Pad 7 (halo) - ethereal, subtle ambient pad perfect for background arpeggios
 _ARP_PROGRAM_INITIALIZED = False
 
 def get_optimal_octave_shift(program, base_midpoint):
@@ -217,14 +217,14 @@ def compress_thinking_time(seconds, game_type):
             return min(int(compressed), 2800)
 
     else:  # classical
-        # Classical: preserve timing ratios but cap for musical coherence
+        # Classical: Much more aggressive compression - arpeggios are background texture only
         if seconds <= 2:
-            return int(seconds * 400)  # 0.8-1.6 seconds
-        elif seconds <= 30:
-            return int(800 + (seconds - 2) * 200)  # 1.6-7.2 seconds
+            return int(seconds * 200)  # 0.4-0.8 seconds
+        elif seconds <= 60:
+            return int(400 + (seconds - 2) * 50)  # 0.8-3.3 seconds max
         else:
-            # Cap at ~8 seconds, drone handles the drama
-            return min(3600, int(800 + 28 * 200 + (seconds - 30) * 20))
+            # Very short cap - just hint at the thinking, don't dominate
+            return min(1800, int(400 + 58 * 50 + (seconds - 60) * 5))  # ~4 seconds max
 
 def snap_to_scale(note, scale):
     """Snap note to the nearest pitch in the provided musical scale."""
@@ -248,9 +248,45 @@ def snap_to_scale(note, scale):
 def move_to_note(move, board, config):
     dest = move.uci()[2:]
     file, rank = dest[0], int(dest[1])
+
+    # Flexible pitch mapping modes for better musicality
+    mode = config.get('pitch_mode', 'legacy')  # 'legacy' keeps original spacing
+    root = config.get('pitch_root', 60)        # MIDI note for file 'a' base (C4 default)
+
+    if mode == 'legacy':
+        base_pitch = config['pitch_mapping'][file]
+        return base_pitch + (rank - 1) * 3
+
+    elif mode == 'diatonic_2rank_octaves':
+        # Files map to scale degrees, every 2 ranks = +1 octave (12 semitones) for clarity
+        # a b c d e f g h  -> 0 2 4 5 7 9 11 (13)
+        scale_degrees = [0, 2, 4, 5, 7, 9, 11, 12+1]  # Lift file h slightly into next octave
+        file_index = ord(file) - ord('a')
+        file_offset = scale_degrees[file_index]
+        octave_offset = ((rank - 1) // 2) * 12  # Every 2 ranks a full octave
+        intra_octave_rank = (rank - 1) % 2
+        vertical_step = intra_octave_rank * 5    # Add perfect 4th within the pair for color
+        note = root + file_offset + octave_offset + vertical_step
+        return note
+
+    elif mode == 'chromatic_linear':
+        # Simple uniform grid: file steps by 2 semitones, rank steps by 3
+        file_offset = (ord(file) - ord('a')) * 2
+        rank_offset = (rank - 1) * 3
+        return root + file_offset + rank_offset
+
+    elif mode == 'major_files_octave_ranks':
+        # Pure major scale across files, each rank is a full octave jump -> very consonant grid
+        # Files: a b c d e f g h -> 1 2 3 4 5 6 7 8(root up)
+        major_degrees = [0, 2, 4, 5, 7, 9, 11, 12]  # h-file lands on next octave tonic
+        file_index = ord(file) - ord('a')
+        file_offset = major_degrees[file_index]
+        octave_offset = (rank - 1) * 12  # Each rank pushes an octave for vertical clarity
+        return root + file_offset + octave_offset
+
+    # Fallback
     base_pitch = config['pitch_mapping'][file]
-    note = base_pitch + (rank - 1) * 3
-    return snap_to_scale(note, config['scale'])
+    return base_pitch + (rank - 1) * 3
 
 def add_note(track, program, note, velocity, duration, pan=64, delay=0, channel=0, init_program=True):
     """Add a note with the delay applied to the NOTE ON (not swallowed by program/pan)."""
@@ -266,7 +302,21 @@ def add_note(track, program, note, velocity, duration, pan=64, delay=0, channel=
     track.append(mido.Message("note_off", note=note, velocity=velocity, channel=channel, time=duration))
 
 def add_arpeggio_note(track, note, velocity, duration, pan=64, delay=0, channel=CHANNELS['arpeggio']):
-    """Add arpeggio note (channel-specific)."""
+    """Add arpeggio note with organ-like legato and atmospheric effects."""
+    # Minimal atmospheric effects - arpeggios should be very subtle background
+    if delay > 0:
+        # Very occasional and subtle expression changes
+        if (note % 16) == 0:  # Much less frequent expression
+            expression_value = min(60 + (note % 10), 80)  # Much subtler range
+            track.append(mido.Message("control_change", control=11, value=expression_value, channel=channel, time=delay))
+            delay = 0
+
+        # Rare, minimal modulation
+        if (note % 24) == 0:  # Very infrequent modulation
+            modulation_value = min(10 + (note % 8), 25)  # Very subtle
+            track.append(mido.Message("control_change", control=1, value=modulation_value, channel=channel, time=delay))
+            delay = 0
+
     track.append(mido.Message("note_on", note=note, velocity=velocity, channel=channel, time=delay))
     track.append(mido.Message("note_off", note=note, velocity=0, channel=channel, time=duration))
 
@@ -278,15 +328,15 @@ def add_arpeggio_fadeout(track, program, pan=64):
 
 def calculate_arpeggio_duration(thinking_time):
     """Calculate arpeggio duration based on pure cognitive complexity, not game type."""
-    MAX_ARPEGGIO_DURATION = 30  # Much shorter cap - arpeggios are musical ornaments
+    MAX_ARPEGGIO_DURATION = 6  # Much shorter cap - was 30, now 6 seconds max
 
     # Pure cognitive time mapping - regardless of game format
     if thinking_time <= 90:
-        duration = thinking_time * 0.3  # 30% of thinking time
+        duration = thinking_time * 0.1  # Reduced from 0.3 to 0.1
     elif thinking_time <= 300:  # 1.5-5 minutes
-        duration = 27 + (thinking_time - 90) * 0.1  # Gentle scaling
+        duration = 9 + (thinking_time - 90) * 0.05  # Gentler scaling
     else:  # 5+ minutes (epic thinks)
-        duration = 48 + (thinking_time - 300) * 0.05  # Very gentle for longest thinks
+        duration = 19.5 + (thinking_time - 300) * 0.02  # Very gentle
 
     return min(duration, MAX_ARPEGGIO_DURATION)
 
@@ -310,20 +360,30 @@ def generate_thinking_arpeggio(
 
     # Compress raw cognitive time to playable musical duration (seconds)
     compressed_duration_seconds = calculate_arpeggio_duration(thinking_time_seconds_raw)
-    print(f"    Arpeggio: raw {thinking_time_seconds_raw:.1f}s -> compressed {compressed_duration_seconds:.2f}s")
 
-    # Convert to MIDI ticks using current tempo (ticks_per_second derived from BPM * PPQ / 60)
-    total_ticks = int(compressed_duration_seconds * ticks_per_second)
+    # FIXED: Much shorter musical duration to avoid overwhelming the piece
+    # Scale down by tempo - faster tempos get proportionally shorter arpeggios
+    current_bpm = ticks_per_second * 60 / 480  # Derive BPM from ticks_per_second
+    tempo_scale = min(1.0, 100.0 / current_bpm)  # Scale down for fast tempos
+    musical_duration = min(compressed_duration_seconds * tempo_scale, 8.0)  # Cap at 8 seconds
+
+    print(f"    Arpeggio: raw {thinking_time_seconds_raw:.1f}s -> compressed {compressed_duration_seconds:.2f}s -> musical {musical_duration:.2f}s")
+
+    # Convert to MIDI ticks using current tempo
+    total_ticks = int(musical_duration * ticks_per_second)
 
     # Determine phrase structure based on RAW thinking duration (musical narrative tied to real time spent)
     if thinking_time_seconds_raw < 60:       # 10-60 seconds: Simple arpeggio
         phase_structure = ["contemplative"]
     elif thinking_time_seconds_raw < 300:   # 1-5 minutes: Two-phase buildup
-        phase_structure = ["contemplative", "building"]
+        #phase_structure = ["contemplative", "building"]
+         phase_structure = ["contemplative"]
     elif thinking_time_seconds_raw < 900:   # 5-15 minutes: Three-phase development
-        phase_structure = ["contemplative", "building", "urgent"]
-    else:                                    # 15+ minutes: Full orchestral buildup
-        phase_structure = ["contemplative", "building", "urgent", "climactic"]
+        phase_structure = ["contemplative"]
+        #phase_structure = ["contemplative", "building", "urgent"]
+    else:
+        phase_structure = ["contemplative"]                                     # 15+ minutes: Full orchestral buildup
+        #phase_structure = ["contemplative", "building", "urgent", "climactic"]
 
     ticks_per_phase = total_ticks // len(phase_structure)
 
@@ -336,38 +396,40 @@ def generate_thinking_arpeggio(
     for phase_num, phase in enumerate(phase_structure):
         phase_ticks = ticks_per_phase
 
-        # Phase characteristics
+        # Phase characteristics - boosted velocities for better overall volume
         if phase == "contemplative":
-            note_duration = 400  # Long notes
-            velocity_base = 30
-            notes_per_phase = 4
+            note_duration = 300  # Shorter notes
+            velocity_base = 45   # Boosted from 25
+            notes_per_phase = 2  # Much fewer notes
         elif phase == "building":
-            note_duration = 240  # Medium notes
-            velocity_base = 45
-            notes_per_phase = 6
+            note_duration = 200  # Medium notes
+            velocity_base = 40   # Boosted from 20
+            notes_per_phase = 3  # Fewer notes
         elif phase == "urgent":
             note_duration = 120  # Short notes
-            velocity_base = 60
-            notes_per_phase = 8
+            velocity_base = 50   # Boosted from 25
+            notes_per_phase = 4  # Still fewer
         else:  # climactic
-            note_duration = 60   # Very short notes
-            velocity_base = 75
-            notes_per_phase = 12
+            note_duration = 80   # Very short notes
+            velocity_base = 60   # Boosted from 30
+            notes_per_phase = 6  # Half the original
 
-        # Generate notes for this phase with closer spacing
-        # Reduce spacing between notes for a more fluid arpeggio
-        base_note_spacing = min(120, phase_ticks // (notes_per_phase * 2))  # Much tighter spacing
-        ticks_between_notes = max(60, base_note_spacing)  # Minimum 60 ticks between notes
+        # Generate notes for this phase with overlapping, eerie spacing
+        # Create atmospheric, overlapping notes for spacey effect
+        base_note_spacing = min(80, phase_ticks // (notes_per_phase * 3))  # Even tighter spacing
+        ticks_between_notes = max(40, base_note_spacing)  # Very close notes
 
         for note_in_phase in range(notes_per_phase):
             if step_index < len(harmonic_steps):
                 note = harmonic_steps[step_index]
                 note = snap_to_scale(note, config['scale'])
 
-                # Gradual velocity increase within phase
+                # Boosted velocity pattern for better overall volume
                 velocity_progression = note_in_phase / notes_per_phase
-                velocity = int(velocity_base + velocity_progression * 15)
-                velocity = min(velocity, 80)  # Cap to avoid overwhelming
+                base_velocity = int(velocity_base + velocity_progression * 10)  # Larger range for dynamics
+                # Moderate velocity variation
+                velocity_variation = (-2 + (step_index % 5)) if step_index > 0 else 0
+                velocity = max(35, min(75, base_velocity + velocity_variation))  # Much louder overall
 
                 # Add the note - proper MIDI timing
                 if phase_num == 0 and note_in_phase == 0:
@@ -375,8 +437,19 @@ def generate_thinking_arpeggio(
                     delay = first_note_delay
                 else:
                     delay = ticks_between_notes
-                guard = ticks_between_notes - 20 if ticks_between_notes > 20 else 20
-                actual_duration = min(note_duration, guard)
+
+                # Create continuous, overlapping notes for organ-like legato effect
+                # Each note overlaps with the next to create seamless flow
+                if note_in_phase < notes_per_phase - 1:  # Not the last note in phase
+                    # Overlap with next note for seamless connection
+                    continuous_duration = ticks_between_notes + (ticks_between_notes // 2)
+                else:
+                    # Last note in phase - extend to connect with next phase or end smoothly
+                    continuous_duration = ticks_between_notes * 2
+
+                # Ensure notes are long enough for organ-like sustain
+                actual_duration = max(continuous_duration, 300)  # Minimum organ-like sustain
+
                 add_arpeggio_note(track, note, velocity, actual_duration, pan, delay)
 
                 current_time += ticks_between_notes
@@ -488,7 +561,7 @@ def main():
         drone_program = config['drones']['instrument']
         drone_track.append(mido.Message("program_change", program=drone_program, channel=CHANNELS['drone'], time=0))
         drone_track.append(mido.Message("control_change", control=10, value=64, channel=CHANNELS['drone'], time=0))
-        drone_track.append(mido.Message("note_on", note=drone_note, velocity=config['drones']['phases']['opening']['velocity'], channel=CHANNELS['drone'], time=0))
+        drone_track.append(mido.Message("note_on", note=drone_note, velocity=config['drones']['phases']['middlegame']['velocity'], channel=CHANNELS['drone'], time=0))
 
     board = game.board()
     node = game  # needed to access comments in sync with moves
@@ -571,15 +644,24 @@ def main():
         # PRE-MOVE ARPEGGIO MODEL
         # If this side just thought for a long time (thinking_time), we represent that by an arpeggio that
         # occupies time BEFORE the move note is heard.
-        ARP_THRESHOLD = 25.0 if not force_arps else 5.0  # lower threshold when forcing
+        ARP_THRESHOLD = 45.0 if not force_arps else 5.0  # Raise threshold for classical - only very long thinks get arpeggios
         arpeggio_total_ticks = 0
         if thinking_time and thinking_time >= ARP_THRESHOLD:
             # Derive source (piece's origin square BEFORE move) and target (destination) notes
             from_square = move.from_square
             from_file = chess.FILE_NAMES[chess.square_file(from_square)]
             from_rank = chess.square_rank(from_square) + 1
-            source_base_pitch = config['pitch_mapping'][from_file] + (from_rank - 1) * 3
-            source_square_note = snap_to_scale(source_base_pitch, config['scale'])
+
+            # Reconstruct pseudo-move for source square to reuse mapping logic uniformly
+            # (We only need file/rank so we mimic destination field)
+            class _Tmp:  # minimal shim for reuse
+                def __init__(self, f, r):
+                    self._uci = f"a1{f}{r}"  # dummy prefix
+                def uci(self):
+                    return self._uci
+
+            temp_move = _Tmp(from_file, from_rank)
+            source_square_note = move_to_note(temp_move, board, config)
             target_square_note = base_note
 
             compressed_secs = calculate_arpeggio_duration(thinking_time)
@@ -631,7 +713,7 @@ def main():
                     print(f"[ARP-BEFORE PLY {ply}] EMT {thinking_time:.1f}s below threshold ({ARP_THRESHOLD}) -> skip")
 
         # Now schedule the move note AFTER any arpeggio time plus a small gap
-        post_arp_gap = 30  # slight breathing space
+        post_arp_gap = 10  # slight breathing space
         move_start_tick = global_time_ticks + arpeggio_total_ticks + (post_arp_gap if arpeggio_total_ticks else 0)
         # Delay relative to last event in this piece-color track assumed at or before global_time_ticks
         track_current_time = global_time_ticks  # since we keep global timeline linear for moves

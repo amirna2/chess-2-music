@@ -1,26 +1,35 @@
 # Chess piece to MIDI instrument mapping (General MIDI program numbers)
 instruments:
   P:
-    program: 40  # Violin
+    program: 56  # Trumpet - bright and clear for pawns
   N:
-    program: 14   # Synth Bass 1
+    program: 0
   B:
-    program: 33   # Electric Bass (finger)
+    program: 0
   R:
-    program: 98   # Syth Drum
+    program: 0
   Q:
-    program: 46   # Harp
+    program: 40
   K:
-    program: 60   # French Horn
+    program: 0
 
-# Velocity (volume) settings for each piece type
+# Pitch mapping configuration
+# pitch_mode options:
+#   legacy                -> use original pitch_mapping grid (file to fixed note, rank *3)
+#   diatonic_2rank_octaves -> files follow diatonic degrees, every 2 ranks ascend an octave
+#   chromatic_linear       -> uniform chromatic spacing (file *2, rank *3)
+#   major_files_octave_ranks -> files = major scale degrees, each rank = +12 semitones (strong consonance)
+pitch_mode: diatonic_2rank_octaves
+pitch_root: 60  # MIDI note for file 'a' base (C4)
+
+# Velocity (volume) settings for each piece type - boosted for better overall volume
 velocity:
-  P: 30
-  N: 40
-  B: 40
-  R: 70
-  Q: 90
-  K: 100
+  P: 50   # Pawns - much louder from 30
+  N: 65   # Knights - boosted from 40
+  B: 65   # Bishops - boosted from 40
+  R: 85  # Rooks - boosted from 70
+  Q: 100  # Queen - boosted from 90
+  K: 127  # King - maximum velocity from 100
 
 # Board file mapping to MIDI notes
 pitch_mapping:
@@ -33,8 +42,8 @@ pitch_mapping:
   g: 71  # B4
   h: 72  # C5
 
-# Musical scale (semitone offsets from root note)
-scale: [0, 2, 4, 5, 7, 9, 11]  # C Major
+# Musical scale (semitone offsets from root note) - used for arpeggios and harmony
+scale: [0, 2, 4, 5, 7, 9, 11]  # C Major - natural and pleasant
 
 # Tempo progression throughout the game
 tempo:
@@ -44,8 +53,8 @@ tempo:
 
 # Drone notes based on ECO opening classification
 drones:
-  enabled: false
-  instrument: 61      # Organ - perfect for sustained drones
+  enabled: true
+  instrument: 95      # Organ - perfect for sustained drones
   eco_mapping:
     A: 36            # C2 - Flank openings (English, irregular) - Tonic, stable
     B: 43            # G2 - Semi-open games (1.e4 c5, c6, etc.) - Perfect 5th, stable
@@ -54,15 +63,15 @@ drones:
     E: 38            # D2 - Indian defenses - Whole step, modern/floating
   phases:
     opening:
-      velocity: 90
+      velocity: 110   # Boosted from 90
       duration: 16000
       harmonies: []   # Single drone note
     middlegame:
-      velocity: 30
+      velocity: 70    # Much louder from 30
       duration: 16000
       harmonies: [7]  # Add perfect 5th above base note
     endgame:
-      velocity: 45
+      velocity: 85    # Much louder from 45
       duration: 16000
       harmonies: [12] # Add octave above for resolution
 
