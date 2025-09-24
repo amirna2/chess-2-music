@@ -1,17 +1,17 @@
 # Chess piece to MIDI instrument mapping (General MIDI program numbers)
 instruments:
   P:
-    program: 56  # Trumpet - bright and clear for pawns
+    program: 46  # Trumpet - bright and clear for pawns
   N:
-    program: 0
+    program: 46
   B:
-    program: 0
+    program: 46
   R:
-    program: 0
+    program: 46
   Q:
-    program: 40
+    program: 46
   K:
-    program: 0
+    program: 46
 
 # Pitch mapping configuration
 # pitch_mode options:
@@ -53,10 +53,20 @@ tempo:
 
 ## (Arpeggio layer removed) -- legacy block intentionally deleted
 
+#----------------------------------------------------------------------
+# Dynamic drone modulation reacting to thinking time
+#----------------------------------------------------------------------
 # Drone notes based on ECO opening classification
+# Each ECO category maps to a specific drone note, creating a harmonic foundation
+# that reflects the character of the opening. The drone evolves through the game phases.
+# The drone is played continuously in the background, with volume and harmonic content
+# modulated based on the player's thinking time (see drone_modulation section).
+# The drone instrument is a warm pad sound (48 - String Ensemble 1) for a rich texture.
+# The drone notes are chosen to provide a stable harmonic base that complements the piece melodies.
+# The drone changes subtly through the game phases to reflect the evolving nature of the game.
 drones:
-  enabled: true
-  instrument: 40      # Organ - perfect for sustained drones
+  enabled: false
+  instrument: 48
   eco_mapping:
     A: 36            # C2 - Flank openings (English, irregular) - Tonic, stable
     B: 43            # G2 - Semi-open games (1.e4 c5, c6, etc.) - Perfect 5th, stable
@@ -65,17 +75,81 @@ drones:
     E: 38            # D2 - Indian defenses - Whole step, modern/floating
   phases:
     opening:
-      velocity: 110   # Boosted from 90
+      velocity: 80   # Boosted from 90
       duration: 16000
-      harmonies: []   # Single drone note
+      harmonies: [7]  # Perfect 5th above base note
     middlegame:
-      velocity: 70    # Much louder from 30
+      velocity: 100
       duration: 16000
-      harmonies: [7]  # Add perfect 5th above base note
+      harmonies: [4, 7, 12] # Major triad + octave
     endgame:
-      velocity: 85    # Much louder from 45
+      velocity: 110
       duration: 16000
-      harmonies: [12] # Add octave above for resolution
+      harmonies: [12, 16, 19] # Rich upper harmonies
+
+# Dynamic modulation of drone volume (CC7) based on thinking time
+# This layer creates a living, breathing drone that responds to the player's thinking time.
+# It uses a combination of gradual swells, tension notes, and pulsing effects to reflect
+# the emotional intensity of the game.
+# The modulation is applied over a compressed window of the actual thinking time,
+# allowing for expressive dynamics even in shorter thinks.
+# The windowing function compresses longer thinks into a manageable modulation period,
+# while very short thinks may have minimal or no modulation.
+drone_modulation:
+  enable: true              # Master switch
+  swell_min_seconds: 30     # Start subtle volume swell
+  tension_min_seconds: 120  # Add temporary tension harmony (tritone)
+  pulse_min_seconds: 300    # Begin pulsing phase for very long thinks
+  swell_amount: 20          # CC7 increase over base phase velocity
+  tension_interval: 6       # Semitones above base drone note (tritone)
+  tension_velocity: 60      # Velocity for temporary tension note
+  pulse_drop: -25           # Dip below base CC7
+  pulse_rise: 10            # Rise above base CC7
+  pulse_count: 4            # Number of dip-rise cycles
+  pulse_rate_ticks: 240     # Ticks between pulse events (tempo dependent perceived rate)
+  windowed:
+    enable: true            # If false, revert to instantaneous modulation (no pre-move stretch)
+    reference_seconds: 600  # Real thinking time that maps to reference_window_seconds
+    reference_window_seconds: 15  # Compressed window length for reference_seconds think
+    max_window_seconds: 22  # Hard cap for any single think window
+    min_trigger_seconds: 1.0  # Ignore windows shorter than this real think time
+    curve: log              # 'log' or 'pow'
+    pow_exponent: 0.6       # Used only when curve == 'pow'
+  # For very small thinks we don't want a window or modulation jitter.
+  small_think:
+    max_seconds: 1.0        # At or below this real EMT: suppress window + keep drone flat
+    flat_velocity_offset: -5  # Relative to phase base velocity (negative to keep it subtle)
+
+# Expression-aware enhancements to the pre-move thinking window.
+# This layer classifies the upcoming move (based on NAG, SAN features, think length)
+# and can (a) scale the compressed window duration and (b) force a higher modulation phase.
+# Tags are applied per move and logged.
+expression_modulation:
+  enable: true
+  # Multiply the computed compressed window seconds by these factors per tag
+  window_multipliers:
+    brilliant: 1.4   # amplify space before a brilliant move
+    great: 1.2       # strong move
+    blunder: 1.3     # dramatic pause before catastrophe
+    mistake: 1.15
+    inaccuracy: 1.05
+    forced: 0.9      # shorten when it's an obvious forced reply
+    check: 1.25      # spotlight a checking move
+    checkmate: 1.5
+    default: 1.0
+  # For some tags, escalate the modulation phase regardless of raw think seconds
+  # Allowed phases: idle, swell, tension, pulses (pulses maps to pulse_min_seconds behavior)
+  forced_phases:
+    brilliant: tension
+    blunder: tension
+    checkmate: pulses
+    check: swell
+  # Thresholds (seconds) to consider something a "long think" for classification heuristics
+  long_think_seconds: 120
+  epic_think_seconds: 600
+  # If true, we only upscale phase (never downgrade). If false, forced phase overrides unconditionally.
+  only_escalate: true
+
 
 # Note durations and timing
 durations:
@@ -142,58 +216,3 @@ panning:
   white: 46
   black: 81
 
-# Dynamic drone modulation reacting to thinking time
-drone_modulation:
-  enable: true              # Master switch
-  swell_min_seconds: 30     # Start subtle volume swell
-  tension_min_seconds: 120  # Add temporary tension harmony (tritone)
-  pulse_min_seconds: 300    # Begin pulsing phase for very long thinks
-  swell_amount: 20          # CC7 increase over base phase velocity
-  tension_interval: 6       # Semitones above base drone note (tritone)
-  tension_velocity: 60      # Velocity for temporary tension note
-  pulse_drop: -25           # Dip below base CC7
-  pulse_rise: 10            # Rise above base CC7
-  pulse_count: 4            # Number of dip-rise cycles
-  pulse_rate_ticks: 240     # Ticks between pulse events (tempo dependent perceived rate)
-  windowed:
-    enable: true            # If false, revert to instantaneous modulation (no pre-move stretch)
-    reference_seconds: 600  # Real thinking time that maps to reference_window_seconds
-    reference_window_seconds: 15  # Compressed window length for reference_seconds think
-    max_window_seconds: 22  # Hard cap for any single think window
-    min_trigger_seconds: 1.0  # Ignore windows shorter than this real think time
-    curve: log              # 'log' or 'pow'
-    pow_exponent: 0.6       # Used only when curve == 'pow'
-  # For very small thinks we don't want a window or modulation jitter.
-  small_think:
-    max_seconds: 2.0        # At or below this real EMT: suppress window + keep drone flat
-    flat_velocity_offset: -15  # Relative to phase base velocity (negative to keep it subtle)
-
-# Expression-aware enhancements to the pre-move thinking window.
-# This layer classifies the upcoming move (based on NAG, SAN features, think length)
-# and can (a) scale the compressed window duration and (b) force a higher modulation phase.
-# Tags are applied per move and logged.
-expression_modulation:
-  enable: true
-  # Multiply the computed compressed window seconds by these factors per tag
-  window_multipliers:
-    brilliant: 1.4   # amplify space before a brilliant move
-    great: 1.2       # strong move
-    blunder: 1.3     # dramatic pause before catastrophe
-    mistake: 1.15
-    inaccuracy: 1.05
-    forced: 0.9      # shorten when it's an obvious forced reply
-    check: 1.25      # spotlight a checking move
-    checkmate: 1.5
-    default: 1.0
-  # For some tags, escalate the modulation phase regardless of raw think seconds
-  # Allowed phases: idle, swell, tension, pulses (pulses maps to pulse_min_seconds behavior)
-  forced_phases:
-    brilliant: tension
-    blunder: tension
-    checkmate: pulses
-    check: swell
-  # Thresholds (seconds) to consider something a "long think" for classification heuristics
-  long_think_seconds: 120
-  epic_think_seconds: 600
-  # If true, we only upscale phase (never downgrade). If false, forced phase overrides unconditionally.
-  only_escalate: true

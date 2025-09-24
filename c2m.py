@@ -335,15 +335,16 @@ def map_think_time_to_playback_seconds(think_seconds: float, cfg: dict) -> float
     Special rule:
         If think_seconds <= 1.0 we return the raw EMT (a 1:1 micro-window) instead of suppressing.
     """
-    if think_seconds is None or think_seconds <= 0:
+    if think_seconds is None or think_seconds <= 1.0:
         return 0.0
-    if think_seconds <= 1.0:
-        return think_seconds
-
     dm_cfg = cfg.get('drone_modulation', {})
     win_cfg = dm_cfg.get('windowed', {}) if isinstance(dm_cfg.get('windowed'), dict) else {}
+    # If disabled, suppress ALL windowing including micro-windows
     if win_cfg and not win_cfg.get('enable', True):
         return 0.0
+    # Micro window rule only applies when enabled
+    if think_seconds <= 1.0:
+        return think_seconds
 
     ref_seconds = float(win_cfg.get('reference_seconds', 600.0))
     ref_window = float(win_cfg.get('reference_window_seconds', 15.0))
@@ -363,6 +364,9 @@ def map_think_time_to_playback_seconds(think_seconds: float, cfg: dict) -> float
         base_ratio = (math.log1p(x) / denom) if denom > 0 else 0.0
 
     window = ref_window * base_ratio
+    # Clamp so compressed window never exceeds raw EMT
+    if window > think_seconds:
+        window = think_seconds
     return min(max_window, window)
 
 def classify_move_expression(thinking_time: float | None, san: str, nag: int | None, cfg: dict) -> tuple[str, str | None]:
@@ -943,7 +947,7 @@ def main():
 
     # Timeline tracking (ticks). We treat each move's note as a discrete musical event spaced by a base_gap.
     PPQ = 480
-    base_gap = 120  # gap after a move note before any thinking arpeggio starts
+    base_gap = 10  # gap after a move note before any thinking arpeggio starts
     global_time_ticks = 0  # conceptual main timeline (not strictly needed per track but for debug)
     # Arpeggio timing removed
     # Maintain per-track elapsed time (ticks) for white/black move tracks
