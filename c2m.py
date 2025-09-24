@@ -41,12 +41,13 @@ def print_move_line(ply, side, san, piece, note, program, velocity, duration, st
     """
     # One-time header
     if not getattr(print_move_line, "_header_printed", False):
-        header = (
-            "PLY | Side  | SAN      | EMT(s) | CWin(s) | Note | Pitch | Prog | Vel | Dur(t) | Arp(t) | StartTick"
-        )
-        ruler = (
-            "----+-------+----------+--------+--------+------+-------+------+-----+--------+--------+----------"
-        )
+        # Define columns with widths matching the data row formatting
+        col_defs = [
+            ("PLY", 3), ("Side", 5), ("SAN", 8), ("EMT(s)", 6), ("CWin(s)", 6), ("Expr", 6),
+            ("Note", 4), ("Pitch", 5), ("Prog", 4), ("Vel", 3), ("Dur(t)", 6), ("Arp(t)", 6), ("StartTick", 9)
+        ]
+        header = " | ".join(f"{name:<{w}}" for name, w in col_defs)
+        ruler = "-+-".join('-'*w for _, w in col_defs)
         print(header)
         print(ruler)
         print_move_line._header_printed = True
@@ -57,8 +58,16 @@ def print_move_line(ply, side, san, piece, note, program, velocity, duration, st
     arp = f"{arpeggio_ticks}" if arpeggio_ticks else "--"
     # Ensure SAN fits column (truncate with ellipsis if very long)
     san_disp = san if len(san) <= 8 else san[:7] + "…"
+    expr_full = getattr(print_move_line, "_last_expr", "--") or "--"
+    # Abbreviate to keep column alignment (max 6 chars)
+    abbrev_map = {
+        'default': 'def', 'great': 'great', 'brilliant': 'bril', 'blunder': 'blun',
+        'mistake': 'mist', 'interesting': 'intr', 'inaccuracy': 'inac', 'forced': 'forc',
+        'checkmate': 'mate', 'check': 'check', 'capture': 'capt', 'epic': 'epic', 'long': 'long', 'none': '--'
+    }
+    expr = abbrev_map.get(expr_full, expr_full[:6])
     line = (
-        f"{ply:03d} | {side:<5} | {san_disp:<8} | {tt:>6} | {cw:>6} | {note:>4} | {note_str:<5} | "
+        f"{ply:03d} | {side:<5} | {san_disp:<8} | {tt:>6} | {cw:>6} | {expr:<6} | {note:>4} | {note_str:<5} | "
         f"{program:>4} | {velocity:>3} | {duration:>6} | {arp:>6} | {start_tick:>9}"
     )
     print(line)
@@ -344,6 +353,62 @@ def map_think_time_to_playback_seconds(think_seconds: float, cfg: dict) -> float
         window = ref_window * base_ratio
         return min(max_window, window)
 
+def classify_move_expression(thinking_time: float | None, san: str, nag: int | None, cfg: dict) -> tuple[str, str | None]:
+    """Classify emotional/expression tag for upcoming move.
+
+    Returns (tag, forced_phase) where tag is a short label and forced_phase is one of
+    None | 'swell' | 'tension' | 'pulses'.
+    Heuristics hierarchy:
+      1. Direct NAG mapping (brilliant, blunder, etc.)
+      2. SAN features (#, +, 'x')
+      3. Long think thresholds
+    """
+    expr_cfg = cfg.get('expression_modulation', {}) if cfg else {}
+    if not expr_cfg.get('enable', False):
+        return 'none', None
+
+    tag = 'default'
+    forced_phase = None
+
+    # NAG-based
+    nag_map = {
+        1: 'great',
+        2: 'mistake',
+        3: 'brilliant',
+        4: 'blunder',
+        5: 'interesting',
+        6: 'inaccuracy',
+        7: 'forced'
+    }
+    if nag in nag_map:
+        tag = nag_map[nag]
+
+    # SAN indicators (override or refine)
+    if san:
+        if '#' in san:
+            tag = 'checkmate'
+        elif '+' in san and tag in ('default', 'none'):
+            tag = 'check'
+        # A capture might add mild emphasis if still default
+        if 'x' in san and tag in ('default', 'none'):
+            tag = 'capture'
+
+    # Long think emphasis if still mundane
+    if thinking_time is not None and tag in ('default', 'none', 'capture'):
+        long_think = expr_cfg.get('long_think_seconds', 120)
+        epic_think = expr_cfg.get('epic_think_seconds', 600)
+        if thinking_time >= epic_think:
+            tag = 'epic'
+        elif thinking_time >= long_think:
+            tag = 'long'
+
+    # Forced phases from config
+    forced_phases = expr_cfg.get('forced_phases', {})
+    if tag in forced_phases:
+        forced_phase = forced_phases[tag]
+
+    return tag, forced_phase
+
 def snap_to_scale(note, scale):
     """Snap note to the nearest pitch in the provided musical scale."""
     scale_notes = sorted(list(set(scale)))
@@ -478,11 +543,12 @@ def modulate_drone_for_thinking(drone_track, thinking_time: float | None, ply: i
     return []
 
 def schedule_drone_think_window(drone_track, compressed_ticks: int, think_seconds: float, cfg: dict,
-                                eco_note: int, base_velocity: int, channel=None):
-    """Insert a pre-move drone-only window spanning compressed_ticks with modulation reflecting think_seconds.
+                                eco_note: int, base_velocity: int, channel=None, override_phase: str | None = None):
+    """Insert a pre-move drone-only window with modulation.
 
-    This actually advances time (via delta 'time' fields) before the move note is placed.
-    Phases precedence: pulses > tension > swell > idle.
+    override_phase allows expression layer to escalate to 'swell','tension','pulses'.
+    Phase precedence still holds: pulses > tension > swell > idle. If only_escalate is set,
+    we won't downgrade a naturally higher phase.
     """
     if compressed_ticks <= 0 or think_seconds <= 0:
         return 0
@@ -497,12 +563,35 @@ def schedule_drone_think_window(drone_track, compressed_ticks: int, think_second
     pulse_drop = dm_cfg.get('pulse_drop', -25)
     pulse_rise = dm_cfg.get('pulse_rise', 10)
     pulse_count = max(1, dm_cfg.get('pulse_count', 4))
+    expr_cfg = cfg.get('expression_modulation', {})
+    only_escalate = expr_cfg.get('only_escalate', True)
 
     def clamp_cc(v):
         return max(0, min(127, v))
 
-    # Pulses
+    # Determine natural phase
+    natural_phase = 'idle'
     if think_seconds >= pulse_min:
+        natural_phase = 'pulses'
+    elif think_seconds >= tension_min:
+        natural_phase = 'tension'
+    elif think_seconds >= swell_min:
+        natural_phase = 'swell'
+
+    target_phase = natural_phase
+    if override_phase:
+        hierarchy = ['idle', 'swell', 'tension', 'pulses']
+        if override_phase not in hierarchy:
+            override_phase = None
+        else:
+            if only_escalate:
+                if hierarchy.index(override_phase) > hierarchy.index(natural_phase):
+                    target_phase = override_phase
+            else:
+                target_phase = override_phase
+
+    # Pulses phase
+    if target_phase == 'pulses':
         pair_span = compressed_ticks // pulse_count if pulse_count > 0 else compressed_ticks
         low_val = clamp_cc(base_velocity + pulse_drop)
         high_val = clamp_cc(base_velocity + pulse_rise)
@@ -519,8 +608,8 @@ def schedule_drone_think_window(drone_track, compressed_ticks: int, think_second
             drone_track.append(mido.Message('control_change', control=7, value=base_velocity, channel=ch, time=tail))
         return compressed_ticks
 
-    # Tension
-    if think_seconds >= tension_min:
+    # Tension phase
+    if target_phase == 'tension':
         swell_part = compressed_ticks * 20 // 100
         sustain_part = compressed_ticks * 60 // 100
         release_part = compressed_ticks - swell_part - sustain_part
@@ -538,8 +627,8 @@ def schedule_drone_think_window(drone_track, compressed_ticks: int, think_second
             drone_track.append(mido.Message('control_change', control=7, value=base_velocity, channel=ch, time=release_part))
         return compressed_ticks
 
-    # Swell only
-    if think_seconds >= swell_min:
+    # Swell phase
+    if target_phase == 'swell':
         mid_val = clamp_cc(base_velocity + swell_amount // 2)
         peak_val = clamp_cc(base_velocity + swell_amount)
         third = max(1, compressed_ticks // 3)
@@ -550,7 +639,7 @@ def schedule_drone_think_window(drone_track, compressed_ticks: int, think_second
         drone_track.append(mido.Message('control_change', control=7, value=base_velocity, channel=ch, time=last))
         return compressed_ticks
 
-    # Idle wait
+    # Idle
     drone_track.append(mido.Message('control_change', control=7, value=base_velocity, channel=ch, time=compressed_ticks))
     return compressed_ticks
 
@@ -801,14 +890,6 @@ def main():
     # Preprocess all timing data
     timing_data = preprocess_timing_data(game)
 
-    # Debug timing data
-    print("=== TIMING SUMMARY (first 12 plies) ===")
-    for ply in sorted(timing_data.keys())[:12]:
-        print(f" ply {ply:02d}: {timing_data[ply]:6.2f}s")
-    if len(timing_data) > 12:
-        print(f" ... ({len(timing_data)} plies total with EMT)")
-    print("======================================")
-
     mid = mido.MidiFile()
     white_track = mido.MidiTrack()
     black_track = mido.MidiTrack()
@@ -854,6 +935,8 @@ def main():
     base_gap = 120  # gap after a move note before any thinking arpeggio starts
     global_time_ticks = 0  # conceptual main timeline (not strictly needed per track but for debug)
     arpeggio_track_time = 0  # accumulated time position within arpeggio track
+    # Maintain per-track elapsed time (ticks) for white/black move tracks
+    track_times = {CHANNELS['white']: 0, CHANNELS['black']: 0}
     # Track current tempo (BPM) for tempo-aware arpeggio tick scaling
     current_bpm = config['tempo']['opening']
 
@@ -864,6 +947,12 @@ def main():
     pan_arpeggio = 64
 
     scheduled_arps = []  # collect dicts for summary (ply, emt, compressed, start_tick, end_tick, move_tick)
+    # Aggregate timing stats
+    total_emt_seconds = 0.0
+    total_condensed_seconds = 0.0
+    # Small think mode state
+    small_think_active = False
+    last_phase_velocity = None
 
     for idx, move in enumerate(moves_list, start=1):
         ply = idx
@@ -925,22 +1014,68 @@ def main():
         think_window_ticks = 0
         if thinking_time and config.get('drone_modulation', {}).get('enable') and config['drones']['enabled']:
             current_phase = get_phase_for_ply(ply)
-            compressed_secs = map_think_time_to_playback_seconds(thinking_time, config)
-            if compressed_secs > 0:
-                ticks_per_second = PPQ * current_bpm / 60.0
-                think_window_ticks = int(compressed_secs * ticks_per_second)
-                phase_cfg = config['drones']['phases'].get(current_phase, {})
-                phase_velocity = phase_cfg.get('velocity', base_drone_velocity or 90)
-                schedule_drone_think_window(
-                    drone_track=drone_track,
-                    compressed_ticks=think_window_ticks,
-                    think_seconds=thinking_time,
-                    cfg=config,
-                    eco_note=drone_base_note or 36,
-                    base_velocity=phase_velocity,
-                    channel=CHANNELS['drone']
-                )
-                global_time_ticks += think_window_ticks
+            dm_cfg_local = config.get('drone_modulation', {})
+            small_cfg = dm_cfg_local.get('small_think', {})
+            small_threshold = small_cfg.get('max_seconds', 2.0)
+            flat_offset = small_cfg.get('flat_velocity_offset', -15)
+            # Determine base velocity for current phase
+            phase_cfg_base = config['drones']['phases'].get(current_phase, {})
+            phase_velocity_base = phase_cfg_base.get('velocity', base_drone_velocity or 90)
+            # Small think gating
+            if thinking_time <= small_threshold:
+                # Enter small think mode: ensure drone CC7 set to flat value once
+                flat_vel = max(0, min(127, phase_velocity_base + flat_offset))
+                if not small_think_active:
+                    drone_track.append(mido.Message('control_change', control=7, value=flat_vel, channel=CHANNELS['drone'], time=0))
+                    small_think_active = True
+                    last_phase_velocity = phase_velocity_base
+                # Do NOT allocate window or accumulate condensed seconds
+                total_emt_seconds += thinking_time or 0.0
+                # classify expression for logging but skip window scheduling
+                expr_tag, forced_phase = classify_move_expression(thinking_time, board.san(move) if board.is_legal(move) else move.uci(), nag, config)
+                print_move_line._last_expr = expr_tag
+                # fall through without scheduling think_window_ticks
+                pass
+            else:
+                # If we were in small think mode and now leaving, restore phase velocity
+                if small_think_active:
+                    restore_vel = phase_velocity_base
+                    drone_track.append(mido.Message('control_change', control=7, value=restore_vel, channel=CHANNELS['drone'], time=0))
+                    small_think_active = False
+                compressed_secs = map_think_time_to_playback_seconds(thinking_time, config)
+                # Expression-aware scaling
+                expr_tag, forced_phase = classify_move_expression(thinking_time, board.san(move) if board.is_legal(move) else move.uci(), nag, config)
+                print_move_line._last_expr = expr_tag  # stash for logging function
+                expr_cfg = config.get('expression_modulation', {})
+                if expr_cfg.get('enable', False):
+                    mults = expr_cfg.get('window_multipliers', {})
+                    factor = mults.get(expr_tag, mults.get('default', 1.0))
+                    compressed_secs *= factor
+                # Accumulate totals
+                total_emt_seconds += thinking_time or 0.0
+                total_condensed_seconds += compressed_secs
+                if compressed_secs > 0:
+                    ticks_per_second = PPQ * current_bpm / 60.0
+                    think_window_ticks = int(compressed_secs * ticks_per_second)
+                    phase_cfg = config['drones']['phases'].get(current_phase, {})
+                    phase_velocity = phase_cfg.get('velocity', base_drone_velocity or 90)
+                    schedule_drone_think_window(
+                        drone_track=drone_track,
+                        compressed_ticks=think_window_ticks,
+                        think_seconds=thinking_time,
+                        cfg=config,
+                        eco_note=drone_base_note or 36,
+                        base_velocity=phase_velocity,
+                        channel=CHANNELS['drone'],
+                        override_phase=forced_phase
+                    )
+                    global_time_ticks += think_window_ticks
+        else:
+            # still classify so column isn't blank
+            expr_tag, _ = classify_move_expression(thinking_time, board.san(move) if thinking_time else '', nag, config)
+            print_move_line._last_expr = expr_tag
+            if thinking_time is not None:
+                total_emt_seconds += thinking_time
 
         # No legacy immediate modulation / cleanup anymore
         post_drone_msgs = []
@@ -1005,14 +1140,17 @@ def main():
                 'end_tick': global_time_ticks + arpeggio_total_ticks,
                 'move_tick': global_time_ticks + arpeggio_total_ticks
             })
-        # Now schedule the move note AFTER any arpeggio time plus a small gap
+        # Now schedule the move note AFTER any arpeggio time plus a small gap.
+        # The desired absolute start tick for the move (shared global timeline)
         post_arp_gap = 10  # slight breathing space
         move_start_tick = global_time_ticks + arpeggio_total_ticks + (post_arp_gap if arpeggio_total_ticks else 0)
-        # Delay relative to last event in this piece-color track assumed at or before global_time_ticks
-        track_current_time = global_time_ticks  # since we keep global timeline linear for moves
-        delay_for_move = move_start_tick - track_current_time
         current_channel = CHANNELS['white'] if board.turn else CHANNELS['black']
+        # Use per-track accumulated time to compute the delta
+        last_channel_time = track_times[current_channel]
+        delay_for_move = max(0, move_start_tick - last_channel_time)
         add_note(track, program, note, velocity, duration, pan, delay_for_move, channel=current_channel)
+        # Advance this track's time to end of the note
+        track_times[current_channel] = last_channel_time + delay_for_move + duration
 
         # (No deferred cleanup needed)
         if not args.no_move_log:
@@ -1078,7 +1216,10 @@ def main():
             add_note(track, program, check_note, check_effect['velocity'], duration, pan, channel=current_channel, init_program=False)
 
         move_end_tick = move_start_tick + duration
-        global_time_ticks = move_end_tick + base_gap
+        # Advance global timeline (shared) only if this move pushes it forward beyond existing arpeggio or previous move timeline
+        candidate_global = move_end_tick + base_gap
+        if candidate_global > global_time_ticks:
+            global_time_ticks = candidate_global
 
 
     out_name = pgn_file.rsplit(".", 1)[0] + "_music.mid"
@@ -1126,6 +1267,20 @@ def main():
                 print(f"Channel {ch}: notes={note_counts[ch]} pan={pans.get(ch,'?')}")
         except Exception as e:
             print("MIDI analysis failed:", e)
+
+    # Final timing compression summary
+    if total_emt_seconds > 0:
+        ratio = (total_condensed_seconds / total_emt_seconds) if total_emt_seconds else 0
+        def _fmt_hms(sec: float) -> str:
+            h = int(sec // 3600); m = int((sec % 3600) // 60); s = int(sec % 60)
+            return f"{h:02d}:{m:02d}:{s:02d}"
+        print("\n=== TIME COMPRESSION SUMMARY ===")
+        print(f" Total EMT:        {total_emt_seconds:10.2f} s  ({_fmt_hms(total_emt_seconds)})")
+        print(f" Condensed Window: {total_condensed_seconds:10.2f} s  ({_fmt_hms(total_condensed_seconds)})")
+        print(f" Compression Ratio: {ratio:.3f} (condensed / real)")
+        if total_condensed_seconds > 0:
+            print(f" Average Scaling:   {total_emt_seconds/total_condensed_seconds:.3f}x real->musical")
+        print("================================")
 
 if __name__ == "__main__":
     main()
