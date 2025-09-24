@@ -22,14 +22,14 @@ instruments:
 pitch_mode: diatonic_2rank_octaves
 pitch_root: 60  # MIDI note for file 'a' base (C4)
 
-# Velocity (volume) settings for each piece type - boosted for better overall volume
+# Velocity (volume) settings for each piece type - move notes should be prominent
 velocity:
-  P: 50   # Pawns - much louder from 30
-  N: 65   # Knights - boosted from 40
-  B: 65   # Bishops - boosted from 40
-  R: 85   # Rooks - boosted from 70
-  Q: 100  # Queen - boosted from 90
-  K: 127  # King - maximum velocity from 100
+  P: 80   # Pawns - normal volume
+  N: 85   # Knights - normal volume
+  B: 85   # Bishops - normal volume
+  R: 90   # Rooks - normal volume
+  Q: 95   # Queen - normal volume
+  K: 100  # King - loud
 
 # Board file mapping to MIDI notes
 pitch_mapping:
@@ -75,15 +75,15 @@ drones:
     E: 38            # D2 - Indian defenses - Whole step, modern/floating
   phases:
     opening:
-      velocity: 80   # Boosted from 90
+      velocity: 60   # Much quieter drone - background only
       duration: 16000
       harmonies: [7]  # Perfect 5th above base note
     middlegame:
-      velocity: 100
+      velocity: 75   # Slightly louder but still background
       duration: 16000
       harmonies: [4, 7, 12] # Major triad + octave
     endgame:
-      velocity: 110
+      velocity: 55   # Modest presence in endgame
       duration: 16000
       harmonies: [12, 16, 19] # Rich upper harmonies
 
@@ -157,7 +157,7 @@ thinking_arpeggios:
   enable: true
   instrument: 46              # Harp - back to subtle texture
   channel: 3                  # Dedicated MIDI channel
-  velocity_base: 55           # Moderate volume - audible but not dominant
+  velocity_base: 65           # Clear but supporting role
 
   # Arpeggio patterns based on thinking time duration
   # Each pattern defines the scale degrees and timing for different think lengths
@@ -167,35 +167,35 @@ thinking_arpeggios:
       max_seconds: 5.0
       pattern: [0, 4, 7]      # Simple major triad
       rate_ticks: 120         # Slower, more sparse
-      velocity_modifier: -10  # Quieter (45 velocity)
+      velocity_modifier: -10  # Modest (55 velocity)
 
     short:  # 5-30 seconds - gentle activity
       min_seconds: 5.0
       max_seconds: 30.0
       pattern: [0, 4, 7, 12]  # Triad + octave
       rate_ticks: 100
-      velocity_modifier: -5   # Slightly quieter (50 velocity)
+      velocity_modifier: -5   # Gentle (60 velocity)
 
     medium: # 30-120 seconds - building complexity
       min_seconds: 30.0
       max_seconds: 120.0
       pattern: [0, 2, 4, 7, 9, 12]  # Pentatonic scale
       rate_ticks: 80
-      velocity_modifier: 5
+      velocity_modifier: 0    # Base level (65 velocity)
 
     long:   # 120-600 seconds - full activity
       min_seconds: 120.0
       max_seconds: 600.0
       pattern: [0, 2, 4, 5, 7, 9, 11, 12]  # Full major scale
       rate_ticks: 60
-      velocity_modifier: 8
+      velocity_modifier: 5    # More present (70 velocity)
 
     epic:   # 600+ seconds - maximum complexity
       min_seconds: 600.0
       max_seconds: 9999.0
       pattern: [0, 2, 4, 5, 7, 9, 11, 12, 14, 16]  # Extended range
       rate_ticks: 45
-      velocity_modifier: 12
+      velocity_modifier: 10   # Prominent (75 velocity)
 
   # Dynamic behavior options
   crescendo: true             # Gradually increase intensity toward move

@@ -493,6 +493,10 @@ def classify_arpeggio_pattern(thinking_time: float | None, cfg: dict) -> dict | 
     if not arp_cfg.get('enable', False):
         return None
 
+    # Only generate arpeggios for thinks longer than 3 seconds to avoid spam
+    if thinking_time < 3.0:
+        return None
+
     patterns = arp_cfg.get('patterns', {})
 
     # Find the appropriate pattern based on time thresholds
@@ -553,7 +557,10 @@ def generate_thinking_arpeggios(arpeggio_track, thinking_time: float | None, com
     effective_rate = max(10, int(rate_ticks * rate_multiplier))
 
     # Calculate how many notes we can fit in the compressed window
-    note_count = max(1, compressed_ticks // effective_rate)
+    # Limit to reasonable number of notes (max 16 notes for any arpeggio)
+    max_notes = 16
+    theoretical_count = max(1, compressed_ticks // effective_rate)
+    note_count = min(max_notes, theoretical_count)
 
     # If harmonize_with_next_move is enabled, bias toward next move's harmony
     root_note = eco_note
@@ -612,10 +619,20 @@ def generate_thinking_arpeggios(arpeggio_track, thinking_time: float | None, com
         if ticks_used + effective_rate > compressed_ticks:
             break
 
-    # Fill any remaining time with silence
+    # Add a final anticipatory note that leads into the move
     remaining_ticks = compressed_ticks - ticks_used
-    if remaining_ticks > 0:
-        # Add a dummy control message to advance time
+    if remaining_ticks > 120 and next_move_note and arp_cfg.get('harmonize_with_next_move', False):
+        # Play an anticipatory note that harmonizes with the upcoming move
+        anticipation_note = snap_to_scale(next_move_note - 12, scale)  # Octave below next move
+        anticipation_velocity = max(30, base_velocity + velocity_modifier - 10)  # Quieter anticipation
+        lead_in_duration = min(240, remaining_ticks - 60)  # Leave small gap before move
+
+        arpeggio_track.append(mido.Message("note_on", note=anticipation_note, velocity=anticipation_velocity, channel=channel, time=remaining_ticks - lead_in_duration))
+        arpeggio_track.append(mido.Message("note_off", note=anticipation_note, velocity=0, channel=channel, time=lead_in_duration - 60))
+        # Small silence before move
+        arpeggio_track.append(mido.Message("control_change", control=7, value=base_velocity, channel=channel, time=60))
+    elif remaining_ticks > 0:
+        # Just add silence for remaining time
         arpeggio_track.append(mido.Message("control_change", control=7, value=base_velocity, channel=channel, time=remaining_ticks))
 
     return compressed_ticks
@@ -913,13 +930,13 @@ def main():
     arpeggio_track = mido.MidiTrack()
     mid.tracks.extend([white_track, black_track, drone_track, arpeggio_track])
 
-    # Initialize track volumes to ensure they're not stuck at low levels
-    # Channel-specific volumes
-    white_track.append(mido.Message("control_change", channel=CHANNELS['white'], control=7, value=100, time=0))
-    black_track.append(mido.Message("control_change", channel=CHANNELS['black'], control=7, value=100, time=0))
+    # Initialize track volumes for proper mix balance
+    # Move tracks should be prominent
+    white_track.append(mido.Message("control_change", channel=CHANNELS['white'], control=7, value=120, time=0))
+    black_track.append(mido.Message("control_change", channel=CHANNELS['black'], control=7, value=120, time=0))
 
     # Initialize arpeggio track volume
-    arp_base_velocity = config.get('thinking_arpeggios', {}).get('velocity_base', 45)
+    arp_base_velocity = config.get('thinking_arpeggios', {}).get('velocity_base', 65)
     arpeggio_track.append(mido.Message("control_change", channel=CHANNELS['arpeggio'], control=7, value=arp_base_velocity, time=0))
 
     # Initialize drone if enabled
