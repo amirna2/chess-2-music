@@ -7,6 +7,8 @@ import csv
 import pathlib
 import yaml
 import math
+import argparse
+from collections import defaultdict
 
 # MIDI channel assignments (0-15)
 CHANNELS = {
@@ -20,6 +22,75 @@ CHANNELS = {
 _LAST_PROGRAM = {}
 ARP_PROGRAM = 94  # Pad 7 (halo) - ethereal, subtle ambient pad perfect for background arpeggios
 _ARP_PROGRAM_INITIALIZED = False
+
+# Logging / tracking structures
+MOVE_EVENTS = []  # Stores dicts: start_tick, note, duration, piece, program, channel, ply, side
+
+def format_note(note: int) -> str:
+    names = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
+    return f"{names[note % 12]}{note // 12 - 1}"
+
+def print_move_line(ply, side, san, piece, note, program, velocity, duration, start_tick, thinking_time=None, arpeggio_ticks=0):
+    """Print a single move line in tabular form.
+
+    Prints a header once on first invocation.
+    Columns:
+      PLY | Side | SAN | EMT(s) | Note | Pitch | Prog | Vel | Dur(t) | Arp(t) | StartTick
+    """
+    # One-time header
+    if not getattr(print_move_line, "_header_printed", False):
+        header = (
+            "PLY | Side  | SAN      | EMT(s) | Note | Pitch | Prog | Vel | Dur(t) | Arp(t) | StartTick"
+        )
+        ruler = (
+            "----+-------+----------+--------+------+-------+------+-----+--------+--------+----------"
+        )
+        print(header)
+        print(ruler)
+        print_move_line._header_printed = True
+
+    note_str = format_note(note)
+    tt = f"{thinking_time:.1f}" if thinking_time is not None else "--"
+    arp = f"{arpeggio_ticks}" if arpeggio_ticks else "--"
+    # Ensure SAN fits column (truncate with ellipsis if very long)
+    san_disp = san if len(san) <= 8 else san[:7] + "…"
+    line = (
+        f"{ply:03d} | {side:<5} | {san_disp:<8} | {tt:>6} | {note:>4} | {note_str:<5} | "
+        f"{program:>4} | {velocity:>3} | {duration:>6} | {arp:>6} | {start_tick:>9}"
+    )
+    print(line)
+
+def build_ascii_sheet(events, ppq, max_measures=24):
+    if not events:
+        return ["(no move events)"]
+    measure_len = 4 * ppq  # assume 4/4
+    measures = defaultdict(list)
+    for ev in events:
+        m = ev['start_tick'] // measure_len
+        measures[m].append(ev)
+    lines = []
+    for m in range(0, min(max(measures.keys()) + 1, max_measures)):
+        evs = sorted(measures.get(m, []), key=lambda e: e['start_tick'])
+        label = f"M{m+1:02d}"
+        if not evs:
+            lines.append(f"{label} | (rest)")
+            continue
+        cells = []
+        for e in evs:
+            cells.append(f"{e['side'][0]}:{format_note(e['note'])}")
+        lines.append(f"{label} | " + ' '.join(cells))
+    return lines
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Chess to Music MIDI Converter")
+    parser.add_argument('pgn_file', help='Input PGN with EMT/time comments')
+    parser.add_argument('--config', default='config.yaml', help='Config YAML path')
+    parser.add_argument('--force-arps', action='store_true', help='(Deprecated) Previously forced early arpeggios')
+    parser.add_argument('--sheet', action='store_true', help='Print ASCII measure sheet at end')
+    parser.add_argument('--no-move-log', action='store_true', help='Suppress per-move logging lines')
+    parser.add_argument('--track-stats', action='store_true', help='Print track statistics summary')
+    parser.add_argument('--trace-arps', action='store_true', help='Verbose arpeggio tracing')
+    return parser.parse_args()
 
 def get_optimal_octave_shift(program, base_midpoint):
     """Expert-level orchestral register placement based on Spiegel-level knowledge."""
@@ -352,6 +423,7 @@ def generate_thinking_arpeggio(
     pan=64,
     first_note_delay=0,
     ticks_per_second=960,
+    trace=False,
 ):
     """Generate musical phrase during thinking time that builds toward the move."""
     # Only consider sufficiently long thinks (guard)
@@ -367,7 +439,8 @@ def generate_thinking_arpeggio(
     tempo_scale = min(1.0, 100.0 / current_bpm)  # Scale down for fast tempos
     musical_duration = min(compressed_duration_seconds * tempo_scale, 8.0)  # Cap at 8 seconds
 
-    print(f"    Arpeggio: raw {thinking_time_seconds_raw:.1f}s -> compressed {compressed_duration_seconds:.2f}s -> musical {musical_duration:.2f}s")
+    if trace:
+        print(f"    Arpeggio: raw {thinking_time_seconds_raw:.1f}s -> compressed {compressed_duration_seconds:.2f}s -> musical {musical_duration:.2f}s")
 
     # Convert to MIDI ticks using current tempo
     total_ticks = int(musical_duration * ticks_per_second)
@@ -513,15 +586,13 @@ def get_opening_name(game, eco_map):
     return eco_map.get(eco_code, "Unknown Opening")
 
 def main():
-    if len(sys.argv) < 2:
-        print("Usage: python3 c2m.py <game.pgn> [--debug-pan]")
-        sys.exit(1)
-
-    debug_pan = any(arg == '--debug-pan' for arg in sys.argv[2:])
-    trace_arps = any(arg == '--trace-arps' for arg in sys.argv[2:])
-    force_arps = any(arg == '--force-arps' for arg in sys.argv[2:])
-    pgn_file = sys.argv[1]
-    config = load_config()
+    args = parse_args()
+    pgn_file = args.pgn_file
+    trace_arps = args.trace_arps
+    if args.force_arps:
+        print('[DEPRECATED] --force-arps ignored: use arpeggios.threshold_seconds in config.yaml instead.')
+    debug_pan = args.track_stats  # repurpose old flag
+    config = load_config(args.config)
 
     with open(pgn_file) as pgn:
         game = chess.pgn.read_game(pgn)
@@ -536,10 +607,12 @@ def main():
     timing_data = preprocess_timing_data(game)
 
     # Debug timing data
-    print("=== TIMING DEBUG ===")
-    for ply in sorted(timing_data.keys())[:10]:  # Show first 10 moves
-        print(f"Ply {ply}: {timing_data[ply]} seconds thinking time")
-    print("====================")
+    print("=== TIMING SUMMARY (first 12 plies) ===")
+    for ply in sorted(timing_data.keys())[:12]:
+        print(f" ply {ply:02d}: {timing_data[ply]:6.2f}s")
+    if len(timing_data) > 12:
+        print(f" ... ({len(timing_data)} plies total with EMT)")
+    print("======================================")
 
     mid = mido.MidiFile()
     white_track = mido.MidiTrack()
@@ -594,7 +667,13 @@ def main():
         comment = node.comment         # extract PGN comment (timestamps)
 
         base_note = move_to_note(move, board, config)
-        piece = board.piece_at(move.from_square).symbol().upper()
+        raw_piece = board.piece_at(move.from_square)
+        if raw_piece is None:
+            # Fallback: skip this move gracefully
+            print(f"[WARN] No piece at from-square for move {move.uci()} (ply {ply}) - skipping.")
+            board.push(move)
+            continue
+        piece = raw_piece.symbol().upper()
         velocity = config['velocity'].get(piece, 80)
 
         instrument_config = config['instruments'].get(piece)
@@ -609,8 +688,7 @@ def main():
         # Get preprocessed thinking time (EMT refers to time spent BEFORE this move)
         thinking_time = timing_data.get(ply)
         # Optionally override for testing to force early arpeggios
-        if force_arps and ply in (2, 4):  # simple hack: force arps on ply 2 and 4
-            thinking_time = max(thinking_time or 0, 40.0)  # ensure above threshold
+    # (legacy force-arps hack removed)
 
         # Set duration for the actual move note
         if thinking_time is not None:
@@ -641,19 +719,19 @@ def main():
         # Debug output
         note_name = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"][note % 12]
         octave = note // 12 - 1
+
         # PRE-MOVE ARPEGGIO MODEL
-        # If this side just thought for a long time (thinking_time), we represent that by an arpeggio that
-        # occupies time BEFORE the move note is heard.
-        ARP_THRESHOLD = 45.0 if not force_arps else 5.0  # Raise threshold for classical - only very long thinks get arpeggios
+        arp_cfg = config.get('arpeggios', {})
+        ARP_THRESHOLD = arp_cfg.get('threshold_seconds', 45)
+        arps_enabled = arp_cfg.get('enable', True)
         arpeggio_total_ticks = 0
-        if thinking_time and thinking_time >= ARP_THRESHOLD:
+        if arps_enabled and thinking_time and thinking_time >= ARP_THRESHOLD:
             # Derive source (piece's origin square BEFORE move) and target (destination) notes
             from_square = move.from_square
             from_file = chess.FILE_NAMES[chess.square_file(from_square)]
             from_rank = chess.square_rank(from_square) + 1
 
             # Reconstruct pseudo-move for source square to reuse mapping logic uniformly
-            # (We only need file/rank so we mimic destination field)
             class _Tmp:  # minimal shim for reuse
                 def __init__(self, f, r):
                     self._uci = f"a1{f}{r}"  # dummy prefix
@@ -667,16 +745,11 @@ def main():
             compressed_secs = calculate_arpeggio_duration(thinking_time)
             ticks_per_second = PPQ * current_bpm / 60.0
 
-            # Arpeggio starts at current global_time_ticks and ends at global_time_ticks + arpeggio_total_ticks
-            # Compute delay needed on arpeggio track
             if arpeggio_track_time <= global_time_ticks:
                 first_delay = global_time_ticks - arpeggio_track_time
             else:
-                # Arpeggio track somehow ahead (overlap) -> start immediately
                 first_delay = 0
 
-            print(f"[ARP-BEFORE PLY {ply}] EMT {thinking_time:.1f}s compressed {compressed_secs:.2f}s start_tick={global_time_ticks}")
-            # Initialize arpeggio program once for distinct timbre
             global _ARP_PROGRAM_INITIALIZED
             if not _ARP_PROGRAM_INITIALIZED:
                 arpeggio_track.append(mido.Message("program_change", program=ARP_PROGRAM, channel=CHANNELS['arpeggio'], time=0))
@@ -694,8 +767,10 @@ def main():
                 pan=pan_arpeggio,
                 first_note_delay=first_delay,
                 ticks_per_second=ticks_per_second,
+                trace=trace_arps,
             )
-            print(f"    -> Arpeggio consumed {arpeggio_total_ticks} ticks ends_at={global_time_ticks + arpeggio_total_ticks}")
+            if trace_arps:
+                print(f"    -> Arpeggio consumed {arpeggio_total_ticks} ticks ends_at={global_time_ticks + arpeggio_total_ticks}")
             arpeggio_track_time = global_time_ticks + arpeggio_total_ticks
             scheduled_arps.append({
                 'ply': ply,
@@ -706,11 +781,7 @@ def main():
                 'move_tick': global_time_ticks + arpeggio_total_ticks
             })
         else:
-            if trace_arps:
-                if thinking_time is None:
-                    print(f"[ARP-BEFORE PLY {ply}] no EMT -> skip")
-                else:
-                    print(f"[ARP-BEFORE PLY {ply}] EMT {thinking_time:.1f}s below threshold ({ARP_THRESHOLD}) -> skip")
+            arpeggio_total_ticks = 0
 
         # Now schedule the move note AFTER any arpeggio time plus a small gap
         post_arp_gap = 10  # slight breathing space
@@ -720,7 +791,31 @@ def main():
         delay_for_move = move_start_tick - track_current_time
         current_channel = CHANNELS['white'] if board.turn else CHANNELS['black']
         add_note(track, program, note, velocity, duration, pan, delay_for_move, channel=current_channel)
-        print(f"Ply {ply}: {piece} {move.uci()} -> Note {note} ({note_name}{octave}) Program {program} Vel {velocity} Dur {duration} ticks  @move_tick {move_start_tick}")
+        if not args.no_move_log:
+            print_move_line(
+                ply=ply,
+                side='White' if board.turn else 'Black',
+                san=board.san(move) if board.is_legal(move) else move.uci(),
+                piece=piece,
+                note=note,
+                program=program,
+                velocity=velocity,
+                duration=duration,
+                start_tick=move_start_tick,
+                thinking_time=thinking_time,
+                arpeggio_ticks=arpeggio_total_ticks
+            )
+
+        MOVE_EVENTS.append({
+            'ply': ply,
+            'side': 'White' if board.turn else 'Black',
+            'note': note,
+            'start_tick': move_start_tick,
+            'duration': duration,
+            'program': program,
+            'piece': piece,
+            'channel': current_channel
+        })
 
         if nag in config['effects']['nag']:
             effect = config['effects']['nag'][nag]
@@ -759,6 +854,22 @@ def main():
     out_name = pgn_file.rsplit(".", 1)[0] + "_music.mid"
     mid.save(out_name)
     print(f"Saved MIDI to {out_name}")
+
+    if args.sheet:
+        print("\n=== ASCII MOVE SHEET (first measures) ===")
+        for line in build_ascii_sheet(MOVE_EVENTS, PPQ):
+            print(line)
+        print("========================================")
+
+    if args.track_stats:
+        print("\n=== TRACK STATISTICS ===")
+        counts = defaultdict(int)
+        for ev in MOVE_EVENTS:
+            counts[ev['side']] += 1
+        for side, cnt in counts.items():
+            print(f" {side}: {cnt} move notes")
+        print(f" Total move notes: {len(MOVE_EVENTS)}")
+        print("========================")
 
     if trace_arps:
         print("=== ARPEGGIO SCHEDULE SUMMARY (PRE-MOVE) ===")

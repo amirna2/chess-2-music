@@ -51,6 +51,12 @@ tempo:
   middlegame: 120  # ply 11 - moderate pace
   endgame: 90      # ply 31 - slower, contemplative
 
+# Arpeggio behavior
+arpeggios:
+  threshold_seconds: 45     # Minimum EMT to trigger pre-move arpeggio (classical long think)
+  enable: true              # Master switch
+  max_compressed_seconds: 4 # Musical cap after compression
+
 # Drone notes based on ECO opening classification
 drones:
   enabled: true
