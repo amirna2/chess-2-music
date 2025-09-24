@@ -17,6 +17,8 @@ CHANNELS = {
     'drone': 2,
     'arpeggio': 3,
     'effects': 4,  # optional separate channel for NAG/capture/check accents
+    'white_drone': 5,
+    'black_drone': 6,
 }
 
 _LAST_PROGRAM = {}
@@ -317,6 +319,10 @@ def snap_to_scale(note, scale):
     return min(new_note, 127)
 
 def move_to_note(move, board, config):
+    """
+    Map a chess move to a MIDI note number based on the destination square.
+    Supports multiple pitch mapping modes for different musical styles.
+    """
     dest = move.uci()[2:]
     file, rank = dest[0], int(dest[1])
 
@@ -360,13 +366,16 @@ def move_to_note(move, board, config):
     return base_pitch + (rank - 1) * 3
 
 def get_phase_for_ply(ply: int) -> str:
-    if ply < 11:
+    """Classify game phase based on ply number."""
+
+    # Naive thresholds; could be refined by position analysis
+    if ply < 14:
         return "opening"
     elif ply < 31:
         return "middlegame"
     return "endgame"
 
-def modulate_drone_for_thinking(drone_track, thinking_time: float | None, ply: int, eco_note: int, config, base_velocity: int):
+def modulate_drone_for_thinking(drone_track, thinking_time: float | None, ply: int, eco_note: int, config, base_velocity: int, channel=None, duck_other=None):
     """Inject modulation events into the sustained drone based on thinking time.
 
     Returns list of post-move (cleanup) messages (note_off / restore CC) to append after move note.
@@ -380,7 +389,7 @@ def modulate_drone_for_thinking(drone_track, thinking_time: float | None, ply: i
 
     swell_min = dm_cfg.get("swell_min_seconds", 30)
     tension_min = dm_cfg.get("tension_min_seconds", 120)
-    pulse_min = dm_cfg.get("pulse_min_seconds", 300)
+    pulse_min = dm_cfg.get("pulse_min_seconds", 600)
 
     if thinking_time < swell_min:
         return []
@@ -391,8 +400,11 @@ def modulate_drone_for_thinking(drone_track, thinking_time: float | None, ply: i
     if swell_min <= thinking_time < tension_min:
         swell_amount = dm_cfg.get("swell_amount", 20)
         target = max(0, min(127, base_velocity + swell_amount))
-        drone_track.append(mido.Message("control_change", control=7, value=target, channel=CHANNELS['drone'], time=0))
-        post_move.append(mido.Message("control_change", control=7, value=base_velocity, channel=CHANNELS['drone'], time=0))
+        drone_track.append(mido.Message("control_change", control=7, value=target, channel=(channel if channel is not None else CHANNELS['drone']), time=0))
+        post_move.append(mido.Message("control_change", control=7, value=base_velocity, channel=(channel if channel is not None else CHANNELS['drone']), time=0))
+        if duck_other:
+            # (pre duck already applied outside) schedule restore handled in outer logic
+            pass
         return post_move
 
     # Phase 2: Tension harmony
@@ -400,8 +412,8 @@ def modulate_drone_for_thinking(drone_track, thinking_time: float | None, ply: i
         tension_interval = dm_cfg.get("tension_interval", 6)
         tension_velocity = dm_cfg.get("tension_velocity", 60)
         tension_note = eco_note + tension_interval
-        drone_track.append(mido.Message("note_on", note=tension_note, velocity=tension_velocity, channel=CHANNELS['drone'], time=0))
-        post_move.append(mido.Message("note_off", note=tension_note, velocity=0, channel=CHANNELS['drone'], time=0))
+        drone_track.append(mido.Message("note_on", note=tension_note, velocity=tension_velocity, channel=(channel if channel is not None else CHANNELS['drone']), time=0))
+        post_move.append(mido.Message("note_off", note=tension_note, velocity=0, channel=(channel if channel is not None else CHANNELS['drone']), time=0))
         return post_move
 
     # Phase 3: Pulses
@@ -413,9 +425,9 @@ def modulate_drone_for_thinking(drone_track, thinking_time: float | None, ply: i
         low_val = max(0, min(127, base_velocity + pulse_drop))
         high_val = max(0, min(127, base_velocity + pulse_rise))
         for i in range(pulse_count):
-            drone_track.append(mido.Message("control_change", control=7, value=low_val, channel=CHANNELS['drone'], time=(0 if i == 0 else pulse_rate)))
-            drone_track.append(mido.Message("control_change", control=7, value=high_val, channel=CHANNELS['drone'], time=pulse_rate))
-        post_move.append(mido.Message("control_change", control=7, value=base_velocity, channel=CHANNELS['drone'], time=0))
+            drone_track.append(mido.Message("control_change", control=7, value=low_val, channel=(channel if channel is not None else CHANNELS['drone']), time=(0 if i == 0 else pulse_rate)))
+            drone_track.append(mido.Message("control_change", control=7, value=high_val, channel=(channel if channel is not None else CHANNELS['drone']), time=pulse_rate))
+        post_move.append(mido.Message("control_change", control=7, value=base_velocity, channel=(channel if channel is not None else CHANNELS['drone']), time=0))
         return post_move
 
     return []
