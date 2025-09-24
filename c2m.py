@@ -770,7 +770,7 @@ def main():
         # Get preprocessed thinking time (EMT refers to time spent BEFORE this move)
         thinking_time = timing_data.get(ply)
         # Optionally override for testing to force early arpeggios
-    # (legacy force-arps hack removed)
+        # (legacy force-arps hack removed)
 
         # Set duration for the actual move note
         if thinking_time is not None:
@@ -877,10 +877,6 @@ def main():
                 'end_tick': global_time_ticks + arpeggio_total_ticks,
                 'move_tick': global_time_ticks + arpeggio_total_ticks
             })
-        # Apply any post-move drone cleanup events right before scheduling move note
-        for msg in post_drone_msgs:
-            drone_track.append(msg)
-
         # Now schedule the move note AFTER any arpeggio time plus a small gap
         post_arp_gap = 10  # slight breathing space
         move_start_tick = global_time_ticks + arpeggio_total_ticks + (post_arp_gap if arpeggio_total_ticks else 0)
@@ -889,6 +885,21 @@ def main():
         delay_for_move = move_start_tick - track_current_time
         current_channel = CHANNELS['white'] if board.turn else CHANNELS['black']
         add_note(track, program, note, velocity, duration, pan, delay_for_move, channel=current_channel)
+
+        # Defer drone cleanup to coincide with move onset (keeps modulation until move starts)
+        if post_drone_msgs:
+            first = True
+            for msg in post_drone_msgs:
+                # Only the first cleanup gets a delay aligning with move_start_tick - global_time_ticks
+                # Reconstruct message safely without duplicating 'type'
+                msg_dict = msg.dict().copy()
+                # Remove keys managed explicitly
+                msg_dict.pop('time', None)
+                msg_type = msg_dict.pop('type', msg.type)
+                # Build new message with adjusted time
+                new_time = delay_for_move if first else 0
+                drone_track.append(mido.Message(msg_type, time=new_time, **msg_dict))
+                first = False
         if not args.no_move_log:
             print_move_line(
                 ply=ply,

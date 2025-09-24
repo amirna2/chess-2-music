@@ -60,7 +60,7 @@ arpeggios:
 # Drone notes based on ECO opening classification
 drones:
   enabled: true
-  instrument: 95      # Organ - perfect for sustained drones
+  instrument: 40      # Organ - perfect for sustained drones
   eco_mapping:
     A: 36            # C2 - Flank openings (English, irregular) - Tonic, stable
     B: 43            # G2 - Semi-open games (1.e4 c5, c6, etc.) - Perfect 5th, stable
