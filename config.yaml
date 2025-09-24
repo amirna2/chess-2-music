@@ -54,7 +54,7 @@ tempo:
 # Arpeggio behavior
 arpeggios:
   threshold_seconds: 45     # Minimum EMT to trigger pre-move arpeggio (classical long think)
-  enable: true              # Master switch
+  enable: false              # Master switch
   max_compressed_seconds: 4 # Musical cap after compression
 
 # Drone notes based on ECO opening classification
@@ -145,3 +145,17 @@ effects:
 panning:
   white: 46
   black: 81
+
+# Dynamic drone modulation reacting to thinking time
+drone_modulation:
+  enable: true              # Master switch
+  swell_min_seconds: 30     # Start subtle volume swell
+  tension_min_seconds: 120  # Add temporary tension harmony (tritone)
+  pulse_min_seconds: 300    # Begin pulsing phase for very long thinks
+  swell_amount: 20          # CC7 increase over base phase velocity
+  tension_interval: 6       # Semitones above base drone note (tritone)
+  tension_velocity: 60      # Velocity for temporary tension note
+  pulse_drop: -25           # Dip below base CC7
+  pulse_rise: 10            # Rise above base CC7
+  pulse_count: 4            # Number of dip-rise cycles
+  pulse_rate_ticks: 240     # Ticks between pulse events (tempo dependent perceived rate)

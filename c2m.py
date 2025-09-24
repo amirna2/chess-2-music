@@ -359,6 +359,67 @@ def move_to_note(move, board, config):
     base_pitch = config['pitch_mapping'][file]
     return base_pitch + (rank - 1) * 3
 
+def get_phase_for_ply(ply: int) -> str:
+    if ply < 11:
+        return "opening"
+    elif ply < 31:
+        return "middlegame"
+    return "endgame"
+
+def modulate_drone_for_thinking(drone_track, thinking_time: float | None, ply: int, eco_note: int, config, base_velocity: int):
+    """Inject modulation events into the sustained drone based on thinking time.
+
+    Returns list of post-move (cleanup) messages (note_off / restore CC) to append after move note.
+    Uses CC7 (volume) for broad changes; could be adapted to CC11 for finer control.
+    """
+    dm_cfg = config.get("drone_modulation", {})
+    if not dm_cfg.get("enable", False):
+        return []
+    if thinking_time is None:
+        return []
+
+    swell_min = dm_cfg.get("swell_min_seconds", 30)
+    tension_min = dm_cfg.get("tension_min_seconds", 120)
+    pulse_min = dm_cfg.get("pulse_min_seconds", 300)
+
+    if thinking_time < swell_min:
+        return []
+
+    post_move = []
+
+    # Phase 1: Swell
+    if swell_min <= thinking_time < tension_min:
+        swell_amount = dm_cfg.get("swell_amount", 20)
+        target = max(0, min(127, base_velocity + swell_amount))
+        drone_track.append(mido.Message("control_change", control=7, value=target, channel=CHANNELS['drone'], time=0))
+        post_move.append(mido.Message("control_change", control=7, value=base_velocity, channel=CHANNELS['drone'], time=0))
+        return post_move
+
+    # Phase 2: Tension harmony
+    if tension_min <= thinking_time < pulse_min:
+        tension_interval = dm_cfg.get("tension_interval", 6)
+        tension_velocity = dm_cfg.get("tension_velocity", 60)
+        tension_note = eco_note + tension_interval
+        drone_track.append(mido.Message("note_on", note=tension_note, velocity=tension_velocity, channel=CHANNELS['drone'], time=0))
+        post_move.append(mido.Message("note_off", note=tension_note, velocity=0, channel=CHANNELS['drone'], time=0))
+        return post_move
+
+    # Phase 3: Pulses
+    if thinking_time >= pulse_min:
+        pulse_count = dm_cfg.get("pulse_count", 4)
+        pulse_rate = dm_cfg.get("pulse_rate_ticks", 240)
+        pulse_drop = dm_cfg.get("pulse_drop", -25)
+        pulse_rise = dm_cfg.get("pulse_rise", 10)
+        low_val = max(0, min(127, base_velocity + pulse_drop))
+        high_val = max(0, min(127, base_velocity + pulse_rise))
+        for i in range(pulse_count):
+            drone_track.append(mido.Message("control_change", control=7, value=low_val, channel=CHANNELS['drone'], time=(0 if i == 0 else pulse_rate)))
+            drone_track.append(mido.Message("control_change", control=7, value=high_val, channel=CHANNELS['drone'], time=pulse_rate))
+        post_move.append(mido.Message("control_change", control=7, value=base_velocity, channel=CHANNELS['drone'], time=0))
+        return post_move
+
+    return []
+
 def add_note(track, program, note, velocity, duration, pan=64, delay=0, channel=0, init_program=True):
     """Add a note with the delay applied to the NOTE ON (not swallowed by program/pan)."""
     original_delay = delay
@@ -627,14 +688,23 @@ def main():
     black_track.append(mido.Message("control_change", channel=CHANNELS['black'], control=7, value=100, time=0))
 
     # Initialize drone if enabled
+    drone_base_note = None
+    base_drone_velocity = None
     if config['drones']['enabled']:
         eco_code = game.headers.get("ECO", "A")
         eco_letter = eco_code[0] if eco_code else "A"
-        drone_note = config['drones']['eco_mapping'].get(eco_letter, 36)
+        drone_base_note = config['drones']['eco_mapping'].get(eco_letter, 36)
         drone_program = config['drones']['instrument']
+        opening_phase_cfg = config['drones']['phases']['opening']
+        base_drone_velocity = opening_phase_cfg['velocity']
         drone_track.append(mido.Message("program_change", program=drone_program, channel=CHANNELS['drone'], time=0))
         drone_track.append(mido.Message("control_change", control=10, value=64, channel=CHANNELS['drone'], time=0))
-        drone_track.append(mido.Message("note_on", note=drone_note, velocity=config['drones']['phases']['middlegame']['velocity'], channel=CHANNELS['drone'], time=0))
+        # Set initial volume
+        drone_track.append(mido.Message("control_change", control=7, value=base_drone_velocity, channel=CHANNELS['drone'], time=0))
+        # Base drone note
+        drone_track.append(mido.Message("note_on", note=drone_base_note, velocity=base_drone_velocity, channel=CHANNELS['drone'], time=0))
+        for h in opening_phase_cfg.get("harmonies", []):
+            drone_track.append(mido.Message("note_on", note=drone_base_note + h, velocity=max(0, base_drone_velocity - 10), channel=CHANNELS['drone'], time=0))
 
     board = game.board()
     node = game  # needed to access comments in sync with moves
@@ -720,12 +790,27 @@ def main():
         note_name = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"][note % 12]
         octave = note // 12 - 1
 
-        # PRE-MOVE ARPEGGIO MODEL
+        # Drone modulation (replace or complement arpeggios)
+        post_drone_msgs = []
+        if config.get('drone_modulation', {}).get('enable') and config['drones']['enabled']:
+            current_phase = get_phase_for_ply(ply)
+            phase_cfg = config['drones']['phases'].get(current_phase, {})
+            phase_velocity = phase_cfg.get('velocity', base_drone_velocity or 90)
+            post_drone_msgs = modulate_drone_for_thinking(
+                drone_track=drone_track,
+                thinking_time=thinking_time,
+                ply=ply,
+                eco_note=drone_base_note or 36,
+                config=config,
+                base_velocity=phase_velocity,
+            )
+
+        # PRE-MOVE ARPEGGIO MODEL (disabled if drone modulation active)
         arp_cfg = config.get('arpeggios', {})
         ARP_THRESHOLD = arp_cfg.get('threshold_seconds', 45)
-        arps_enabled = arp_cfg.get('enable', True)
         arpeggio_total_ticks = 0
-        if arps_enabled and thinking_time and thinking_time >= ARP_THRESHOLD:
+        arps_allowed = arp_cfg.get('enable', True) and not (config.get('drone_modulation', {}).get('enable'))
+        if arps_allowed and thinking_time and thinking_time >= ARP_THRESHOLD:
             # Derive source (piece's origin square BEFORE move) and target (destination) notes
             from_square = move.from_square
             from_file = chess.FILE_NAMES[chess.square_file(from_square)]
@@ -780,8 +865,9 @@ def main():
                 'end_tick': global_time_ticks + arpeggio_total_ticks,
                 'move_tick': global_time_ticks + arpeggio_total_ticks
             })
-        else:
-            arpeggio_total_ticks = 0
+        # Apply any post-move drone cleanup events right before scheduling move note
+        for msg in post_drone_msgs:
+            drone_track.append(msg)
 
         # Now schedule the move note AFTER any arpeggio time plus a small gap
         post_arp_gap = 10  # slight breathing space
