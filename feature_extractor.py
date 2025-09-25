@@ -63,6 +63,12 @@ class MoveFeature:
     eval_cp: Optional[int] = None                # Future engine centipawn value
     eval_mate: Optional[int] = None              # Future engine mate distance
     tags: List[str] = field(default_factory=list)  # Higher-level semantic tags (future)
+    move_distance: Optional[int] = None           # Chebyshev-style move distance (as in c2m)
+    # Event state after this move
+    both_castled_after: Optional[bool] = None
+    both_queens_off_after: Optional[bool] = None
+    first_both_castled: Optional[bool] = None      # True only on ply where event first becomes true
+    first_both_queens_off: Optional[bool] = None   # True only on ply where event first becomes true
 
     def to_dict(self) -> Dict[str, Any]:
         d = asdict(self)
@@ -97,6 +103,8 @@ class DerivedMetrics:
     num_checks: int
     num_promotions: int
     num_mates: int
+    both_castled_ply: Optional[int] = None
+    both_queens_off_ply: Optional[int] = None
 
 @dataclass
 class GameFeatures:
@@ -117,6 +125,7 @@ class GameFeatures:
 
 _EMT_PATTERN = re.compile(r"\[%emt\s+([\d:.]+)\]", re.IGNORECASE)
 _CLK_PATTERN = re.compile(r"\[%clk\s+([\d:.]+)\]", re.IGNORECASE)
+_EVAL_PATTERN = re.compile(r"\[%eval\s+([^\]]+)\]", re.IGNORECASE)
 
 
 def _parse_hms_to_seconds(token: str) -> Optional[float]:
@@ -181,6 +190,36 @@ def extract_clock_seconds(comment: str) -> Optional[float]:
     return _parse_hms_to_seconds(m.group(1)) if m else None
 
 
+def extract_eval(comment: str) -> tuple[Optional[int], Optional[int]]:
+    """Extract computer evaluation from comment.
+
+    Returns (cp, mate) where only one is set:
+      cp   : centipawn integer (e.g. 0.37 -> 37, -1.25 -> -125)
+      mate : moves to mate (positive if side to move mates, negative if mated)
+    Supports formats like '0.18', '-1.23', '#5'.
+    If multiple eval tags, first match taken.
+    """
+    if not comment:
+        return (None, None)
+    m = _EVAL_PATTERN.search(comment)
+    if not m:
+        return (None, None)
+    token = m.group(1).strip()
+    # Mate notation might appear as #5 or #-3
+    if token.startswith('#'):
+        try:
+            mate_val = int(token[1:])
+            return (None, mate_val)
+        except ValueError:
+            return (None, None)
+    # Otherwise float centipawn in pawns
+    try:
+        val = float(token)
+        return (int(round(val * 100)), None)
+    except ValueError:
+        return (None, None)
+
+
 def identify_move_kind(board: chess.Board, move: chess.Move, san: str) -> MoveKind:
     """Infer the primary move kind before move is executed."""
     if board.is_castling(move):
@@ -195,6 +234,18 @@ def identify_move_kind(board: chess.Board, move: chess.Move, san: str) -> MoveKi
     if board.is_capture(move):
         return MoveKind.CAPTURE
     return MoveKind.NORMAL
+
+
+def compute_move_distance(board: chess.Board, move: chess.Move) -> int:
+    """Replicate c2m move distance (chebyshev except knight fixed 3)."""
+    from_sq = move.from_square
+    to_sq = move.to_square
+    file_dist = abs(chess.square_file(to_sq) - chess.square_file(from_sq))
+    rank_dist = abs(chess.square_rank(to_sq) - chess.square_rank(from_sq))
+    piece = board.piece_at(from_sq)
+    if piece and piece.piece_type == chess.KNIGHT:
+        return 3
+    return max(file_dist, rank_dist)
 
 
 
@@ -322,6 +373,10 @@ def extract_game_features(pgn_path: str | Path,
     moves_features: List[MoveFeature] = []
 
     ply = 1
+    white_castled = False
+    black_castled = False
+    both_castled_ply: Optional[int] = None
+    both_queens_off_ply: Optional[int] = None
     for node in game.mainline():
         move = node.move
         san = board.san(move)
@@ -329,10 +384,13 @@ def extract_game_features(pgn_path: str | Path,
         comment = node.comment or ""
         emt = extract_emt_seconds(comment)
         clk = extract_clock_seconds(comment)
+        eval_cp, eval_mate = extract_eval(comment)
         kind = identify_move_kind(board, move, san)
         piece_obj = board.piece_at(move.from_square)
         piece_symbol = piece_obj.symbol().upper() if piece_obj else None
 
+        # Compute distance BEFORE pushing (need original piece)
+        distance = compute_move_distance(board, move)
         board.push(move)
 
         is_check = board.is_check()
@@ -342,6 +400,23 @@ def extract_game_features(pgn_path: str | Path,
         promo_piece = None
         if is_promo:
             promo_piece = chess.Piece(move.promotion, chess.WHITE).symbol().upper()
+
+        # Update castling state
+        if kind in (MoveKind.CASTLE_KING, MoveKind.CASTLE_QUEEN):
+            if ply % 2 == 1:  # white move
+                white_castled = True
+            else:
+                black_castled = True
+        current_both_castled = white_castled and black_castled
+        if current_both_castled and both_castled_ply is None:
+            both_castled_ply = ply
+
+        # Update queens-off state
+        white_queen_count = len(board.pieces(chess.QUEEN, chess.WHITE))
+        black_queen_count = len(board.pieces(chess.QUEEN, chess.BLACK))
+        current_both_queens_off = (white_queen_count == 0 and black_queen_count == 0)
+        if current_both_queens_off and both_queens_off_ply is None:
+            both_queens_off_ply = ply
 
         mf = MoveFeature(
             ply=ply,
@@ -362,6 +437,13 @@ def extract_game_features(pgn_path: str | Path,
             emt_seconds=emt,
             clock_after_seconds=clk,
             comment_raw=comment if comment else None,
+            move_distance=distance,
+            eval_cp=eval_cp,
+            eval_mate=eval_mate,
+            both_castled_after=current_both_castled,
+            both_queens_off_after=current_both_queens_off,
+            first_both_castled=True if (current_both_castled and ply == both_castled_ply) else None,
+            first_both_queens_off=True if (current_both_queens_off and ply == both_queens_off_ply) else None,
         )
         moves_features.append(mf)
         ply += 1
@@ -382,6 +464,8 @@ def extract_game_features(pgn_path: str | Path,
         num_checks=sum(1 for m in moves_features if m.is_check),
         num_promotions=sum(1 for m in moves_features if m.is_promotion),
         num_mates=sum(1 for m in moves_features if m.is_mate),
+    both_castled_ply=both_castled_ply,
+    both_queens_off_ply=both_queens_off_ply,
     )
 
     return GameFeatures(metadata=metadata, moves=moves_features, metrics=metrics)
@@ -406,13 +490,15 @@ def _demo_print(game_features: GameFeatures, full: bool = False) -> None:
     print(f"Promotions/Mates: {mt.num_promotions} / {mt.num_mates}")
     print(f"Think White (tot/avg/max): {mt.total_think_time_white:.2f} / {mt.avg_think_white} / {mt.longest_think_white}")
     print(f"Think Black (tot/avg/max): {mt.total_think_time_black:.2f} / {mt.avg_think_black} / {mt.longest_think_black}")
+    print(f"Both castled ply : {mt.both_castled_ply}")
+    print(f"Both queens off ply: {mt.both_queens_off_ply}")
     print()
     subset = game_features.moves if full else game_features.moves[:10]
     print(f"=== Move Features ({'all' if full else 'first 10'}) ===")
     # Adopt a fixed-width table with separators similar to c2m's print_move_line style.
     col_defs = [
         ("PLY", 3), ("SD", 2), ("FM", 3), ("SAN", 10), ("KIND", 11),
-        ("CAP", 3), ("CHK", 3), ("EMT", 7), ("CLOCK", 9), ("PROM", 4), ("NAGS", 8), ("NSYM", 6)
+        ("CAP", 3), ("CHK", 3), ("EMT", 7), ("CLOCK", 9), ("EVAL", 7), ("DIST", 4), ("PROM", 4), ("NAGS", 8), ("NSYM", 6)
     ]
     header = " | ".join(f"{name:<{w}}" for name, w in col_defs)
     ruler = "-+-".join('-'*w for _, w in col_defs)
@@ -424,9 +510,18 @@ def _demo_print(game_features: GameFeatures, full: bool = False) -> None:
         emt_str = f"{m.emt_seconds:.2f}" if m.emt_seconds is not None else '--'
         clk_str = f"{m.clock_after_seconds:.1f}" if m.clock_after_seconds is not None else '--'
         san_disp = m.san if len(m.san) <= 10 else m.san[:9] + '…'
+        # Format eval: mate overrides cp; cp in pawns with sign
+        if m.eval_mate is not None:
+            eval_disp = f"#{m.eval_mate}"
+        elif m.eval_cp is not None:
+            eval_disp = f"{m.eval_cp/100:+.2f}"  # show +0.37 style
+        else:
+            eval_disp = '--'
         row_vals = [
             f"{m.ply:03d}", m.side[0], f"{m.fullmove:02d}", san_disp, m.kind.name,
             str(int(m.is_capture)), str(int(m.is_check)), emt_str, clk_str,
+            eval_disp,
+            (str(m.move_distance) if m.move_distance is not None else '-'),
             (m.promotion_piece or '-'), nags_num, nags_sym
         ]
         line = " | ".join(f"{val:<{w}}" for val, (_, w) in zip(row_vals, col_defs))
