@@ -62,7 +62,6 @@ class MoveFeature:
     comment_raw: Optional[str] = None
     eval_cp: Optional[int] = None                # Future engine centipawn value
     eval_mate: Optional[int] = None              # Future engine mate distance
-    material_balance: Optional[int] = None       # Simple material (white minus black)
     tags: List[str] = field(default_factory=list)  # Higher-level semantic tags (future)
 
     def to_dict(self) -> Dict[str, Any]:
@@ -198,20 +197,6 @@ def identify_move_kind(board: chess.Board, move: chess.Move, san: str) -> MoveKi
     return MoveKind.NORMAL
 
 
-def compute_material_balance(board: chess.Board) -> int:
-    """Return (white material - black material) using simple piece values."""
-    piece_values = {
-        chess.PAWN: 1,
-        chess.KNIGHT: 3,
-        chess.BISHOP: 3,
-        chess.ROOK: 5,
-        chess.QUEEN: 9,
-    }
-    score = 0
-    for pt, val in piece_values.items():
-        score += len(board.pieces(pt, chess.WHITE)) * val
-        score -= len(board.pieces(pt, chess.BLACK)) * val
-    return score
 
 
 def classify_time_control(tc: Optional[str]) -> Optional[str]:
@@ -358,8 +343,6 @@ def extract_game_features(pgn_path: str | Path,
         if is_promo:
             promo_piece = chess.Piece(move.promotion, chess.WHITE).symbol().upper()
 
-        mat_bal = compute_material_balance(board)
-
         mf = MoveFeature(
             ply=ply,
             fullmove=board.fullmove_number,
@@ -379,7 +362,6 @@ def extract_game_features(pgn_path: str | Path,
             emt_seconds=emt,
             clock_after_seconds=clk,
             comment_raw=comment if comment else None,
-            material_balance=mat_bal,
         )
         moves_features.append(mf)
         ply += 1
@@ -427,22 +409,28 @@ def _demo_print(game_features: GameFeatures, full: bool = False) -> None:
     print()
     subset = game_features.moves if full else game_features.moves[:10]
     print(f"=== Move Features ({'all' if full else 'first 10'}) ===")
-    header = (
-        f"{'PLY':>3} {'SD':<1} {'FM':>2} {'SAN':<10} {'KIND':<11} {'CAP':<3} "
-        f"{'CHK':<3} {'MAT':>4} {'EMT':>6} {'CLOCK':>8} {'PROM':<4} {'NAGS':<8} {'NSYM':<6}"
-    )
+    # Adopt a fixed-width table with separators similar to c2m's print_move_line style.
+    col_defs = [
+        ("PLY", 3), ("SD", 2), ("FM", 3), ("SAN", 10), ("KIND", 11),
+        ("CAP", 3), ("CHK", 3), ("EMT", 7), ("CLOCK", 9), ("PROM", 4), ("NAGS", 8), ("NSYM", 6)
+    ]
+    header = " | ".join(f"{name:<{w}}" for name, w in col_defs)
+    ruler = "-+-".join('-'*w for _, w in col_defs)
     print(header)
-    print('-' * len(header))
+    print(ruler)
     for m in subset:
         nags_num = ','.join(str(n) for n in m.nag_codes) if m.nag_codes else ''
         nags_sym = ''.join(decode_nags(m.nag_codes))
-        print(
-            f"{m.ply:03d} {m.side[0]:<1} {m.fullmove:02d} {m.san:<10} {m.kind.name:<11} "
-            f"{int(m.is_capture):<3} {int(m.is_check):<3} {m.material_balance:>4} "
-            f"{(f'{m.emt_seconds:.2f}' if m.emt_seconds is not None else '-'):>6} "
-            f"{(f'{m.clock_after_seconds:.1f}' if m.clock_after_seconds is not None else '-'):>8} "
-            f"{(m.promotion_piece or '-'):>4} {nags_num:<8} {nags_sym:<6}"
-        )
+        emt_str = f"{m.emt_seconds:.2f}" if m.emt_seconds is not None else '--'
+        clk_str = f"{m.clock_after_seconds:.1f}" if m.clock_after_seconds is not None else '--'
+        san_disp = m.san if len(m.san) <= 10 else m.san[:9] + '…'
+        row_vals = [
+            f"{m.ply:03d}", m.side[0], f"{m.fullmove:02d}", san_disp, m.kind.name,
+            str(int(m.is_capture)), str(int(m.is_check)), emt_str, clk_str,
+            (m.promotion_piece or '-'), nags_num, nags_sym
+        ]
+        line = " | ".join(f"{val:<{w}}" for val, (_, w) in zip(row_vals, col_defs))
+        print(line)
     if not full and len(game_features.moves) > 10:
         print(f"... ({len(game_features.moves)-10} more plies) use --full to list all")
 
