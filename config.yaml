@@ -1,17 +1,17 @@
 # Chess piece to MIDI instrument mapping (General MIDI program numbers)
 instruments:
   P:
-    program: 46  # Trumpet - bright and clear for pawns
+    program: 40  # Trumpet - bright and clear for pawns
   N:
-    program: 35 # Fretless Bass - smooth and agile for knights
+    program: 46 # Fretless Bass - smooth and agile for knights
   B:
-    program: 49 # String Ensemble 2 - warm and flowing for bishops
+    program: 71 # String Ensemble 2 - warm and flowing for bishops
   R:
-    program: 18 # Rock Organ - strong and steady for rooks
+    program: 47 # Rock Organ - strong and steady for rooks
   Q:
-    program: 40 # Violin - expressive and dominant for queen
+    program: 0 # Violin - expressive and dominant for queen
   K:
-    program: 0 # Acoustic Grand Piano - regal and foundational for king
+    program: 73 # Acoustic Grand Piano - regal and foundational for king
 
 # Pitch mapping configuration
 # pitch_mode options:
@@ -19,8 +19,8 @@ instruments:
 #   diatonic_2rank_octaves -> files follow diatonic degrees, every 2 ranks ascend an octave
 #   chromatic_linear       -> uniform chromatic spacing (file *2, rank *3)
 #   major_files_octave_ranks -> files = major scale degrees, each rank = +12 semitones (strong consonance)
-pitch_mode: diatonic_2rank_octaves
-pitch_root: 60  # MIDI note for file 'a' base (C4)
+pitch_mode: chromatic_linear
+pitch_root: 48  # MIDI note for file 'a' base (C4)
 
 # Velocity (volume) settings for each piece type - move notes should be prominent
 velocity:
@@ -65,7 +65,7 @@ tempo:
 # The drone notes are chosen to provide a stable harmonic base that complements the piece melodies.
 # The drone changes subtly through the game phases to reflect the evolving nature of the game.
 drones:
-  enabled: true
+  enabled: false
   instrument: 48
   eco_mapping:
     A: 36            # C2 - Flank openings (English, irregular) - Tonic, stable
@@ -155,7 +155,7 @@ expression_modulation:
 # Works in harmony with the drone system to create rich textures during think time
 thinking_arpeggios:
   enable: true
-  instrument: 46              # Harp - back to subtle texture
+  instrument: 0              # Harp - back to subtle texture
   channel: 3                  # Dedicated MIDI channel
   velocity_base: 65           # Clear but supporting role
 

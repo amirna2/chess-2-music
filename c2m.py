@@ -973,6 +973,8 @@ def main():
     track_times = {CHANNELS['white']: 0, CHANNELS['black']: 0}
     # Track current tempo (BPM) for tempo-aware scaling
     current_bpm = config['tempo']['opening']
+    # Simple memory for last note per channel to avoid exact repetition if desired
+    last_channel_note: dict[int, int] = {}
 
     # Initialize channel program/pan once. Use config panning.
     pan_white = config.get('panning', {}).get('white', 64)
@@ -1010,6 +1012,14 @@ def main():
         else:
             program = instrument_config or 0
             note = base_note
+
+        # Piece-type pitch disambiguation (tiny offsets to reduce aliasing between different piece moves to same square-derived pitch)
+        # Keeps original grid feel but separates timbral identity slightly.
+        # Knight +1 semitone, Bishop +2 semitones (configurable later if needed).
+        if piece == 'N':
+            note = min(note + 1, 127)
+        elif piece == 'B':
+            note = min(note + 2, 127)
 
         # Get preprocessed thinking time (EMT refers to time spent BEFORE this move)
         thinking_time = timing_data.get(ply)
@@ -1207,11 +1217,22 @@ def main():
         # Schedule move immediately after any drone window
         move_start_tick = global_time_ticks
         current_channel = CHANNELS['white'] if board.turn else CHANNELS['black']
+        # Minimal simple fix: avoid two identical consecutive notes for same side (can sound stale)
+        if config.get('dedup_pitch_simple', True):
+            prev_note = last_channel_note.get(current_channel)
+            if prev_note is not None and prev_note == note:
+                # Nudge by +2 semitones and snap to scale for consonance
+                try:
+                    note = snap_to_scale(note + 2, config.get('scale', [0,2,4,5,7,9,11]))
+                except Exception:
+                    note = min(note + 2, 127)
         # Use per-track accumulated time to compute the delta
         last_channel_time = track_times[current_channel]
         delay_for_move = max(0, move_start_tick - last_channel_time)
         add_note(track, program, note, velocity, duration, pan, delay_for_move, channel=current_channel)
         track_times[current_channel] = last_channel_time + delay_for_move + duration
+        # Remember last note actually emitted
+        last_channel_note[current_channel] = note
 
         # (No deferred cleanup needed)
         if not args.no_move_log:
