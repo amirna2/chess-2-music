@@ -94,6 +94,7 @@ class GameMetadata:
 @dataclass
 class DerivedMetrics:
     total_moves: int
+    total_plies: int
     total_think_time_white: float
     total_think_time_black: float
     avg_think_white: Optional[float]
@@ -458,7 +459,8 @@ def extract_game_features(pgn_path: str | Path,
     black_thinks = [m.emt_seconds for m in moves_features if m.side == "black" and m.emt_seconds is not None]
 
     metrics = DerivedMetrics(
-        total_moves=len(moves_features),
+        total_moves=moves_features[-1].fullmove if moves_features else 0,
+        total_plies=moves_features[-1].ply if moves_features else 0,
         total_think_time_white=sum(white_thinks) if white_thinks else 0.0,
         total_think_time_black=sum(black_thinks) if black_thinks else 0.0,
         avg_think_white=(sum(white_thinks) / len(white_thinks)) if white_thinks else None,
@@ -490,7 +492,8 @@ def _demo_print(game_features: GameFeatures, full: bool = False) -> None:
     print(f"Event/Site   : {md.event} @ {md.site}")
     print()
     print("=== Aggregate Metrics ===")
-    print(f"Total plies     : {mt.total_moves}")
+    print(f"Total moves     : {mt.total_moves}")
+    print(f"Total plies     : {mt.total_plies}")
     print(f"Captures/Checks : {mt.num_captures} / {mt.num_checks}")
     print(f"Promotions/Mates: {mt.num_promotions} / {mt.num_mates}")
     print(f"Think White (tot/avg/max): {mt.total_think_time_white:.2f} / {mt.avg_think_white} / {mt.longest_think_white}")

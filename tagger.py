@@ -55,7 +55,11 @@ class ChessNarrativeTagger:
             self.metadata = asdict(game_data.metadata)
             self.metrics = asdict(game_data.metrics)
 
-        self.total_plies = len(self.moves)
+        self.total_plies = self.metrics['total_plies']
+
+        # Validate that we have moves to process
+        if self.total_plies == 0:
+            raise ValueError("Error: No moves found in game data (total_plies is 0). Cannot generate narrative structure for an empty game.")
 
     def detect_sections(self) -> List[Tuple[str, int, int]]:
         """Detect major game sections (opening, middlegame, endgame)"""
