@@ -575,7 +575,93 @@ class ChessNarrativeTagger:
         if all(n in ['QUIET_MANEUVERING', 'TENSE_EQUILIBRIUM'] for n in narratives):
             return "STRATEGIC_BATTLE"
 
+        # Check for death spiral pattern
+        if result in ['1-0', '0-1'] and self.detect_death_spiral():
+            return "DEATH_SPIRAL"
+
         return "COMPLEX_GAME"
+
+    def detect_death_spiral(self) -> bool:
+        """Detect death spiral pattern: gradual decline + time pressure + multiple mistakes"""
+
+        # Determine losing side from result
+        result = self.metadata.get('result', '')
+        if result == '1-0':
+            losing_side = 'black'
+        elif result == '0-1':
+            losing_side = 'white'
+        else:
+            return False
+
+        # Get moves for losing side only
+        losing_moves = [m for m in self.moves if m['side'] == losing_side]
+
+        # Need substantial game length
+        if len(losing_moves) < 20:
+            return False
+
+        # 1. Check for gradual evaluation decline (no big single blunder)
+        evals = [m.get('eval_cp') for m in losing_moves if m.get('eval_cp') is not None]
+        if len(evals) < 15:
+            return False
+
+        # Adjust eval signs for losing side perspective
+        if losing_side == 'black':
+            evals = [-e for e in evals]
+
+        # Find the point where position became clearly worse
+        decline_start = None
+        for i, eval_cp in enumerate(evals):
+            if eval_cp < -50:  # 0.5 pawns worse
+                decline_start = i
+                break
+
+        if decline_start is None or decline_start > len(evals) - 10:
+            return False
+
+        # Check that decline was gradual (no huge single drop)
+        max_single_drop = 0
+        for i in range(decline_start, len(evals) - 1):
+            drop = evals[i] - evals[i + 1]  # How much worse it got
+            max_single_drop = max(max_single_drop, drop)
+
+        # If there was a huge single blunder (>3 pawns), not a death spiral
+        if max_single_drop > 300:
+            return False
+
+        # 2. Check for multiple mistakes/inaccuracies
+        mistake_count = 0
+        for m in losing_moves:
+            nags = m.get('nag_codes', [])
+            if any(nag in [2, 4, 6] for nag in nags):  # ?, ??, ?!
+                mistake_count += 1
+
+        if mistake_count < 3:
+            return False
+
+        # 3. Check for time pressure in final third of game
+        final_third_start = len(losing_moves) * 2 // 3
+        final_moves = losing_moves[final_third_start:]
+
+        time_pressure_moves = 0
+        low_clock_moves = 0
+
+        for m in final_moves:
+            emt = m.get('emt_seconds')
+            clock = m.get('clock_after_seconds')
+
+            # Fast moves under pressure
+            if emt and emt < 30:  # Very quick moves
+                time_pressure_moves += 1
+
+            # Low clock readings
+            if clock and clock < 300:  # Under 5 minutes
+                low_clock_moves += 1
+
+        # Time pressure: either many quick moves OR multiple low-clock situations
+        has_time_pressure = (time_pressure_moves >= 3) or (low_clock_moves >= 2)
+
+        return has_time_pressure
 
 
 def main():

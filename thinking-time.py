@@ -80,18 +80,30 @@ def annotate_game_with_emt(game, clip_eps=0.6):
         # count this move in the current period
         moved_in[side] += 1
 
-        # if this move completes the period, next period's init is added now
-        bonus = 0.0
+        # Check if this completes a period (e.g., move 40)
+        # The clock already includes the bonus time AND increment for new period
         if period['moves'] is not None and moved_in[side] == period['moves']:
             if pidx[side] + 1 < len(periods):
-                bonus = float(periods[pidx[side] + 1]['init'])
-
-        # EMT = prev + inc + bonus - curr
-        emt = prev_clock[side] + inc + bonus - curr
+                # Both bonus time and new period's increment are in the clock reading
+                next_period = periods[pidx[side] + 1]
+                bonus_time = float(next_period['init'])
+                next_inc = float(next_period['inc'])
+                total_time_added = bonus_time + next_inc
+                # EMT = prev + current_period_inc + total_time_added - curr
+                emt = prev_clock[side] + inc + total_time_added - curr
+            else:
+                # No more periods
+                emt = prev_clock[side] + inc - curr
+        else:
+            # Normal case: EMT = prev + inc - curr
+            emt = prev_clock[side] + inc - curr
         if emt < 0 and abs(emt) <= clip_eps:
             emt = 0.0
 
         node.set_emt(emt)
+
+        # Update prev_clock for next calculation
+        # After a period boundary, the clock includes bonus so store as-is
         prev_clock[side] = curr
 
         print(f"{label:<6} {side:<1}  {san:<22} {emt:>9.3f}  {fmt_hms(emt):>10}  {clk_str:>12}")
