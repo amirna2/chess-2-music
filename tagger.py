@@ -550,6 +550,10 @@ class ChessNarrativeTagger:
         narratives = [s.narrative for s in sections]
         result = self.metadata.get('result')
 
+        # Check for death spiral pattern first (specific pattern overrides general ones)
+        if result in ['1-0', '0-1'] and self.detect_death_spiral():
+            return "DEATH_SPIRAL"
+
         if 'MATING_ATTACK' in narratives:
             return "ATTACKING_MASTERPIECE"
 
@@ -574,10 +578,6 @@ class ChessNarrativeTagger:
 
         if all(n in ['QUIET_MANEUVERING', 'TENSE_EQUILIBRIUM'] for n in narratives):
             return "STRATEGIC_BATTLE"
-
-        # Check for death spiral pattern
-        if result in ['1-0', '0-1'] and self.detect_death_spiral():
-            return "DEATH_SPIRAL"
 
         return "COMPLEX_GAME"
 
