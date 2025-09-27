@@ -546,40 +546,27 @@ class ChessNarrativeTagger:
         )
 
     def classify_game_narrative(self, sections: List[NarrativeSection]) -> str:
-        """Determine overall game narrative based on sections"""
+        """Determine overall game narrative using scoring system"""
         narratives = [s.narrative for s in sections]
         result = self.metadata.get('result')
 
-        # Check for death spiral pattern first (specific pattern overrides general ones)
-        if result in ['1-0', '0-1'] and self.detect_death_spiral():
-            return "DEATH_SPIRAL"
+        # Calculate scores for each narrative type
+        scores = {
+            'DEATH_SPIRAL': self.score_death_spiral(narratives, result),
+            'ATTACKING_MASTERPIECE': self.score_attacking_masterpiece(narratives, result),
+            'TACTICAL_MASTERPIECE': self.score_tactical_masterpiece(narratives, result),
+            'DOMINATION': self.score_domination(narratives, result),
+            'TACTICAL_THRILLER': self.score_tactical_thriller(narratives, result),
+            'PEACEFUL_DRAW': self.score_peaceful_draw(narratives, result),
+            'ATTACKING_GAME': self.score_attacking_game(narratives, result),
+            'HEROIC_DEFENSE': self.score_heroic_defense(narratives, result),
+            'FIGHTING_DEFEAT': self.score_fighting_defeat(narratives, result),
+            'STRATEGIC_BATTLE': self.score_strategic_battle(narratives, result),
+            'COMPLEX_GAME': self.score_complex_game(narratives, result),
+        }
 
-        if 'MATING_ATTACK' in narratives:
-            return "ATTACKING_MASTERPIECE"
-
-        if 'CRUSHING_ATTACK' in narratives or 'POSITIONAL_SQUEEZE' in narratives:
-            if result in ['1-0', '0-1']:
-                return "DOMINATION"
-
-        if 'TACTICAL_CHAOS' in narratives or 'TACTICAL_BATTLE' in narratives:
-            return "TACTICAL_THRILLER"
-
-        if 'LIQUIDATION' in narratives and result == '1/2-1/2':
-            return "PEACEFUL_DRAW"
-
-        if 'KING_HUNT' in narratives:
-            return "ATTACKING_GAME"
-
-        if 'DESPERATE_DEFENSE' in narratives:
-            if result == '1/2-1/2':
-                return "HEROIC_DEFENSE"
-            else:
-                return "FIGHTING_DEFEAT"
-
-        if all(n in ['QUIET_MANEUVERING', 'TENSE_EQUILIBRIUM'] for n in narratives):
-            return "STRATEGIC_BATTLE"
-
-        return "COMPLEX_GAME"
+        # Return the narrative type with the highest score
+        return max(scores, key=scores.get)
 
     def detect_death_spiral(self) -> bool:
         """Detect death spiral pattern: gradual decline + time pressure + multiple mistakes"""
@@ -662,6 +649,124 @@ class ChessNarrativeTagger:
         has_time_pressure = (time_pressure_moves >= 3) or (low_clock_moves >= 2)
 
         return has_time_pressure
+
+    def score_death_spiral(self, narratives: List[str], result: str) -> int:
+        """Score for death spiral pattern"""
+        if result not in ['1-0', '0-1']:
+            return 0
+        return 10 if self.detect_death_spiral() else 0
+
+    def score_attacking_masterpiece(self, narratives: List[str], result: str) -> int:
+        """Score for attacking masterpiece - requires forced mate sequences"""
+        score = 0
+
+        # Check for forced mate evaluations (eval_mate field)
+        mate_evals = [m.get('eval_mate') for m in self.moves if m.get('eval_mate') is not None]
+        if mate_evals:
+            score += 10  # Has forced mate sequences
+
+        if 'MATING_ATTACK' in narratives:
+            score += 8   # Section classified as mating attack
+
+        if 'KING_HUNT' in narratives and score > 0:  # Only if already has mate elements
+            score += 2   # Bonus for king hunt leading to mate
+
+        if result in ['1-0', '0-1'] and score > 0:
+            score += 1   # Decisive result
+
+        return score
+
+    def score_tactical_masterpiece(self, narratives: List[str], result: str) -> int:
+        """Score for tactical masterpiece - brilliant moves and sacrifices"""
+        score = 0
+
+        # Count brilliant moves (NAG 3 = !!)
+        brilliant_moves = [m for m in self.moves if 3 in m.get('nag_codes', [])]
+
+        if len(brilliant_moves) >= 3:
+            score += 10  # Multiple brilliant moves = masterpiece
+        elif len(brilliant_moves) == 2:
+            score += 8   # Two brilliant moves = very strong
+        elif len(brilliant_moves) == 1:
+            score += 5   # Single brilliant move = notable
+
+        # Bonus for decisive result (brilliance should lead to win)
+        if result in ['1-0', '0-1'] and score > 0:
+            score += 2
+
+        # Bonus for tactical elements in sections
+        if ('TACTICAL_CHAOS' in narratives or 'TACTICAL_BATTLE' in narratives) and score > 0:
+            score += 1
+
+        return score
+
+    def score_domination(self, narratives: List[str], result: str) -> int:
+        """Score for positional domination"""
+        score = 0
+        if 'CRUSHING_ATTACK' in narratives:
+            score += 6
+        if 'POSITIONAL_SQUEEZE' in narratives:
+            score += 6
+        if result in ['1-0', '0-1']:
+            score += 3
+        else:
+            return 0  # Must be decisive
+        return score
+
+    def score_tactical_thriller(self, narratives: List[str], result: str) -> int:
+        """Score for tactical thriller"""
+        score = 0
+        if 'TACTICAL_CHAOS' in narratives:
+            score += 6
+        if 'TACTICAL_BATTLE' in narratives:
+            score += 5
+        if 'KING_HUNT' in narratives:
+            score += 2
+        return score
+
+    def score_peaceful_draw(self, narratives: List[str], result: str) -> int:
+        """Score for peaceful draw"""
+        score = 0
+        if 'LIQUIDATION' in narratives and result == '1/2-1/2':
+            score += 7
+        if 'QUIET_MANEUVERING' in narratives and result == '1/2-1/2':
+            score += 4
+        return score
+
+    def score_attacking_game(self, narratives: List[str], result: str) -> int:
+        """Score for attacking game"""
+        score = 0
+        if 'KING_HUNT' in narratives:
+            score += 5
+        if 'MATING_ATTACK' in narratives:
+            score += 3
+        return score
+
+    def score_heroic_defense(self, narratives: List[str], result: str) -> int:
+        """Score for heroic defense"""
+        score = 0
+        if 'DESPERATE_DEFENSE' in narratives and result == '1/2-1/2':
+            score += 7
+        return score
+
+    def score_fighting_defeat(self, narratives: List[str], result: str) -> int:
+        """Score for fighting defeat"""
+        score = 0
+        if 'DESPERATE_DEFENSE' in narratives and result in ['1-0', '0-1']:
+            score += 6
+        return score
+
+    def score_strategic_battle(self, narratives: List[str], result: str) -> int:
+        """Score for strategic battle"""
+        score = 0
+        quiet_count = sum(1 for n in narratives if n in ['QUIET_MANEUVERING', 'TENSE_EQUILIBRIUM'])
+        if quiet_count == len(narratives) and quiet_count > 0:
+            score += 5
+        return score
+
+    def score_complex_game(self, narratives: List[str], result: str) -> int:
+        """Default fallback score"""
+        return 1  # Always has minimal score as fallback
 
 
 def main():
