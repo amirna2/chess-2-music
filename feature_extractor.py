@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """Feature extraction module for chess game narrative.
 
 This module parses a PGN into structured dataclasses capturing metadata,

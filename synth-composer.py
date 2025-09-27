@@ -50,40 +50,54 @@ class SubtractiveSynth:
 
     def moog_filter(self, signal, cutoff_hz, resonance=0.0):
         """
-        Moog-style 4-pole (24dB/octave) low-pass filter
-        This is THE classic synth filter sound
+        Revised Moog-style 4-pole (24dB/octave) low-pass filter
+        with non-linear saturation for a more authentic sound.
+        Based on the Stilson/Smith model and further improvements.
         """
-        if cutoff_hz >= self.nyquist * 0.95:
+        if cutoff_hz >= self.nyquist * 0.99:
             return signal  # Bypass if cutoff too high
 
-        cutoff = np.clip(cutoff_hz / self.nyquist, 0.001, 0.99)
+        # Stilson/Smith approximation
+        f = cutoff_hz / self.nyquist
 
-        # Resonance (0-4, self-oscillates at 4)
+        # This is a common cutoff approximation, but others exist
+        # For stability, constrain f
+        f = np.clip(f, 0.001, 0.45)
+
+        # Scale resonance (0-4), clamping for stability
         resonance = np.clip(resonance, 0.0, 3.95)
 
-        # Stilson/Smith Moog filter approximation
-        f = cutoff * 1.16
-        fb = resonance * (1.0 - 0.15 * f * f)
+        # Simplified input gain compensation (can be more complex)
+        input_gain = 0.5 * (1.0 - resonance / 4.0)
+
+        # State variables for 4 cascaded 1-pole filters (persistent)
+        z1, z2, z3, z4 = 0.0, 0.0, 0.0, 0.0
 
         filtered = np.zeros_like(signal)
 
-        # State variables for 4 cascaded 1-pole filters
-        z1, z2, z3, z4 = 0.0, 0.0, 0.0, 0.0
-
         for i in range(len(signal)):
             input_sample = signal[i]
-            input_sample -= z4 * fb  # Feedback
-            input_sample *= 0.35013 * (f*f)*(f*f)  # Input gain compensation
 
-            # Four cascaded 1-pole filters (Moog ladder)
-            z1 = input_sample + 0.3 * z1 + (1 - f) * z1
-            z2 = z1 + 0.3 * z2 + (1 - f) * z2
-            z3 = z2 + 0.3 * z3 + (1 - f) * z3
-            z4 = z3 + 0.3 * z4 + (1 - f) * z4
+            # Feedback loop with non-linear saturation
+            # The feedback is applied to the input
+            input_with_feedback = input_sample - resonance * z4
+
+            # The non-linear element is applied to each stage's input
+            stage1_in = np.tanh(input_with_feedback * input_gain)
+            stage2_in = np.tanh(z1)
+            stage3_in = np.tanh(z2)
+            stage4_in = np.tanh(z3)
+
+            # 4 cascaded 1-pole low-pass filters (Euler integration)
+            # Note: A bilinear transform would be more accurate but is also more complex.
+            z1 = z1 + f * (stage1_in - z1)
+            z2 = z2 + f * (stage2_in - z2)
+            z3 = z3 + f * (stage3_in - z3)
+            z4 = z4 + f * (stage4_in - z4)
 
             filtered[i] = z4
 
-        return filtered * 0.5  # Scale output
+        return filtered
 
     def adsr_envelope(self, num_samples, attack=0.01, decay=0.1, sustain=0.7, release=0.2):
         """
@@ -222,45 +236,95 @@ class ChessSynthComposer:
         print(f"    Composing {section['name']}: {narrative} (tension: {tension:.2f}, duration: {section_duration}s)")
 
         # Choose synthesis parameters based on narrative
-        if 'TACTICAL' in narrative or 'CHAOS' in narrative:
-            # Aggressive sound - saw wave, fast filter sweeps
+        if 'TACTICAL_BATTLE' in narrative or 'TACTICAL_THRILLER' in narrative:
+            # Fast tactical exchanges - aggressive saw with rapid filter sweeps
             waveform = 'saw'
-            filter_base = 200
-            filter_envelope_amount = 4000 * tension
-            resonance = 2.5  # High resonance for aggressive sound
+            filter_base = 300
+            filter_envelope_amount = 5000 * tension
+            resonance = 3.0  # Very resonant for intensity
             scale = self.scales['phrygian']
-            note_duration = 0.25  # Fast notes
-            print(f"      TACTICAL/CHAOS: saw wave, filter {filter_base}Hz + {filter_envelope_amount:.0f}Hz sweep, resonance {resonance}")
+            note_duration = 0.2  # Very fast notes
+            print(f"      TACTICAL_BATTLE: saw wave, filter {filter_base}Hz + {filter_envelope_amount:.0f}Hz sweep, resonance {resonance}")
 
-        elif 'ATTACK' in narrative or 'CRUSHING' in narrative:
-            # Building attack - pulse wave, opening filter
+        elif 'KING_HUNT' in narrative:
+            # Pursuing, relentless sound - pulse wave building intensity
             waveform = 'pulse'
-            filter_base = 500
-            filter_envelope_amount = 3000 * tension
-            resonance = 1.5
+            filter_base = 400
+            filter_envelope_amount = 6000 * tension
+            resonance = 2.0
+            scale = self.scales['minor']
+            note_duration = 0.3  # Moderate speed but building
+            print(f"      KING_HUNT: pulse wave, filter {filter_base}Hz + {filter_envelope_amount:.0f}Hz sweep, resonance {resonance}")
+
+        elif 'SACRIFICIAL_ATTACK' in narrative or 'CRUSHING_ATTACK' in narrative:
+            # Explosive, dramatic sound - saw with massive filter opening
+            waveform = 'saw'
+            filter_base = 100  # Start very closed
+            filter_envelope_amount = 8000 * tension  # Huge opening
+            resonance = 2.5
             scale = self.scales['minor']
             note_duration = 0.4
-            print(f"      ATTACK/CRUSHING: pulse wave, filter {filter_base}Hz + {filter_envelope_amount:.0f}Hz sweep, resonance {resonance}")
+            print(f"      SACRIFICIAL/CRUSHING_ATTACK: saw wave, filter {filter_base}Hz + {filter_envelope_amount:.0f}Hz sweep, resonance {resonance}")
 
-        elif 'DEFENSE' in narrative or 'DESPERATE' in narrative:
-            # Dark, closed sound
+        elif 'DESPERATE_DEFENSE' in narrative or 'DEFENSIVE_STAND' in narrative:
+            # Dark, closed, tense sound - saw with minimal filter opening
             waveform = 'saw'
-            filter_base = 150  # Very closed filter
-            filter_envelope_amount = 1000
-            resonance = 3.0  # Self-oscillating almost
+            filter_base = 120  # Very closed
+            filter_envelope_amount = 800  # Minimal opening
+            resonance = 3.5  # Near self-oscillation for tension
             scale = self.scales['phrygian']
-            note_duration = 0.5
-            print(f"      DEFENSE/DESPERATE: saw wave, filter {filter_base}Hz + {filter_envelope_amount}Hz sweep, resonance {resonance} (dark)")
+            note_duration = 0.6  # Slower, more deliberate
+            print(f"      DESPERATE_DEFENSE: saw wave, filter {filter_base}Hz + {filter_envelope_amount}Hz sweep, resonance {resonance} (dark/tense)")
 
-        else:  # POSITIONAL, QUIET, etc.
-            # Smooth, evolving sound
+        elif 'COMPLEX_STRUGGLE' in narrative:
+            # Evolving, complex sound - triangle with moderate filter movement
             waveform = 'triangle'
+            filter_base = 600
+            filter_envelope_amount = 3000 * tension
+            resonance = 1.0
+            scale = self.scales['dorian']
+            note_duration = 0.5
+            print(f"      COMPLEX_STRUGGLE: triangle wave, filter {filter_base}Hz + {filter_envelope_amount:.0f}Hz sweep, resonance {resonance}")
+
+        elif 'POSITIONAL_MANEUVERING' in narrative or 'QUIET_BUILDING' in narrative:
+            # Subtle, evolving sound - triangle with gentle filter movement
+            waveform = 'triangle'
+            filter_base = 1000
+            filter_envelope_amount = 1500 * tension
+            resonance = 0.3  # Very gentle
+            scale = self.scales['dorian']
+            note_duration = 0.8  # Slow, contemplative
+            print(f"      POSITIONAL: triangle wave, filter {filter_base}Hz + {filter_envelope_amount:.0f}Hz sweep, resonance {resonance} (gentle)")
+
+        elif 'ENDGAME_PRECISION' in narrative:
+            # Clean, precise sound - square wave with controlled filter
+            waveform = 'square'
             filter_base = 800
             filter_envelope_amount = 2000 * tension
-            resonance = 0.5  # Gentle
-            scale = self.scales['dorian']
+            resonance = 0.8
+            scale = self.scales['minor']
             note_duration = 0.6
-            print(f"      POSITIONAL: triangle wave, filter {filter_base}Hz + {filter_envelope_amount:.0f}Hz sweep, resonance {resonance} (smooth)")
+            print(f"      ENDGAME_PRECISION: square wave, filter {filter_base}Hz + {filter_envelope_amount:.0f}Hz sweep, resonance {resonance}")
+
+        elif 'OPENING_THEORY' in narrative or 'DEVELOPMENT' in narrative:
+            # Bright, structured sound - triangle with rising filter
+            waveform = 'triangle'
+            filter_base = 1200
+            filter_envelope_amount = 2500 * tension
+            resonance = 0.5
+            scale = self.scales['dorian']
+            note_duration = 0.7
+            print(f"      OPENING_THEORY: triangle wave, filter {filter_base}Hz + {filter_envelope_amount:.0f}Hz sweep, resonance {resonance}")
+
+        else:  # Default for any unmatched narratives
+            # Balanced sound - saw with moderate characteristics
+            waveform = 'saw'
+            filter_base = 500
+            filter_envelope_amount = 2500 * tension
+            resonance = 1.2
+            scale = self.scales['minor']
+            note_duration = 0.5
+            print(f"      DEFAULT ({narrative}): saw wave, filter {filter_base}Hz + {filter_envelope_amount:.0f}Hz sweep, resonance {resonance}")
 
         print(f"      Scale: {scale}")
         print(f"      Note duration: {note_duration}s")
@@ -293,33 +357,83 @@ class ChessSynthComposer:
         num_notes = int(section_duration / note_duration)
         print(f"      Will play {num_notes} notes over {section_duration}s")
 
-        # Play the pattern with variations
+        # Generate CONTINUOUS audio with smooth frequency transitions (like real 1980s synths!)
+        total_samples = int(section_duration * self.sample_rate)
+        continuous_signal = self.synth.oscillator(110, section_duration, waveform)  # Base frequency
+
+        # Create smooth frequency modulation over time
+        freq_modulation = np.ones(total_samples)
+        samples_per_note = int(note_duration * self.sample_rate)
+
         for i in range(num_notes):
-            note_freq = pattern[i % len(pattern)]
+            start_sample = i * samples_per_note
+            end_sample = min(start_sample + samples_per_note, total_samples)
 
-            # Vary the frequency slightly for movement
-            if i % 4 == 0:
-                note_freq *= 2  # Octave up occasionally
-            elif i % 7 == 0:
-                note_freq *= 0.5  # Octave down
+            if start_sample < total_samples:
+                note_freq = pattern[i % len(pattern)]
 
-            # Modulate filter based on position in section
-            position_in_section = i / max(num_notes, 1)
-            filter_mod = filter_base + (position_in_section * 1000 * tension)
+                # Vary the frequency slightly for movement
+                if i % 4 == 0:
+                    note_freq *= 2  # Octave up occasionally
+                elif i % 7 == 0:
+                    note_freq *= 0.5  # Octave down
 
-            # Create the note
-            note = self.synth.create_synth_note(
-                freq=note_freq,
-                duration=note_duration,
-                waveform=waveform,
-                filter_base=filter_mod,
-                filter_env_amount=filter_envelope_amount,
-                resonance=resonance,
-                amp_env=(0.005, 0.05, 0.6, 0.1),  # Fast attack for punch
-                filter_env=(0.01, 0.1 + tension * 0.1, 0.3, 0.2)
-            )
+                # Smooth frequency transition (no clicks!)
+                freq_ratio = note_freq / 110  # Ratio from base frequency
 
-            samples.extend(note)
+                if i > 0:  # Smooth transition from previous note
+                    prev_ratio = freq_modulation[start_sample-1] if start_sample > 0 else 1.0
+                    transition_samples = min(1000, end_sample - start_sample)  # 23ms transition
+
+                    for j in range(transition_samples):
+                        progress = j / transition_samples
+                        smooth_ratio = prev_ratio + (freq_ratio - prev_ratio) * progress
+                        if start_sample + j < total_samples:
+                            freq_modulation[start_sample + j] = smooth_ratio
+
+                    # Fill rest with target frequency
+                    if start_sample + transition_samples < end_sample:
+                        freq_modulation[start_sample + transition_samples:end_sample] = freq_ratio
+                else:
+                    freq_modulation[start_sample:end_sample] = freq_ratio
+
+        # Apply frequency modulation to continuous signal
+        phase = 0.0
+        modulated_signal = np.zeros_like(continuous_signal)
+
+        for i in range(len(continuous_signal)):
+            # Current frequency
+            current_freq = 110 * freq_modulation[i]
+
+            # Update phase
+            phase += 2 * np.pi * current_freq / self.sample_rate
+
+            # Generate modulated sample
+            if waveform == 'saw':
+                modulated_signal[i] = 2.0 * ((phase / (2 * np.pi)) % 1.0) - 1.0
+            elif waveform == 'pulse':
+                modulated_signal[i] = 1.0 if ((phase / (2 * np.pi)) % 1.0) < 0.3 else -1.0
+            elif waveform == 'square':
+                modulated_signal[i] = 1.0 if np.sin(phase) > 0 else -1.0
+            elif waveform == 'triangle':
+                modulated_signal[i] = 2.0 * np.abs(2.0 * ((phase / (2 * np.pi)) % 1.0) - 1.0) - 1.0
+            else:  # sine
+                modulated_signal[i] = np.sin(phase)
+
+        # Apply filter to the entire modulated signal
+        filtered_signal = self.synth.moog_filter(modulated_signal, filter_base + filter_envelope_amount/2, resonance)
+        print(f"      Applied Moog filter: {filter_base + filter_envelope_amount/2:.0f}Hz cutoff, {resonance} resonance")
+
+        # Apply smooth amplitude envelope over entire section
+        section_envelope = np.ones(total_samples)
+        fade_samples = int(0.1 * self.sample_rate)  # 100ms fades
+
+        # Fade in
+        section_envelope[:fade_samples] = np.linspace(0, 1, fade_samples)
+        # Fade out
+        section_envelope[-fade_samples:] = np.linspace(1, 0, fade_samples)
+
+        samples = filtered_signal * section_envelope * 0.3  # Volume level
 
         # Add key moments as filter sweeps or resonant hits
         print(f"      Processing {len(section.get('key_moments', []))} key moments:")
