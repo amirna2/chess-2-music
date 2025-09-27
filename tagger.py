@@ -381,6 +381,23 @@ class ChessNarrativeTagger:
 
         checks = sum(1 for m in section_moves if m.get('is_check'))
 
+        # Enhanced king hunt detection: check if kings are in vulnerable positions during checks
+        vulnerable_checks = 0
+        for m in section_moves:
+            if m.get('is_check'):
+                # The checking piece's position can indicate where the checked king is
+                # If checking piece is on rank 1-3, white king is likely trapped low
+                # If checking piece is on rank 6-8, black king is likely trapped high
+                to_rank = int(m['to_sq'][1])
+                checking_side = m['side']
+
+                if checking_side == 'black' and to_rank <= 3:
+                    # Black checking on low ranks = white king trapped
+                    vulnerable_checks += 1
+                elif checking_side == 'white' and to_rank >= 6:
+                    # White checking on high ranks = black king trapped
+                    vulnerable_checks += 1
+
         # Count move types (tactical elements)
         tactical_moves = sum(1 for m in section_moves if m.get('kind') in [
             'CHECK', 'CAPTURE', 'PROMOTION', 'CHECKMATE'
@@ -389,8 +406,12 @@ class ChessNarrativeTagger:
         # Classification rules
         if eval_volatility > 2.0 and capture_density > 0.3:
             return "TACTICAL_CHAOS"
-        elif checks >= 3:
+        elif checks >= 3 and vulnerable_checks >= 2:
+            # Enhanced: Need both 3+ checks AND at least 2 on vulnerable ranks
             return "KING_HUNT"
+        elif checks >= 3:
+            # Fallback: Many checks but not necessarily a hunt
+            return "KING_ATTACK"
         elif any(m.get('is_mate') for m in section_moves):
             return "MATING_ATTACK"
         elif eval_trend > 1.5:
@@ -402,7 +423,19 @@ class ChessNarrativeTagger:
         elif abs(eval_trend) < 0.3 and avg_time > 300:
             return "TENSE_EQUILIBRIUM"
         elif capture_density > 0.4:
-            return "TACTICAL_BATTLE"
+            # High capture density - distinguish between tactical battle and liquidation
+            # Get final evaluation to see if position is lopsided after exchanges
+            final_eval = evals_cp[-1] / 100.0 if evals_cp else 0
+
+            # Check if queens were traded (indicates simplification)
+            queen_trades = sum(1 for m in section_moves if m.get('is_capture') and m.get('piece') == 'Q')
+
+            # Liquidation: balanced eval after exchanges, especially if queens traded
+            if abs(final_eval) < 0.5 and (queen_trades > 0 or abs(eval_trend) < 0.3):
+                return "LIQUIDATION"
+            # True tactical battle: someone gained significant advantage through tactics
+            else:
+                return "TACTICAL_BATTLE"
         elif capture_density < 0.05 and avg_time < 60:
             return "QUIET_MANEUVERING"
         elif avg_time > 400:
@@ -526,6 +559,9 @@ class ChessNarrativeTagger:
 
         if 'TACTICAL_CHAOS' in narratives or 'TACTICAL_BATTLE' in narratives:
             return "TACTICAL_THRILLER"
+
+        if 'LIQUIDATION' in narratives and result == '1/2-1/2':
+            return "PEACEFUL_DRAW"
 
         if 'KING_HUNT' in narratives:
             return "ATTACKING_GAME"
