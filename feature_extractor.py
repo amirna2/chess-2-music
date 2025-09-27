@@ -380,7 +380,7 @@ def extract_game_features(pgn_path: str | Path,
     for node in game.mainline():
         move = node.move
         san = board.san(move)
-        nag_codes = [nag for nag in node.nags] if node.nags else []
+        nag_codes = [int(nag) for nag in node.nags] if node.nags else []
         comment = node.comment or ""
         emt = extract_emt_seconds(comment)
         clk = extract_clock_seconds(comment)
@@ -391,6 +391,10 @@ def extract_game_features(pgn_path: str | Path,
 
         # Compute distance BEFORE pushing (need original piece)
         distance = compute_move_distance(board, move)
+
+        # Capture fullmove number BEFORE pushing move
+        current_fullmove = board.fullmove_number
+
         board.push(move)
 
         is_check = board.is_check()
@@ -420,7 +424,7 @@ def extract_game_features(pgn_path: str | Path,
 
         mf = MoveFeature(
             ply=ply,
-            fullmove=board.fullmove_number,
+            fullmove=current_fullmove,
             side="white" if ply % 2 == 1 else "black",
             san=san,
             uci=move.uci(),

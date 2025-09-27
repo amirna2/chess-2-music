@@ -166,14 +166,53 @@ def build_phrase(seg_moves: List[Dict[str, Any]], index: int, triggers: List[str
     start_eval = evals[0] if evals else None
     end_eval = evals[-1] if evals else None
     net = (end_eval - start_eval) if (start_eval is not None and end_eval is not None) else None
+
+    # Event analysis
+    captures = [i for i, m in enumerate(seg_moves) if m.get("is_capture")]
+    checks = [i for i, m in enumerate(seg_moves) if m.get("is_check")]
+    promotions = [i for i, m in enumerate(seg_moves) if m.get("promotion_piece")]
+
+    # Event clustering analysis
+    def analyze_clustering(positions, total_length):
+        if len(positions) < 2:
+            return 0.0
+        gaps = [positions[i+1] - positions[i] for i in range(len(positions)-1)]
+        avg_gap = sum(gaps) / len(gaps)
+        # Clustering score: lower average gap = more clustered
+        return 1.0 - (avg_gap / total_length)
+
+    # Event timing analysis
+    def analyze_timing(positions, total_length):
+        if not positions:
+            return {"early": 0, "mid": 0, "late": 0}
+        early = sum(1 for p in positions if p < total_length * 0.33)
+        mid = sum(1 for p in positions if total_length * 0.33 <= p < total_length * 0.67)
+        late = sum(1 for p in positions if p >= total_length * 0.67)
+        return {"early": early, "mid": mid, "late": late}
+
+    phrase_length = len(seg_moves)
+
     stats = {
         "avg_tension": round(sum(tensions)/len(tensions), 4) if tensions else 0.0,
         "peak_tension": round(max(tensions), 4) if tensions else 0.0,
         "eval_net": net,
-        "captures": sum(1 for m in seg_moves if m.get("is_capture")),
-        "checks": sum(1 for m in seg_moves if m.get("is_check")),
-        "promotions": sum(1 for m in seg_moves if m.get("promotion_piece")),
+        "captures": len(captures),
+        "checks": len(checks),
+        "promotions": len(promotions),
         "swing_tags": sum(1 for m in seg_moves if any(t.startswith("eval_") for t in m.get("enriched_tags", []))),
+
+        # Enhanced event analysis
+        "capture_clustering": analyze_clustering(captures, phrase_length),
+        "check_clustering": analyze_clustering(checks, phrase_length),
+        "capture_timing": analyze_timing(captures, phrase_length),
+        "check_timing": analyze_timing(checks, phrase_length),
+        "event_density": (len(captures) + len(checks) + len(promotions)) / phrase_length if phrase_length > 0 else 0.0,
+
+        # Event sequences
+        "capture_check_sequences": sum(1 for i in range(len(seg_moves)-1)
+                                     if seg_moves[i].get("is_capture") and seg_moves[i+1].get("is_check")),
+        "check_capture_sequences": sum(1 for i in range(len(seg_moves)-1)
+                                     if seg_moves[i].get("is_check") and seg_moves[i+1].get("is_capture"))
     }
     return Phrase(index=index,
                   start_ply=seg_moves[0]["ply"],
