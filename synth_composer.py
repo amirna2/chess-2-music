@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 SUBTRACTIVE SYNTHESIZER FOR CHESS MUSIC
-Real electronic music synthesis with filters and envelopes
+Electronic music synthesis with filters and envelopes
 """
 
 import json
@@ -533,7 +533,7 @@ class ChessSynthComposer:
 
 def main():
     if len(sys.argv) < 2:
-        print("Usage: python chess_synth.py tags.json")
+        print("Usage: python synth_composer.py tags.json")
         sys.exit(1)
 
     with open(sys.argv[1], 'r') as f:
