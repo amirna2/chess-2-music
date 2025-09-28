@@ -570,6 +570,7 @@ class ChessNarrativeTagger:
             'ATTACKING_GAME': self.score_attacking_game(narratives, result),
             'HEROIC_DEFENSE': self.score_heroic_defense(narratives, result),
             'FIGHTING_DEFEAT': self.score_fighting_defeat(narratives, result),
+            'TUMBLING_DEFEAT': self.score_tumbling_defeat(narratives, result),
             'STRATEGIC_BATTLE': self.score_strategic_battle(narratives, result),
             'COMPLEX_GAME': self.score_complex_game(narratives, result),
         }
@@ -820,6 +821,52 @@ class ChessNarrativeTagger:
         score = 0
         if 'DESPERATE_DEFENSE' in narratives and result in ['1-0', '0-1']:
             score += 6
+        return score
+
+    def score_tumbling_defeat(self, narratives: List[str], result: str) -> int:
+        """Score for tumbling defeat - gradual deterioration through mistakes"""
+        if result not in ['1-0', '0-1']:
+            return 0  # Must be decisive
+
+        score = 0
+
+        # Must have desperate defense (position deteriorating)
+        if 'DESPERATE_DEFENSE' not in narratives:
+            return 0
+
+        # Check for multiple mistakes/inaccuracies by losing side
+        losing_side = 'white' if result == '0-1' else 'black'
+        losing_mistakes = 0
+
+        for move in self.moves:
+            if move['side'] == losing_side:
+                nag_codes = move.get('nag_codes', [])
+                # Count mistakes (?), blunders (??), and inaccuracies (?!)
+                if any(nag in [2, 4, 6] for nag in nag_codes):
+                    losing_mistakes += 1
+
+        # Score based on mistake count
+        if losing_mistakes >= 4:
+            score += 8  # Many mistakes = clear tumbling
+        elif losing_mistakes >= 3:
+            score += 6  # Multiple mistakes
+        elif losing_mistakes >= 2:
+            score += 4  # Some mistakes
+        else:
+            return 0  # Not enough mistakes for tumbling pattern
+
+        # Bonus: Check if winner didn't need brilliance (no brilliant moves)
+        winner_side = 'white' if result == '1-0' else 'black'
+        brilliant_moves = sum(1 for m in self.moves
+                            if m['side'] == winner_side and 3 in m.get('nag_codes', []))
+
+        if brilliant_moves == 0:
+            score += 2  # Winner didn't need brilliance, just steady pressure
+
+        # Penalty: Reduce score if this looks more like death spiral
+        if self.detect_death_spiral():
+            score = max(0, score - 3)  # Death spiral takes precedence
+
         return score
 
     def score_strategic_battle(self, narratives: List[str], result: str) -> int:
