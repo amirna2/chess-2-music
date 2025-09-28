@@ -167,6 +167,62 @@ class SynthTester:
                 'filter_env_amount': 4000,
                 'resonance': 2.8,
                 'freq': 98
+            },
+            'LIQUIDATION': {
+                'waveform': 'triangle',
+                'filter_base': 2000,
+                'filter_env_amount': -1000,  # Negative for closing
+                'resonance': 0.4,
+                'freq': 147
+            },
+            'MATING_ATTACK': {
+                'waveform': 'saw',
+                'filter_base': 150,
+                'filter_env_amount': 7000,
+                'resonance': 3.2,
+                'freq': 110
+            },
+            'TENSE_EQUILIBRIUM': {
+                'waveform': 'pulse',
+                'filter_base': 500,
+                'filter_env_amount': 2000,
+                'resonance': 1.5,
+                'freq': 123
+            },
+            'CRITICAL_DECISIONS': {
+                'waveform': 'square',
+                'filter_base': 600,
+                'filter_env_amount': 3500,
+                'resonance': 2.2,
+                'freq': 131
+            },
+            'POSITIONAL_SQUEEZE': {
+                'waveform': 'triangle',
+                'filter_base': 1000,
+                'filter_env_amount': 1500,
+                'resonance': 0.3,
+                'freq': 185
+            },
+            'TACTICAL_CHAOS': {
+                'waveform': 'saw',
+                'filter_base': 300,
+                'filter_env_amount': 5000,
+                'resonance': 3.0,
+                'freq': 110
+            },
+            'TACTICAL_BATTLE': {
+                'waveform': 'pulse',
+                'filter_base': 350,
+                'filter_env_amount': 4500,
+                'resonance': 2.5,
+                'freq': 123
+            },
+            'COMPLEX_POSITION': {
+                'waveform': 'triangle',
+                'filter_base': 800,
+                'filter_env_amount': 1800,
+                'resonance': 0.8,
+                'freq': 147
             }
         }
 
@@ -202,10 +258,16 @@ class SynthTester:
         """Interactive menu for testing"""
         print("\n🎹 SYNTHESIZER INTERACTIVE TESTER")
         print(f"Audio backend: {AUDIO_BACKEND or 'None (no playback)'}")
-        print("\nCommands:")
+        print("\nBasic Tests:")
+        print("  osc <wave> <freq>    - Test pure oscillator (saw, square, pulse, triangle, sine)")
+        print("  filt <freq> <cutoff> <res> - Test filter only")
+        print("  env <attack> <decay> <sustain> <release> - Test envelope")
+        print("  note <freq> <wave>   - Complete note test")
+        print("\nPresets & Custom:")
         print("  p <preset>           - Play preset (TACTICAL_BATTLE, KING_HUNT, etc.)")
         print("  n <freq>             - Play note at frequency")
         print("  c <freq> <wave> <filter> <res> - Custom note")
+        print("\nSettings:")
         print("  w <wave>             - Set waveform (saw, pulse, square, triangle, sine)")
         print("  f <base> <amount>    - Set filter (base_hz envelope_amount)")
         print("  r <resonance>        - Set resonance (0.0-4.0)")

@@ -9,7 +9,170 @@ import math
 import wave
 import struct
 import sys
+import random
 import numpy as np
+from abc import ABC, abstractmethod
+
+class NarrativeProcess(ABC):
+    """
+    Abstract base class for Spiegel-style process transformations
+    Each process maintains state and evolves over the duration of the piece
+    """
+
+    def __init__(self, total_duration: float, total_plies: int):
+        self.total_duration = total_duration
+        self.total_plies = total_plies
+        self.current_time = 0.0
+
+    @abstractmethod
+    def update(self, current_time: float, key_moment=None) -> dict:
+        """
+        Update process state and return transformation parameters
+
+        Args:
+            current_time: Current position in the composition (seconds/plies)
+            key_moment: Optional key moment occurring at this time
+
+        Returns:
+            dict: Transformation parameters to apply to synthesis
+        """
+        pass
+
+    def get_progress(self) -> float:
+        """Get normalized progress through the piece (0.0 to 1.0)"""
+        return min(1.0, self.current_time / self.total_duration)
+
+class DefaultProcess(NarrativeProcess):
+    """Default process that applies no transformations - preserves existing behavior"""
+
+    def update(self, current_time: float, key_moment=None) -> dict:
+        self.current_time = current_time
+        return {}  # No transformations
+
+class TumblingDefeatProcess(NarrativeProcess):
+    """
+    Process for TUMBLING_DEFEAT: gradual deterioration through accumulated mistakes
+    Inspired by Spiegel's concept of decay and entropy
+    """
+
+    def __init__(self, total_duration: float, total_plies: int):
+        super().__init__(total_duration, total_plies)
+        self.stability = 1.0  # Starts coherent
+        self.error_accumulation = 0.0
+        self.tempo_drift = 0.0
+        self.pitch_drift = 0.0
+
+    def update(self, current_time: float, key_moment=None) -> dict:
+        self.current_time = current_time
+        progress = self.get_progress()
+
+        # Each mistake accelerates the decay (compound effect)
+        if key_moment and key_moment.get('type') in ['MISTAKE', 'BLUNDER', 'INACCURACY']:
+            mistake_weight = {
+                'INACCURACY': 0.05,
+                'MISTAKE': 0.1,
+                'BLUNDER': 0.2
+            }.get(key_moment.get('type'), 0.1)
+
+            # Later mistakes have more impact (system already unstable)
+            self.error_accumulation += mistake_weight * (1 + progress)
+
+        # Stability decays based on accumulated errors and time
+        base_decay = progress * 0.3  # Natural decay over time
+        error_decay = self.error_accumulation * progress  # Mistakes accelerate decay
+        self.stability = max(0.1, 1.0 - (base_decay + error_decay))
+
+        # Tempo becomes increasingly erratic
+        chaos_factor = (1 - self.stability) * 0.02
+        self.tempo_drift += random.uniform(-chaos_factor, chaos_factor)
+        self.tempo_drift = max(-0.3, min(0.3, self.tempo_drift))  # Clamp
+
+        # Pitch drift increases over time
+        self.pitch_drift += random.uniform(-0.5, 0.5) * (1 - self.stability)
+
+        return {
+            'pitch_drift_cents': self.pitch_drift * 20,  # Up to 20 cents drift
+            'tempo_multiplier': 1.0 + self.tempo_drift,
+            'filter_stability': self.stability,  # Affects filter consistency
+            'resonance_chaos': (1 - self.stability) * 0.5,  # Add resonance variance
+            'note_duration_variance': (1 - self.stability) * 0.2,  # Timing becomes erratic
+            'volume_decay': 1.0 - (progress * 0.3)  # Gradual volume reduction
+        }
+
+class AttackingMasterpieceProcess(NarrativeProcess):
+    """
+    Process for ATTACKING_MASTERPIECE: building momentum toward triumph
+    Based on positive feedback loops and crescendo
+    """
+
+    def __init__(self, total_duration: float, total_plies: int):
+        super().__init__(total_duration, total_plies)
+        self.momentum = 0.0
+        self.brilliance_factor = 0.0
+
+    def update(self, current_time: float, key_moment=None) -> dict:
+        self.current_time = current_time
+        progress = self.get_progress()
+
+        # Brilliant moves build momentum
+        if key_moment and key_moment.get('type') in ['BRILLIANT', 'STRONG']:
+            brilliance_weight = {
+                'STRONG': 0.15,
+                'BRILLIANT': 0.25
+            }.get(key_moment.get('type'), 0.15)
+
+            self.momentum += brilliance_weight
+            self.brilliance_factor += 0.1
+
+        # Natural crescendo curve (slow start, powerful finish)
+        natural_curve = progress ** 1.5  # Exponential growth
+        total_momentum = min(1.2, natural_curve + self.momentum * 0.5)
+
+        return {
+            'tempo_multiplier': 0.8 + total_momentum * 0.5,  # Speed up
+            'filter_brightness': 0.3 + total_momentum * 0.7,  # Open filters
+            'resonance_boost': total_momentum * 1.5,  # More dramatic
+            'harmonic_density': 0.5 + total_momentum * 0.5,  # Richer harmonies
+            'volume_crescendo': 0.7 + total_momentum * 0.3,  # Build volume
+            'attack_sharpness': total_momentum  # Crisper note attacks
+        }
+
+class QuietPrecisionProcess(NarrativeProcess):
+    """
+    Process for QUIET_PRECISION: equilibrium-seeking with gentle breathing
+    Based on homeostasis and natural oscillation
+    """
+
+    def __init__(self, total_duration: float, total_plies: int):
+        super().__init__(total_duration, total_plies)
+        self.balance = 0.0
+        self.breathing_phase = 0.0
+
+    def update(self, current_time: float, key_moment=None) -> dict:
+        self.current_time = current_time
+        progress = self.get_progress()
+
+        # Small perturbations always return to center
+        if key_moment:
+            disturbance = 0.05  # Very small disturbances
+        else:
+            disturbance = 0.0
+
+        # Self-correcting process - always returns to balance
+        self.balance = self.balance * 0.95 + disturbance
+
+        # Gentle breathing pattern - slow oscillation
+        self.breathing_phase += 0.1
+        breath_cycle = math.sin(self.breathing_phase) * 0.08
+
+        return {
+            'tempo_regularity': 1.0,  # Metronomic consistency
+            'filter_precision': 0.9 - abs(self.balance),  # Very stable
+            'dynamic_breathing': breath_cycle,  # Gentle volume waves
+            'pitch_stability': 0.95,  # Minimal drift
+            'resonance_control': 0.3,  # Tight, controlled
+            'harmonic_purity': 0.9  # Clean, simple harmonies
+        }
 
 class SubtractiveSynth:
     def __init__(self, sample_rate=44100):
@@ -24,27 +187,32 @@ class SubtractiveSynth:
         """Generate basic waveforms rich in harmonics"""
         num_samples = int(duration * self.sample_rate)
         t = np.linspace(0, duration, num_samples, False)
-        phase = freq * t
 
         if waveform == 'saw':
-            # Sawtooth - all harmonics (1/n amplitude)
-            signal = 2.0 * (phase % 1.0) - 1.0
+            # Sawtooth - rising ramp from -1 to 1
+            phase = (freq * t) % 1.0
+            signal = 2.0 * phase - 1.0
 
         elif waveform == 'square':
-            # Square wave - only odd harmonics
-            signal = np.sign(np.sin(2 * np.pi * phase))
+            # Square wave - 50% duty cycle
+            phase = (freq * t) % 1.0
+            signal = np.where(phase < 0.5, 1.0, -1.0)
 
         elif waveform == 'pulse':
-            # Pulse wave with variable width (PWM capability)
-            width = 0.3  # Can be modulated later
-            signal = np.where((phase % 1.0) < width, 1.0, -1.0)
+            # Pulse wave - 25% duty cycle (much narrower than square)
+            phase = (freq * t) % 1.0
+            width = 0.25  # Much more distinctive than square
+            signal = np.where(phase < width, 1.0, -1.0)
 
         elif waveform == 'triangle':
-            # Triangle - odd harmonics (1/n² amplitude)
-            signal = 2.0 * np.abs(2.0 * (phase % 1.0) - 1.0) - 1.0
+            # Triangle wave - linear rise and fall
+            phase = (freq * t) % 1.0
+            signal = np.where(phase < 0.5,
+                             4.0 * phase - 1.0,      # Rising: -1 to 1
+                             3.0 - 4.0 * phase)      # Falling: 1 to -1
 
         else:  # sine
-            signal = np.sin(2 * np.pi * phase)
+            signal = np.sin(2 * np.pi * freq * t)
 
         return signal
 
@@ -213,6 +381,28 @@ class ChessSynthComposer:
             'dorian': [110, 123.47, 130.81, 146.83, 164.81, 185, 196, 220],  # Brighter minor
         }
 
+        # Initialize narrative process
+        self.narrative_process = self._create_process(
+            chess_tags.get('overall_narrative', 'COMPLEX_GAME'),
+            self.total_duration,
+            self.total_plies
+        )
+
+    def _create_process(self, narrative: str, duration: float, plies: int) -> NarrativeProcess:
+        """Create appropriate process based on overall narrative"""
+        process_map = {
+            'TUMBLING_DEFEAT': TumblingDefeatProcess,
+            'ATTACKING_MASTERPIECE': AttackingMasterpieceProcess,
+            'QUIET_PRECISION': QuietPrecisionProcess,
+            # Add more mappings as we implement more processes
+            'FIGHTING_DEFEAT': TumblingDefeatProcess,  # Similar behavior
+            'TACTICAL_MASTERPIECE': AttackingMasterpieceProcess,  # Similar behavior
+            'PEACEFUL_DRAW': QuietPrecisionProcess,  # Similar behavior
+        }
+
+        ProcessClass = process_map.get(narrative, DefaultProcess)
+        return ProcessClass(duration, plies)
+
     def compose_section(self, section):
         """Compose a section using the synthesizer"""
         samples = []
@@ -236,17 +426,27 @@ class ChessSynthComposer:
         print(f"    Composing {section['name']}: {narrative} (tension: {tension:.2f}, duration: {section_duration}s)")
 
         # Choose synthesis parameters based on narrative
-        if 'TACTICAL_BATTLE' in narrative or 'TACTICAL_THRILLER' in narrative:
-            # Fast tactical exchanges - aggressive saw with rapid filter sweeps
+        if 'TACTICAL_CHAOS' in narrative:
+            # Chaotic tactical exchanges - aggressive saw with rapid filter sweeps
             waveform = 'saw'
             filter_base = 300
             filter_envelope_amount = 5000 * tension
             resonance = 3.0  # Very resonant for intensity
             scale = self.scales['phrygian']
             note_duration = 0.2  # Very fast notes
-            print(f"      TACTICAL_BATTLE: saw wave, filter {filter_base}Hz + {filter_envelope_amount:.0f}Hz sweep, resonance {resonance}")
+            print(f"      TACTICAL_CHAOS: saw wave, filter {filter_base}Hz + {filter_envelope_amount:.0f}Hz sweep, resonance {resonance}")
 
-        elif 'KING_HUNT' in narrative:
+        elif 'TACTICAL_BATTLE' in narrative:
+            # Tactical battle with advantage gained - pulse with strong filter
+            waveform = 'pulse'
+            filter_base = 350
+            filter_envelope_amount = 4500 * tension
+            resonance = 2.5  # Strong resonance
+            scale = self.scales['minor']
+            note_duration = 0.25  # Fast but controlled
+            print(f"      TACTICAL_BATTLE: pulse wave, filter {filter_base}Hz + {filter_envelope_amount:.0f}Hz sweep, resonance {resonance}")
+
+        elif 'KING_HUNT' in narrative or 'KING_ATTACK' in narrative:
             # Pursuing, relentless sound - pulse wave building intensity
             waveform = 'pulse'
             filter_base = 400
@@ -254,7 +454,7 @@ class ChessSynthComposer:
             resonance = 2.0
             scale = self.scales['minor']
             note_duration = 0.3  # Moderate speed but building
-            print(f"      KING_HUNT: pulse wave, filter {filter_base}Hz + {filter_envelope_amount:.0f}Hz sweep, resonance {resonance}")
+            print(f"      KING_HUNT/ATTACK: pulse wave, filter {filter_base}Hz + {filter_envelope_amount:.0f}Hz sweep, resonance {resonance}")
 
         elif 'SACRIFICIAL_ATTACK' in narrative or 'CRUSHING_ATTACK' in narrative:
             # Explosive, dramatic sound - saw with massive filter opening
@@ -286,7 +486,7 @@ class ChessSynthComposer:
             note_duration = 0.5
             print(f"      COMPLEX_STRUGGLE: triangle wave, filter {filter_base}Hz + {filter_envelope_amount:.0f}Hz sweep, resonance {resonance}")
 
-        elif 'POSITIONAL_MANEUVERING' in narrative or 'QUIET_BUILDING' in narrative:
+        elif 'POSITIONAL_SQUEEZE' in narrative or 'POSITIONAL_MANEUVERING' in narrative or 'QUIET_MANEUVERING' in narrative:
             # Subtle, evolving sound - triangle with gentle filter movement
             waveform = 'triangle'
             filter_base = 1000
@@ -316,6 +516,56 @@ class ChessSynthComposer:
             note_duration = 0.7
             print(f"      OPENING_THEORY: triangle wave, filter {filter_base}Hz + {filter_envelope_amount:.0f}Hz sweep, resonance {resonance}")
 
+        elif 'MATING_ATTACK' in narrative:
+            # Inevitable, closing sound - saw with dramatic filter sweeps
+            waveform = 'saw'
+            filter_base = 150
+            filter_envelope_amount = 7000 * tension
+            resonance = 3.2
+            scale = self.scales['phrygian']
+            note_duration = 0.25
+            print(f"      MATING_ATTACK: saw wave, filter {filter_base}Hz + {filter_envelope_amount:.0f}Hz sweep, resonance {resonance}")
+
+        elif 'TENSE_EQUILIBRIUM' in narrative:
+            # Balanced but tense - pulse with moderate filter
+            waveform = 'pulse'
+            filter_base = 500
+            filter_envelope_amount = 2000 * tension
+            resonance = 1.5
+            scale = self.scales['minor']
+            note_duration = 0.6
+            print(f"      TENSE_EQUILIBRIUM: pulse wave, filter {filter_base}Hz + {filter_envelope_amount:.0f}Hz sweep, resonance {resonance}")
+
+        elif 'LIQUIDATION' in narrative:
+            # Simplifying, clearing out - triangle with falling filter
+            waveform = 'triangle'
+            filter_base = 2000
+            filter_envelope_amount = -1000  # Negative for closing
+            resonance = 0.4
+            scale = self.scales['dorian']
+            note_duration = 0.9
+            print(f"      LIQUIDATION: triangle wave, filter {filter_base}Hz + {filter_envelope_amount}Hz sweep, resonance {resonance}")
+
+        elif 'CRITICAL_DECISIONS' in narrative:
+            # Important moments - square with sharp filter
+            waveform = 'square'
+            filter_base = 600
+            filter_envelope_amount = 3500 * tension
+            resonance = 2.2
+            scale = self.scales['minor']
+            note_duration = 0.5
+            print(f"      CRITICAL_DECISIONS: square wave, filter {filter_base}Hz + {filter_envelope_amount:.0f}Hz sweep, resonance {resonance}")
+
+        elif 'COMPLEX_POSITION' in narrative:
+            # Unknown evaluation - mysterious, ambient sound
+            waveform = 'triangle'
+            filter_base = 800
+            filter_envelope_amount = 1800 * tension
+            resonance = 0.8
+            scale = self.scales['dorian']
+            note_duration = 0.7
+            print(f"      COMPLEX_POSITION: triangle wave, filter {filter_base}Hz + {filter_envelope_amount:.0f}Hz sweep, resonance {resonance}")
+
         else:  # Default for any unmatched narratives
             # Balanced sound - saw with moderate characteristics
             waveform = 'saw'
@@ -328,6 +578,44 @@ class ChessSynthComposer:
 
         print(f"      Scale: {scale}")
         print(f"      Note duration: {note_duration}s")
+
+        # Apply narrative process transformations
+        current_time = section.get('start_ply', 0)  # Use ply as time
+
+        # Check for key moments in this section for process update
+        process_key_moment = None
+        for moment in section.get('key_moments', []):
+            # Use the first moment as representative for this section update
+            if process_key_moment is None:
+                process_key_moment = moment
+                break
+
+        # Get process transformations
+        transforms = self.narrative_process.update(current_time, process_key_moment)
+
+        if transforms:  # Only apply if process returns transformations
+            print(f"      Process transformations: {transforms}")
+
+            # Apply transformations to synthesis parameters
+            if 'tempo_multiplier' in transforms:
+                note_duration *= transforms['tempo_multiplier']
+
+            if 'filter_brightness' in transforms:
+                filter_envelope_amount *= transforms['filter_brightness']
+
+            if 'resonance_boost' in transforms:
+                resonance += transforms['resonance_boost']
+                resonance = max(0.1, min(4.0, resonance))  # Clamp resonance
+
+            if 'volume_decay' in transforms:
+                volume_multiplier = transforms['volume_decay']
+            else:
+                volume_multiplier = 1.0
+
+            if 'volume_crescendo' in transforms:
+                volume_multiplier = transforms['volume_crescendo']
+        else:
+            volume_multiplier = 1.0  # Default if no process or no volume transform
 
         # Create a pattern based on the scale
         pattern_length = 8
@@ -433,7 +721,7 @@ class ChessSynthComposer:
         # Fade out
         section_envelope[-fade_samples:] = np.linspace(1, 0, fade_samples)
 
-        samples = filtered_signal * section_envelope * 0.3  # Volume level
+        samples = filtered_signal * section_envelope * 0.3 * volume_multiplier  # Volume level with process modulation
 
         # Add key moments as filter sweeps or resonant hits
         print(f"      Processing {len(section.get('key_moments', []))} key moments:")
