@@ -13,6 +13,9 @@
 
 set -e  # Exit on any error
 
+# Get the directory where this script is located
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+
 # Check if input file provided
 if [ $# -eq 0 ]; then
     echo "Usage: $0 <input_pgn_file>"
@@ -37,8 +40,8 @@ fi
 
 # Validate input file has _eval.pgn suffix
 if [[ ! "$INPUT_PGN" =~ _eval\.pgn$ ]]; then
-    echo "Warning: Input file should end with '_eval.pgn' for proper naming convention"
-    echo "Continuing anyway..."
+    echo "Error: Input file should end with '_eval.pgn' for proper naming convention"
+    exit 1
 fi
 
 # Extract base name for output files
@@ -62,9 +65,22 @@ echo ""
 
 # Step 1: Add EMT annotations
 echo "Step 1: Adding elapsed move time annotations..."
-python3 thinking-time.py --in "$INPUT_PGN" --out "$EMT_PGN"
-if [ $? -eq 0 ]; then
-    echo "✓ EMT annotations completed: $EMT_PGN"
+OUTPUT=$(python3 "${SCRIPT_DIR}/thinking-time.py" --in "$INPUT_PGN" --out "$EMT_PGN" 2>&1)
+EXIT_CODE=$?
+
+echo "$OUTPUT"
+
+if [ $EXIT_CODE -eq 0 ]; then
+    # Check if the output indicates no clock times or EMT already present
+    if echo "$OUTPUT" | grep -q "Cannot calculate EMT\|No annotation needed"; then
+        echo "⚠ No EMT data available - continuing pipeline with original file"
+        # Use original file for subsequent steps
+        PROCESSING_FILE="$INPUT_PGN"
+    else
+        echo "✓ EMT annotations completed: $EMT_PGN"
+        # Use EMT-annotated file for subsequent steps
+        PROCESSING_FILE="$EMT_PGN"
+    fi
 else
     echo "✗ EMT annotation failed"
     exit 1
@@ -73,7 +89,7 @@ fi
 # Step 2: Extract features
 echo ""
 echo "Step 2: Extracting game features..."
-python3 feature_extractor.py "$EMT_PGN" --json > "$FEATURES_JSON"
+python3 "${SCRIPT_DIR}/feature_extractor.py" "$PROCESSING_FILE" --json > "$FEATURES_JSON"
 if [ $? -eq 0 ]; then
     echo "✓ Feature extraction completed: $FEATURES_JSON"
 else
@@ -84,7 +100,7 @@ fi
 # Step 3: Generate narrative tags
 echo ""
 echo "Step 3: Generating narrative structure..."
-python3 tagger.py "$FEATURES_JSON" --output "$TAGS_JSON"
+python3 "${SCRIPT_DIR}/tagger.py" "$FEATURES_JSON" --output "$TAGS_JSON"
 if [ $? -eq 0 ]; then
     echo "✓ Narrative tagging completed: $TAGS_JSON"
 else

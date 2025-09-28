@@ -379,6 +379,7 @@ def extract_game_features(pgn_path: str | Path,
     black_castled = False
     both_castled_ply: Optional[int] = None
     both_queens_off_ply: Optional[int] = None
+    
     for node in game.mainline():
         move = node.move
         san = board.san(move)

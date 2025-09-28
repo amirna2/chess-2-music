@@ -47,6 +47,25 @@ def parse_time_control(tc: str):
             {'moves': None, 'init': 1800, 'inc': 30}]
 
 def annotate_game_with_emt(game, clip_eps=0.6):
+    # Check if EMT values are already present using python-chess's emt() method
+    for node in game.mainline():
+        if node.parent is None:
+            continue
+        if node.emt() is not None:
+            return None  # Signal that EMT already exists
+
+    # Check if clock times exist before doing anything else
+    has_clocks = False
+    for node in game.mainline():
+        if node.parent is None:
+            continue
+        if node.clock() is not None:
+            has_clocks = True
+            break
+
+    if not has_clocks:
+        return []  # Signal that no clocks exist
+
     periods = parse_time_control(game.headers.get("TimeControl", ""))
 
     prev_clock = {'W': float(periods[0]['init']), 'B': float(periods[0]['init'])}
@@ -67,11 +86,10 @@ def annotate_game_with_emt(game, clip_eps=0.6):
         label = f"{fullmove}{'.' if side=='W' else '...'}"
         san = board.san(node.move)
 
-        m = CLK_RE.search(node.comment or "")
-        if not m:
+        clock_time = node.clock()
+        if clock_time is None:
             continue
-        clk_str = m.group(1)
-        curr = clock_to_seconds(clk_str)
+        curr = clock_time
 
         # current period
         period = periods[pidx[side]]
@@ -106,10 +124,10 @@ def annotate_game_with_emt(game, clip_eps=0.6):
         # After a period boundary, the clock includes bonus so store as-is
         prev_clock[side] = curr
 
-        print(f"{label:<6} {side:<1}  {san:<22} {emt:>9.3f}  {fmt_hms(emt):>10}  {clk_str:>12}")
+        print(f"{label:<6} {side:<1}  {san:<22} {emt:>9.3f}  {fmt_hms(emt):>10}  {fmt_hms(curr):>12}")
 
         rows.append({"Move": fullmove, "Side": side, "SAN": san,
-                     "EMT(s)": f"{emt:.3f}", "EMT": fmt_hms(emt), "Clock after": clk_str})
+                     "EMT(s)": f"{emt:.3f}", "EMT": fmt_hms(emt), "Clock after": fmt_hms(curr)})
 
         # advance period after boundary
         if period['moves'] is not None and moved_in[side] == period['moves']:
@@ -126,9 +144,7 @@ def main():
     ap.add_argument("--clip-epsilon", type=float, default=0.6)  # fractional clocks → smaller epsilon
     args = ap.parse_args()
 
-    with open(args.inp, "r", encoding="utf-8") as fin, \
-         open(args.outp, "w", encoding="utf-8") as fout:
-
+    with open(args.inp, "r", encoding="utf-8") as fin:
         while True:
             game = chess.pgn.read_game(fin)
             if game is None:
@@ -136,9 +152,17 @@ def main():
 
             rows = annotate_game_with_emt(game, clip_eps=args.clip_epsilon)
 
-            exporter = chess.pgn.FileExporter(fout)
-            game.accept(exporter)
-            fout.write("\n\n")
+            # Handle different cases
+            if rows is None:
+                print("EMT values already present in PGN. No annotation needed.")
+                exit(0)
+            elif not rows:
+                print("No clock times ([%clk]) found in PGN. Cannot calculate EMT.")
+                exit(0)
+
+            # Only open output file if we have data to write
+            with open(args.outp, "w", encoding="utf-8") as fout:
+                print(game, file=fout)
 
             if args.csv_out:
                 with open(args.csv_out, "a", newline="", encoding="utf-8") as cf:

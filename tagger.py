@@ -42,7 +42,7 @@ class NarrativeStructure:
         return asdict(self)
 
 class ChessNarrativeTagger:
-    def __init__(self, game_data: Union[Dict, Any]):
+    def __init__(self, game_data: Union[Dict, Any], debug: bool = False):
         """Initialize with game data (either GameFeatures object or dict from JSON)"""
         # Handle both dictionary and object inputs
         if isinstance(game_data, dict):
@@ -56,6 +56,7 @@ class ChessNarrativeTagger:
             self.metrics = asdict(game_data.metrics)
 
         self.total_plies = self.metrics['total_plies']
+        self.debug = debug
 
         # Validate that we have moves to process
         if self.total_plies == 0:
@@ -121,12 +122,14 @@ class ChessNarrativeTagger:
             elif avg_eval < 1.0:  # Slightly favored
                 tension += 0.2
 
-        # 3. Time pressure
-        avg_clock = np.mean([m.get('clock_after_seconds', 7200) for m in section_moves])
-        if avg_clock < 300:  # Under 5 minutes
-            tension += 0.3
-        elif avg_clock < 600:  # Under 10 minutes
-            tension += 0.2
+        # 3. Time pressure (only if clock data available)
+        clock_values = [m.get('clock_after_seconds') for m in section_moves if m.get('clock_after_seconds') is not None]
+        if clock_values:
+            avg_clock = np.mean(clock_values)
+            if avg_clock < 300:  # Under 5 minutes
+                tension += 0.3
+            elif avg_clock < 600:  # Under 10 minutes
+                tension += 0.2
 
         # 4. Tactical density
         captures = sum(1 for m in section_moves if m.get('is_capture'))
@@ -134,10 +137,12 @@ class ChessNarrativeTagger:
         tactical_density = (captures + checks * 2) / len(section_moves)
         tension += min(tactical_density, 0.2)
 
-        # 5. Critical decisions (long thinks)
-        deep_thinks = sum(1 for m in section_moves if m.get('emt_seconds', 0) > 600)
-        if deep_thinks > 0:
-            tension += 0.1
+        # 5. Critical decisions (long thinks, if EMT data available)
+        emt_values = [m.get('emt_seconds') for m in section_moves if m.get('emt_seconds') is not None]
+        if emt_values:
+            deep_thinks = sum(1 for emt in emt_values if emt > 600)
+            if deep_thinks > 0:
+                tension += 0.1
 
         # 6. Key moment density - simple relationship
         key_moments = sum(1 for m in section_moves
@@ -378,7 +383,9 @@ class ChessNarrativeTagger:
         captures = sum(1 for m in section_moves if m.get('is_capture'))
         capture_density = captures / len(section_moves)
 
-        avg_time = sum(m.get('emt_seconds', 0) for m in section_moves) / len(section_moves)
+        # Calculate average thinking time (only if EMT data available)
+        emt_values = [m.get('emt_seconds') for m in section_moves if m.get('emt_seconds') is not None]
+        avg_time = sum(emt_values) / len(emt_values) if emt_values else 0
 
         checks = sum(1 for m in section_moves if m.get('is_check'))
 
@@ -567,6 +574,18 @@ class ChessNarrativeTagger:
             'COMPLEX_GAME': self.score_complex_game(narratives, result),
         }
 
+        # Debug output: show all scores sorted by value
+        if hasattr(self, 'debug') and self.debug:
+            print("\n=== NARRATIVE CLASSIFICATION DEBUG ===")
+            print(f"Game result: {result}")
+            print(f"Section narratives: {narratives}")
+            print("\nScoring breakdown:")
+            sorted_scores = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+            for narrative, score in sorted_scores:
+                print(f"  {narrative:20s}: {score:2d}")
+            print(f"\nSelected: {max(scores, key=scores.get)}")
+            print("=" * 40)
+
         # Return the narrative type with the highest score
         return max(scores, key=scores.get)
 
@@ -661,6 +680,11 @@ class ChessNarrativeTagger:
     def score_attacking_masterpiece(self, narratives: List[str], result: str) -> int:
         """Score for attacking masterpiece - requires forced mate sequences"""
         score = 0
+
+        # check for blunder nags
+        blunder_moves = [m for m in self.moves if 4 in m.get('nag_codes', [])]
+        if len(blunder_moves) > 0:
+            return 0  # No blunders allowed for masterpiece
 
         # Check for forced mate evaluations (eval_mate field)
         mate_evals = [m.get('eval_mate') for m in self.moves if m.get('eval_mate') is not None]
@@ -813,7 +837,7 @@ class ChessNarrativeTagger:
 
 def main():
     if len(sys.argv) < 2:
-        print("Usage: python narrative_tagger.py <game_features.json> [--output narrative.json]")
+        print("Usage: python narrative_tagger.py <game_features.json> [--output narrative.json] [--debug]")
         sys.exit(1)
 
     # Load game features from JSON
@@ -821,8 +845,11 @@ def main():
     with open(input_file, 'r') as f:
         game_features = json.load(f)
 
+    # Check for debug flag
+    debug_mode = '--debug' in sys.argv
+
     # Generate narrative structure
-    tagger = ChessNarrativeTagger(game_features)
+    tagger = ChessNarrativeTagger(game_features, debug=debug_mode)
     structure = tagger.generate_structure()
 
     # Output
