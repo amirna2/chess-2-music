@@ -558,6 +558,7 @@ class ChessNarrativeTagger:
             'TACTICAL_MASTERPIECE': self.score_tactical_masterpiece(narratives, result),
             'DOMINATION': self.score_domination(narratives, result),
             'TACTICAL_THRILLER': self.score_tactical_thriller(narratives, result),
+            'QUIET_PRECISION': self.score_quiet_precision(narratives, result),
             'PEACEFUL_DRAW': self.score_peaceful_draw(narratives, result),
             'ATTACKING_GAME': self.score_attacking_game(narratives, result),
             'HEROIC_DEFENSE': self.score_heroic_defense(narratives, result),
@@ -723,6 +724,46 @@ class ChessNarrativeTagger:
             score += 5
         if 'KING_HUNT' in narratives:
             score += 2
+        return score
+
+    def score_quiet_precision(self, narratives: List[str], result: str) -> int:
+        """Score for quiet precision - technical draws with minimal eval variance"""
+        if result != '1/2-1/2':
+            return 0  # Must be a draw
+
+        score = 0
+
+        # Check evaluation stability (flat line around 0.00)
+        evals = [m.get('eval_cp', 0) for m in self.moves if m.get('eval_cp') is not None]
+        if evals:
+            # Calculate mean and standard deviation in centipawns
+            import statistics
+            mean_eval = statistics.mean(evals)
+            std_eval = statistics.stdev(evals) if len(evals) > 1 else 0
+
+            # High score for stable, balanced evaluations
+            if abs(mean_eval) < 25:  # Mean within 0.25 pawns of equality
+                score += 6
+                if std_eval < 75:  # Low volatility (less than 0.75 pawn swings)
+                    score += 6  # Very stable = high precision
+                elif std_eval < 150:  # Moderate volatility
+                    score += 3
+
+        # Bonus for quiet section narratives
+        quiet_sections = sum(1 for n in narratives if n in [
+            'COMPLEX_STRUGGLE', 'QUIET_MANEUVERING', 'TENSE_EQUILIBRIUM'
+        ])
+        total_sections = len(narratives)
+
+        if quiet_sections == total_sections and total_sections > 0:
+            score += 4  # All sections were quiet/precise
+        elif quiet_sections >= total_sections * 0.75:
+            score += 2  # Mostly quiet sections
+
+        # Penalty for dramatic elements
+        if any(n in ['TACTICAL_CHAOS', 'KING_HUNT', 'MATING_ATTACK'] for n in narratives):
+            score = max(0, score - 4)
+
         return score
 
     def score_peaceful_draw(self, narratives: List[str], result: str) -> int:
