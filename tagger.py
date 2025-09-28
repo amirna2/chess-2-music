@@ -69,8 +69,8 @@ class ChessNarrativeTagger:
         both_castled = self.metrics.get('both_castled_ply')
         queens_off = self.metrics.get('both_queens_off_ply')
 
-        # Opening ends when both castle or at move 20
-        opening_end = min(both_castled + 2, 20) if both_castled else 20
+        # Opening ends when both castle or at ply 28 (move 14) - Lichess standard
+        opening_end = min(both_castled + 2, 28) if both_castled else 28
         opening_end = min(opening_end, self.total_plies)
 
         # Endgame starts when queens are off or last 25% of game
@@ -79,17 +79,18 @@ class ChessNarrativeTagger:
         else:
             endgame_start = max(opening_end + 1, int(self.total_plies * 0.75))
 
-        # Handle short games
-        if self.total_plies <= 30:
-            sections.append(("OPENING", 1, min(15, self.total_plies)))
-            if self.total_plies > 15:
-                sections.append(("MIDDLEGAME", 16, self.total_plies))
+        # Handle short games (less than typical opening length)
+        if self.total_plies <= 28:
+            sections.append(("OPENING", 1, min(20, self.total_plies)))
+            if self.total_plies > 20:
+                sections.append(("MIDDLEGAME", 21, self.total_plies))
         else:
             sections.append(("OPENING", 1, opening_end))
 
             if endgame_start > opening_end + 1:
                 middlegame_length = endgame_start - opening_end - 1
-                if middlegame_length > 30:
+                # Split middlegame if it's long enough (using move 25/ply 50 as guide)
+                if middlegame_length > 40:  # Increased threshold for splitting
                     mid_point = opening_end + middlegame_length // 2
                     sections.append(("MIDDLEGAME_1", opening_end + 1, mid_point))
                     sections.append(("MIDDLEGAME_2", mid_point + 1, endgame_start - 1))

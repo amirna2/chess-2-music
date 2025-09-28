@@ -1,272 +1,115 @@
 #!/bin/bash
 
-# Chess-to-Music convenience script
+# Chess to Music Processing Pipeline
+# Usage: ./chess2music-pipeline.sh <input_pgn_file>
+#
+# This script processes a chess PGN file through the complete pipeline:
+# 1. Add EMT (Elapsed Move Time) annotations
+# 2. Extract game features
+# 3. Generate narrative tags
+#
+# Input:  game_eval.pgn (PGN with evaluations)
+# Output: game_eval_emt.pgn, feat-game.json, tags-game.json
 
-show_help() {
-    echo "Chess-to-Music Converter"
+set -e  # Exit on any error
+
+# Check if input file provided
+if [ $# -eq 0 ]; then
+    echo "Usage: $0 <input_pgn_file>"
     echo ""
-    echo "Usage:"
-    echo "  ./c2m <pgn_file> [config_file]     Convert PGN to MIDI"
-    echo "  ./c2m <pgn_file> --play             Convert PGN→MIDI→MP3 and play"
-    echo "  ./c2m to-mp3 <midi_file>           Convert MIDI to MP3"
-    echo "  ./c2m play <audio_file>             Play MP3 or MIDI file"
-    echo "  ./c2m demo                          Run demo conversion"
-    echo "  ./c2m list-games                    List available PGN files"
-    echo "  ./c2m list-midi                     List generated MIDI files"
-    echo "  ./c2m clean                         Remove generated MIDI files"
-    echo "  ./c2m clean-all                     Remove all generated audio files"
-    echo "  ./c2m help                          Show this help"
+    echo "Example: $0 Ding_vs_Gukesh_game13_eval.pgn"
     echo ""
-    echo "Examples:"
-    echo "  ./c2m data/game.pgn"
-    echo "  ./c2m data/game.pgn custom_config.yaml"
-    echo "  ./c2m data/game.pgn --play"
-    echo "  ./c2m to-mp3 data/game.mid"
-    echo "  ./c2m play data/game.mp3"
-    echo "  ./c2m play data/game.mid"
-    echo "  ./c2m demo"
-}
+    echo "Expected input format: *_eval.pgn (PGN with evaluations)"
+    echo "Will generate:"
+    echo "  - *_eval_emt.pgn (with elapsed move times)"
+    echo "  - feat-*.json (extracted features)"
+    echo "  - tags-*.json (narrative structure)"
+    exit 1
+fi
 
-convert_to_mp3() {
-    local midi_file="$1"
+INPUT_PGN="$1"
 
-    if [[ -z "$midi_file" ]]; then
-        echo "Error: Please specify MIDI file"
-        echo "Usage: ./c2m to-mp3 <midi_file>"
-        exit 1
-    fi
+# Validate input file exists
+if [ ! -f "$INPUT_PGN" ]; then
+    echo "Error: Input file '$INPUT_PGN' not found"
+    exit 1
+fi
 
-    if [[ ! -f "$midi_file" ]]; then
-        echo "Error: MIDI file '$midi_file' not found"
-        exit 1
-    fi
+# Validate input file has _eval.pgn suffix
+if [[ ! "$INPUT_PGN" =~ _eval\.pgn$ ]]; then
+    echo "Warning: Input file should end with '_eval.pgn' for proper naming convention"
+    echo "Continuing anyway..."
+fi
 
-    echo "Converting $midi_file to MP3..."
+# Extract base name for output files
+BASE_NAME=$(basename "$INPUT_PGN" _eval.pgn)
+if [ "$BASE_NAME" = "$(basename "$INPUT_PGN")" ]; then
+    # Fallback if _eval.pgn not found
+    BASE_NAME=$(basename "$INPUT_PGN" .pgn)
+fi
 
-    local base_name=$(basename "$midi_file" .mid)
-    local dir_name=$(dirname "$midi_file")
-    local wav_file="$dir_name/$base_name.wav"
-    local mp3_file="$dir_name/$base_name.mp3"
+# Define output file names
+EMT_PGN="${BASE_NAME}_eval_emt.pgn"
+FEATURES_JSON="feat-${BASE_NAME##*_}.json"  # Extract game number/identifier
+TAGS_JSON="tags-${BASE_NAME##*_}.json"
 
-    # Try different conversion methods
-    local conversion_success=false
+echo "=== Chess to Music Pipeline ==="
+echo "Input:     $INPUT_PGN"
+echo "EMT PGN:   $EMT_PGN"
+echo "Features:  $FEATURES_JSON"
+echo "Tags:      $TAGS_JSON"
+echo ""
 
-    # 1. TiMidity++ (most reliable for batch conversion)
-    if command -v timidity >/dev/null 2>&1; then
-        echo "Converting with TiMidity++..."
-        if timidity "$midi_file" -Ow -o "$wav_file" >/dev/null 2>&1; then
-            conversion_success=true
-        fi
-    # 2. FluidSynth (if available with soundfont)
-    elif command -v fluidsynth >/dev/null 2>&1; then
-        local sf_path="/opt/homebrew/share/soundfonts/default.sf2"
-        if [[ -f "$sf_path" ]]; then
-            echo "Converting with FluidSynth..."
-            if fluidsynth -F "$wav_file" "$sf_path" "$midi_file" >/dev/null 2>&1; then
-                conversion_success=true
-            fi
-        fi
-    fi
+# Step 1: Add EMT annotations
+echo "Step 1: Adding elapsed move time annotations..."
+python3 thinking-time.py --in "$INPUT_PGN" --out "$EMT_PGN"
+if [ $? -eq 0 ]; then
+    echo "✓ EMT annotations completed: $EMT_PGN"
+else
+    echo "✗ EMT annotation failed"
+    exit 1
+fi
 
-    if [[ "$conversion_success" = false ]]; then
-        echo "Error: No working MIDI converter found"
-        exit 1
-    fi
+# Step 2: Extract features
+echo ""
+echo "Step 2: Extracting game features..."
+python3 feature_extractor.py "$EMT_PGN" --json > "$FEATURES_JSON"
+if [ $? -eq 0 ]; then
+    echo "✓ Feature extraction completed: $FEATURES_JSON"
+else
+    echo "✗ Feature extraction failed"
+    exit 1
+fi
 
-    # Convert WAV to MP3
-    if command -v lame >/dev/null 2>&1; then
-        if lame "$wav_file" "$mp3_file" >/dev/null 2>&1 && rm "$wav_file"; then
-            echo "Created $mp3_file"
-        else
-            echo "Error: MP3 conversion failed"
-            exit 1
-        fi
-    else
-        echo "Warning: lame not found. WAV file saved as $wav_file"
-        echo "Install lame for MP3 conversion: brew install lame"
-    fi
-}
+# Step 3: Generate narrative tags
+echo ""
+echo "Step 3: Generating narrative structure..."
+python3 tagger.py "$FEATURES_JSON" --output "$TAGS_JSON"
+if [ $? -eq 0 ]; then
+    echo "✓ Narrative tagging completed: $TAGS_JSON"
+else
+    echo "✗ Narrative tagging failed"
+    exit 1
+fi
 
-convert_pgn() {
-    local pgn_file="$1"
-    local config_file_or_flag="$2"
+echo ""
+echo "=== Pipeline Complete ==="
+echo "Generated files:"
+echo "  - $EMT_PGN (PGN with thinking times)"
+echo "  - $FEATURES_JSON (structured game features)"
+echo "  - $TAGS_JSON (narrative structure)"
+echo ""
 
-    if [[ ! -f "$pgn_file" ]]; then
-        echo "Error: PGN file '$pgn_file' not found"
-        exit 1
-    fi
+# Show brief summary of results
+echo "=== Quick Summary ==="
+if command -v jq >/dev/null 2>&1; then
+    echo "Overall narrative: $(jq -r '.overall_narrative' "$TAGS_JSON")"
+    echo "Game result: $(jq -r '.game_result' "$TAGS_JSON")"
+    echo "Total moves: $(jq -r '.sections | length' "$TAGS_JSON") sections, $(jq -r '.total_plies' "$TAGS_JSON") plies"
+else
+    grep '"overall_narrative"' "$TAGS_JSON" | head -1
+    grep '"game_result"' "$TAGS_JSON" | head -1
+fi
 
-    # Check if second argument is --play flag
-    if [[ "$config_file_or_flag" == "--play" ]]; then
-        echo "Converting $pgn_file to MIDI..."
-        python3 c2m.py "$pgn_file"
-
-        # Get the generated MIDI file name
-        local base_name=$(basename "$pgn_file" .pgn)
-        local dir_name=$(dirname "$pgn_file")
-        local midi_file="$dir_name/${base_name}_music.mid"
-
-        if [[ -f "$midi_file" ]]; then
-            echo "Converting MIDI to MP3..."
-            convert_to_mp3 "$midi_file"
-
-            # Get the MP3 file name
-            local mp3_file="$dir_name/${base_name}_music.mp3"
-            if [[ -f "$mp3_file" ]]; then
-                play_audio "$mp3_file"
-            else
-                play_audio "$midi_file"
-            fi
-        else
-            echo "Error: MIDI file not generated"
-            exit 1
-        fi
-    else
-        # Handle config file case
-        local config_file="$config_file_or_flag"
-        if [[ -n "$config_file" && ! -f "$config_file" ]]; then
-            echo "Error: Config file '$config_file' not found"
-            exit 1
-        fi
-
-        if [[ -n "$config_file" ]]; then
-            echo "Converting $pgn_file to MIDI with config $config_file..."
-            python3 c2m.py "$pgn_file" --config "$config_file"
-        else
-            echo "Converting $pgn_file to MIDI..."
-            python3 c2m.py "$pgn_file"
-        fi
-    fi
-}
-
-list_games() {
-    echo "Available PGN files:"
-    find data -name "*.pgn" -type f | sort
-}
-
-list_midi() {
-    echo "Generated MIDI files:"
-    find data -name "*.mid" -type f | sort
-}
-
-clean_midi() {
-    echo "Cleaning generated MIDI files..."
-    find data -name "*.mid" -type f -delete
-    find . -name "*.pyc" -type f -delete
-    find . -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
-    echo "Done"
-}
-
-clean_all() {
-    echo "Cleaning all generated audio files..."
-    clean_midi
-    find data -name "*.wav" -type f -delete
-    find data -name "*.mp3" -type f -delete
-    echo "Done"
-}
-
-play_audio() {
-    local audio_file="$1"
-
-    if [[ -z "$audio_file" ]]; then
-        echo "Error: Please specify audio file"
-        echo "Usage: ./c2m play <audio_file>"
-        exit 1
-    fi
-
-    if [[ ! -f "$audio_file" ]]; then
-        echo "Error: Audio file '$audio_file' not found"
-        exit 1
-    fi
-
-    local ext="${audio_file##*.}"
-    case "$ext" in
-        "mp3"|"wav"|"m4a"|"aac")
-            echo "Playing $audio_file..."
-            afplay "$audio_file"
-            ;;
-        "mid"|"midi")
-            play_midi_file "$audio_file"
-            ;;
-        *)
-            echo "Error: Unsupported file type '$ext'"
-            echo "Supported formats: mp3, wav, m4a, aac, mid, midi"
-            exit 1
-            ;;
-    esac
-}
-
-play_midi_file() {
-    local midi_file="$1"
-
-    echo "Playing MIDI file $midi_file..."
-
-    # Try different MIDI players in order of preference
-    # 1. QuickTime Player (native macOS, best compatibility)
-    if [[ -d "/Applications/QuickTime Player.app" ]]; then
-        echo "Using QuickTime Player..."
-        open -a "QuickTime Player" "$midi_file"
-    # 2. Generic open command (uses default MIDI handler)
-    elif command -v open >/dev/null 2>&1; then
-        echo "Using system default MIDI player..."
-        open "$midi_file"
-    # 3. TiMidity++ (traditional fallback)
-    elif command -v timidity >/dev/null 2>&1; then
-        echo "Using TiMidity++..."
-        timidity "$midi_file"
-    # 4. FluidSynth (if available with soundfont)
-    elif command -v fluidsynth >/dev/null 2>&1; then
-        local sf_path="/opt/homebrew/share/soundfonts/default.sf2"
-        if [[ -f "$sf_path" ]]; then
-            echo "Using FluidSynth..."
-            fluidsynth -ni "$sf_path" "$midi_file"
-        else
-            echo "FluidSynth available but no soundfont found."
-            echo "No MIDI player available. Trying system default..."
-            open "$midi_file" 2>/dev/null || echo "Failed to play MIDI file"
-        fi
-    else
-        echo "No MIDI player found. Install options:"
-        echo "  brew install timidity"
-        echo "  brew install fluid-synth"
-        exit 1
-    fi
-}
-
-# Main script logic
-case "$1" in
-    "to-mp3")
-        convert_to_mp3 "$2"
-        ;;
-    "play")
-        play_audio "$2"
-        ;;
-    "demo")
-        convert_pgn "data/game.pgn"
-        ;;
-    "list-games")
-        list_games
-        ;;
-    "list-midi")
-        list_midi
-        ;;
-    "clean")
-        clean_midi
-        ;;
-    "clean-all")
-        clean_all
-        ;;
-    "help"|"-h"|"--help"|"")
-        show_help
-        ;;
-    *)
-        # Assume it's a PGN file
-        if [[ "$1" == *.pgn ]]; then
-            convert_pgn "$1" "$2"
-        else
-            echo "Error: Unknown command or invalid file type: $1"
-            echo "Run './c2m help' for usage information"
-            exit 1
-        fi
-        ;;
-esac
+echo ""
+echo "Pipeline completed successfully!"
