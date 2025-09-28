@@ -182,37 +182,82 @@ class SubtractiveSynth:
         # Filter state variables (for continuity between notes)
         self.filter_z1 = 0.0
         self.filter_z2 = 0.0
+        self.filter_z3 = 0.0
+        self.filter_z4 = 0.0
+
+    def poly_blep(self, dt, phase):
+        """
+        PolyBLEP (Polynomial Band-Limited Edge Pulse) anti-aliasing
+        dt: normalized frequency (freq / sample_rate)
+        phase: phase position (0.0 to 1.0)
+        """
+        if phase < dt:
+            # Beginning of period - rising edge
+            t = phase / dt
+            return t + t - t * t - 1.0
+        elif phase > 1.0 - dt:
+            # End of period - falling edge
+            t = (phase - 1.0) / dt
+            return t * t + t + t + 1.0
+        else:
+            return 0.0
 
     def oscillator(self, freq, duration, waveform='saw'):
-        """Generate basic waveforms rich in harmonics"""
+        """Generate band-limited waveforms using PolyBLEP anti-aliasing"""
         num_samples = int(duration * self.sample_rate)
-        t = np.linspace(0, duration, num_samples, False)
+        dt = freq / self.sample_rate  # Normalized frequency
 
-        if waveform == 'saw':
-            # Sawtooth - rising ramp from -1 to 1
-            phase = (freq * t) % 1.0
-            signal = 2.0 * phase - 1.0
+        # Generate sample by sample for proper PolyBLEP application
+        signal = np.zeros(num_samples)
+        phase = 0.0
 
-        elif waveform == 'square':
-            # Square wave - 50% duty cycle
-            phase = (freq * t) % 1.0
-            signal = np.where(phase < 0.5, 1.0, -1.0)
+        for i in range(num_samples):
+            if waveform == 'saw':
+                # Band-limited sawtooth
+                signal[i] = 2.0 * phase - 1.0
+                signal[i] -= self.poly_blep(dt, phase)
 
-        elif waveform == 'pulse':
-            # Pulse wave - 25% duty cycle (much narrower than square)
-            phase = (freq * t) % 1.0
-            width = 0.25  # Much more distinctive than square
-            signal = np.where(phase < width, 1.0, -1.0)
+            elif waveform == 'square':
+                # Band-limited square wave - 50% duty cycle
+                if phase < 0.5:
+                    signal[i] = 1.0
+                else:
+                    signal[i] = -1.0
 
-        elif waveform == 'triangle':
-            # Triangle wave - linear rise and fall
-            phase = (freq * t) % 1.0
-            signal = np.where(phase < 0.5,
-                             4.0 * phase - 1.0,      # Rising: -1 to 1
-                             3.0 - 4.0 * phase)      # Falling: 1 to -1
+                # Apply PolyBLEP at rising edge (phase = 0)
+                signal[i] += self.poly_blep(dt, phase)
+                # Apply PolyBLEP at falling edge (phase = 0.5)
+                signal[i] -= self.poly_blep(dt, phase - 0.5 if phase >= 0.5 else phase + 0.5)
 
-        else:  # sine
-            signal = np.sin(2 * np.pi * freq * t)
+            elif waveform == 'pulse':
+                # Band-limited pulse wave - 25% duty cycle
+                width = 0.25
+                if phase < width:
+                    signal[i] = 1.0
+                else:
+                    signal[i] = -1.0
+
+                # Apply PolyBLEP at rising edge (phase = 0)
+                signal[i] += self.poly_blep(dt, phase)
+                # Apply PolyBLEP at falling edge (phase = width)
+                phase_shifted = phase - width if phase >= width else phase + (1.0 - width)
+                signal[i] -= self.poly_blep(dt, phase_shifted)
+
+            elif waveform == 'triangle':
+                # Triangle wave - no PolyBLEP needed (continuous derivatives)
+                if phase < 0.5:
+                    signal[i] = 4.0 * phase - 1.0      # Rising: -1 to 1
+                else:
+                    signal[i] = 3.0 - 4.0 * phase      # Falling: 1 to -1
+
+            else:  # sine
+                # Sine wave - naturally band-limited
+                signal[i] = np.sin(2 * np.pi * phase)
+
+            # Advance phase
+            phase += dt
+            if phase >= 1.0:
+                phase -= 1.0
 
         return signal
 
@@ -235,11 +280,8 @@ class SubtractiveSynth:
         # Scale resonance (0-4), clamping for stability
         resonance = np.clip(resonance, 0.0, 3.95)
 
-        # Simplified input gain compensation (can be more complex)
-        input_gain = 0.5 * (1.0 - resonance / 4.0)
-
-        # State variables for 4 cascaded 1-pole filters (persistent)
-        z1, z2, z3, z4 = 0.0, 0.0, 0.0, 0.0
+        # Use persistent state variables for filter memory
+        z1, z2, z3, z4 = self.filter_z1, self.filter_z2, self.filter_z3, self.filter_z4
 
         filtered = np.zeros_like(signal)
 
@@ -248,29 +290,28 @@ class SubtractiveSynth:
 
             # Feedback loop with non-linear saturation
             # The feedback is applied to the input
-            input_with_feedback = input_sample - resonance * z4
+            input_with_feedback = input_sample - resonance * z4 * 0.1  # Scale down feedback
 
-            # The non-linear element is applied to each stage's input
-            stage1_in = np.tanh(input_with_feedback * input_gain)
-            stage2_in = np.tanh(z1)
-            stage3_in = np.tanh(z2)
-            stage4_in = np.tanh(z3)
-
-            # 4 cascaded 1-pole low-pass filters (Euler integration)
-            # Note: A bilinear transform would be more accurate but is also more complex.
-            z1 = z1 + f * (stage1_in - z1)
-            z2 = z2 + f * (stage2_in - z2)
-            z3 = z3 + f * (stage3_in - z3)
-            z4 = z4 + f * (stage4_in - z4)
+            # Simple 4-pole low-pass filter without excessive tanh
+            z1 = z1 + f * (input_with_feedback - z1)
+            z2 = z2 + f * (z1 - z2)
+            z3 = z3 + f * (z2 - z3)
+            z4 = z4 + f * (z3 - z4)
 
             filtered[i] = z4
 
-        return filtered
+        # Save state for next filter call
+        self.filter_z1, self.filter_z2, self.filter_z3, self.filter_z4 = z1, z2, z3, z4
 
-    def adsr_envelope(self, num_samples, attack=0.01, decay=0.1, sustain=0.7, release=0.2):
+        # Compensate for filter attenuation
+        output_gain = 12.0 + resonance * 2.0  # Proper listening level
+        return filtered * output_gain
+
+    def adsr_envelope(self, num_samples, attack=0.01, decay=0.1, sustain=0.7, release=0.2, curve=0.3):
         """
-        ADSR envelope generator - shapes the amplitude over time
+        ADSR envelope generator with exponential curves for musical sound
         Times in seconds, sustain is level (0-1)
+        curve: exponential curve factor (0.1 = gentle, 1.0 = aggressive)
         """
         envelope = np.zeros(num_samples)
 
@@ -293,26 +334,34 @@ class SubtractiveSynth:
 
         current = 0
 
-        # Attack
+        # Attack - exponential rise (slow start, fast finish)
         if attack_samples > 0:
-            envelope[current:current+attack_samples] = np.linspace(0, 1, attack_samples)
+            t = np.linspace(0, 1, attack_samples)
+            # Use exponential curve: starts slow, accelerates
+            envelope[current:current+attack_samples] = np.power(t, 1.0 - curve)
             current += attack_samples
 
-        # Decay
+        # Decay - exponential fall (fast start, slow finish)
         if decay_samples > 0 and current < num_samples:
             end = min(current + decay_samples, num_samples)
-            envelope[current:end] = np.linspace(1, sustain, end - current)
+            t = np.linspace(0, 1, end - current)
+            # Exponential decay: starts fast, slows down
+            decay_curve = 1.0 - np.power(t, curve)
+            envelope[current:end] = 1.0 - decay_curve * (1.0 - sustain)
             current = end
 
-        # Sustain
+        # Sustain - constant level
         if sustain_samples > 0 and current < num_samples:
             end = min(current + sustain_samples, num_samples)
             envelope[current:end] = sustain
             current = end
 
-        # Release
+        # Release - exponential fall to zero
         if current < num_samples:
-            envelope[current:] = np.linspace(sustain, 0, num_samples - current)
+            t = np.linspace(0, 1, num_samples - current)
+            # Exponential release: fast start, slow finish
+            release_curve = np.power(t, curve)
+            envelope[current:] = sustain * (1.0 - release_curve)
 
         return envelope
 
