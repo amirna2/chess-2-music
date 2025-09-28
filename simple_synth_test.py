@@ -170,6 +170,81 @@ def test_note(freq, wave='saw', attack=0.01, decay=0.1, sustain=0.7, release=0.2
     print(f"🎼 {wave} @ {freq}Hz, filter {filter_base}+{filter_env}Hz, ADSR({attack},{decay},{sustain},{release}), vol {vol}")
     play(samples)
 
+def test_supersaw(freq=220, dur=3, detune=12, filter_base=1500, filter_env=2500, res=0.5, vol=0.2):
+    """Test supersaw - rich detuned saw ensemble"""
+    synth = SubtractiveSynth()
+
+    # Create detune pattern based on single detune amount
+    detune_cents = [-detune, -detune*0.6, -detune*0.3, detune*0.3, detune*0.6, detune]
+
+    samples = synth.supersaw(
+        freq, dur,
+        detune_cents=detune_cents,
+        filter_base=filter_base,
+        filter_env_amount=filter_env,
+        resonance=res
+    ) * vol
+
+    print(f"🌊 Supersaw @ {freq}Hz, detune ±{detune} cents, filter {filter_base}+{filter_env}Hz, res {res}, vol {vol}")
+    play(samples)
+
+def test_arpeggio(root_freq=110, pattern='maj', wave='saw', tempo=120, vol=0.2, cycles=1):
+    """Test arpeggio pattern to hear musical phrase"""
+    synth = SubtractiveSynth()
+
+    # Define arpeggio patterns (relative to root)
+    patterns = {
+        'maj': [1.0, 1.25, 1.5, 2.0],  # Major: root, maj3, 5th, octave
+        'min': [1.0, 1.2, 1.5, 2.0],   # Minor: root, min3, 5th, octave
+        'dom7': [1.0, 1.25, 1.5, 1.75], # Dom7: root, maj3, 5th, b7
+        'dim': [1.0, 1.2, 1.414, 1.682], # Diminished
+        'sus4': [1.0, 1.333, 1.5, 2.0],  # Sus4: root, 4th, 5th, octave
+        'pent': [1.0, 1.125, 1.333, 1.5, 1.667, 2.0], # Major pentatonic: 1, 2, 3, 5, 6, 8
+        'pent_min': [1.0, 1.2, 1.333, 1.5, 1.8, 2.0], # Minor pentatonic: 1, b3, 4, 5, b7, 8
+    }
+
+    if pattern not in patterns:
+        pattern = 'maj'
+
+    note_freqs = [root_freq * ratio for ratio in patterns[pattern]]
+    note_duration = 60.0 / tempo / 2  # 8th notes
+
+    # Create each note with slightly overlapping release
+    all_samples = []
+
+    # Create pattern based on cycles
+    single_pattern = note_freqs + note_freqs[-2:0:-1]  # Up and down, avoiding repeat at top
+    full_pattern = single_pattern * int(cycles)  # Repeat pattern for specified cycles
+
+    for i, freq in enumerate(full_pattern):
+        # Vary filter cutoff based on position in arpeggio
+        filter_base = 400 + (i * 100)
+
+        samples = synth.create_synth_note(
+            freq=freq,
+            duration=note_duration,  # No overlap to prevent clipping
+            waveform=wave,
+            filter_base=filter_base,
+            filter_env_amount=2000,
+            resonance=1.5,
+            amp_env=(0.01, 0.05, 0.7, 0.15)  # Slightly longer release
+        )
+
+        # Add small gap between notes for clarity
+        gap_samples = int(0.02 * synth.sample_rate)  # 20ms gap
+        samples = np.concatenate([samples, np.zeros(gap_samples)])
+
+        all_samples.append(samples)
+
+    # Concatenate all notes
+    final = np.concatenate(all_samples)
+
+    # Apply soft clipping to prevent harsh distortion
+    final = np.tanh(final * 0.7) * vol  # Soft clip then scale
+
+    print(f"🎹 Arpeggio: {pattern} pattern @ {root_freq}Hz, tempo {tempo}, {cycles} cycles, vol {vol}")
+    play(final)
+
 def main():
     if len(sys.argv) < 2:
         print("SIMPLE SYNTH TESTER")
@@ -180,6 +255,8 @@ def main():
         print("  env [attack] [decay] [sustain] [release] [curve] - Plot ADSR envelope")
         print("  filt <wave> <freq> <cutoff> <res> [vol]    - Oscillator + filter")
         print("  note <freq> [wave] [attack] [decay] [sustain] [release] [filter_base] [filter_env] [res] [vol]")
+        print("  super [freq] [dur] [detune] [filter_base] [filter_env] [res] [vol] - Supersaw")
+        print("  arp [root_freq] [pattern] [wave] [tempo] [vol] [cycles] - Play arpeggio")
         print()
         print("Examples:")
         print("  ./simple_synth_test.py osc saw 110 0.1")
@@ -187,6 +264,11 @@ def main():
         print("  ./simple_synth_test.py env 0.01 0.1 0.7 0.2 0.3")
         print("  ./simple_synth_test.py filt saw 110 500 2.0 0.2")
         print("  ./simple_synth_test.py note 220 pulse 0.01 0.2 0.5 0.3 800 3000 1.5 0.3")
+        print("  ./simple_synth_test.py super 110 3 15 1000 3000 0.7 0.2")
+        print("  ./simple_synth_test.py arp 110 maj saw 120 0.2 2")
+        print("  ./simple_synth_test.py arp 220 min pulse 140 0.15 3")
+        print()
+        print("Arpeggio patterns: maj, min, dom7, dim, sus4, pent, pent_min")
         return
 
     cmd = sys.argv[1]
@@ -231,6 +313,26 @@ def main():
         res = float(sys.argv[10]) if len(sys.argv) > 10 else 1.0
         vol = float(sys.argv[11]) if len(sys.argv) > 11 else 0.3
         test_note(freq, wave, attack, decay, sustain, release, filter_base, filter_env, res, vol=vol)
+
+    elif cmd == 'super':
+        freq = float(sys.argv[2]) if len(sys.argv) > 2 else 220
+        dur = float(sys.argv[3]) if len(sys.argv) > 3 else 3
+        detune = float(sys.argv[4]) if len(sys.argv) > 4 else 12
+        filter_base = float(sys.argv[5]) if len(sys.argv) > 5 else 1500
+        filter_env = float(sys.argv[6]) if len(sys.argv) > 6 else 2500
+        res = float(sys.argv[7]) if len(sys.argv) > 7 else 0.5
+        vol = float(sys.argv[8]) if len(sys.argv) > 8 else 0.2
+        test_supersaw(freq, dur, detune, filter_base, filter_env, res, vol)
+
+    elif cmd == 'arp':
+        root_freq = float(sys.argv[2]) if len(sys.argv) > 2 else 110
+        pattern = sys.argv[3] if len(sys.argv) > 3 else 'maj'
+        wave = sys.argv[4] if len(sys.argv) > 4 else 'saw'
+        tempo = float(sys.argv[5]) if len(sys.argv) > 5 else 120
+        vol = float(sys.argv[6]) if len(sys.argv) > 6 else 0.2
+        cycles = int(sys.argv[7]) if len(sys.argv) > 7 else 1
+        test_arpeggio(root_freq, pattern, wave, tempo, vol, cycles)
+
     else:
         print(f"Unknown command: {cmd}")
 

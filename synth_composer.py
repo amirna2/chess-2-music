@@ -263,49 +263,107 @@ class SubtractiveSynth:
 
     def moog_filter(self, signal, cutoff_hz, resonance=0.0):
         """
-        Revised Moog-style 4-pole (24dB/octave) low-pass filter
-        with non-linear saturation for a more authentic sound.
-        Based on the Stilson/Smith model and further improvements.
+        Stable 4-pole Moog-style low-pass ladder.
+        Mild saturation and controlled resonance.
+        Works for realtime and offline synthesis.
         """
+
         if cutoff_hz >= self.nyquist * 0.99:
-            return signal  # Bypass if cutoff too high
+            return signal
 
-        # Stilson/Smith approximation
-        f = cutoff_hz / self.nyquist
+        f = 2.0 * np.sin(np.pi * cutoff_hz / self.sample_rate)  # stable frequency map
+        f = np.clip(f, 0.0001, 1.0)
+        resonance = np.clip(resonance, 0.0, 4.0)
 
-        # This is a common cutoff approximation, but others exist
-        # For stability, constrain f
-        f = np.clip(f, 0.001, 0.45)
+        # State variables
+        y1, y2, y3, y4 = self.filter_z1, self.filter_z2, self.filter_z3, self.filter_z4
+        out = np.zeros_like(signal)
 
-        # Scale resonance (0-4), clamping for stability
-        resonance = np.clip(resonance, 0.0, 3.95)
+        for i, x in enumerate(signal):
+            # Feedback
+            x -= resonance * y4
 
-        # Use persistent state variables for filter memory
-        z1, z2, z3, z4 = self.filter_z1, self.filter_z2, self.filter_z3, self.filter_z4
+            # Input soft clipping
+            x = np.tanh(x)
 
-        filtered = np.zeros_like(signal)
+            # 4 cascaded one-pole filters
+            y1 += f * (x - y1)
+            y2 += f * (y1 - y2)
+            y3 += f * (y2 - y3)
+            y4 += f * (y3 - y4)
 
-        for i in range(len(signal)):
-            input_sample = signal[i]
+            # Output soft clipping for smoother tone
+            out[i] = np.tanh(y4)
 
-            # Feedback loop with non-linear saturation
-            # The feedback is applied to the input
-            input_with_feedback = input_sample - resonance * z4 * 0.1  # Scale down feedback
+        # Save states
+        self.filter_z1, self.filter_z2, self.filter_z3, self.filter_z4 = y1, y2, y3, y4
 
-            # Simple 4-pole low-pass filter without excessive tanh
-            z1 = z1 + f * (input_with_feedback - z1)
-            z2 = z2 + f * (z1 - z2)
-            z3 = z3 + f * (z2 - z3)
-            z4 = z4 + f * (z3 - z4)
+        # Simple gain compensation
+        return out * 1.5
 
-            filtered[i] = z4
 
-        # Save state for next filter call
-        self.filter_z1, self.filter_z2, self.filter_z3, self.filter_z4 = z1, z2, z3, z4
+    def supersaw(self, freq, duration,
+                 detune_cents=None,
+                 filter_base=1500, filter_env_amount=2500,
+                 resonance=0.5,
+                 amp_env=(0.05, 0.2, 0.9, 0.4),
+                 filter_env=(0.01, 0.25, 0.4, 0.4)):
+        """
+        Roland JP-8000 style supersaw generator.
+        Creates a rich detuned saw ensemble with analog-style filtering.
+        Returns mono signal for compatibility with existing system.
+        """
 
-        # Compensate for filter attenuation
-        output_gain = 12.0 + resonance * 2.0  # Proper listening level
-        return filtered * output_gain
+        # Default detune pattern if not provided
+        if detune_cents is None:
+            detune_cents = [-12, -7, -3, 3, 7, 12]
+
+        # Base + detuned frequencies
+        freqs = [freq * (2 ** (c / 1200.0)) for c in detune_cents] + [freq]
+
+        # Generate saw layers
+        layers = []
+        for f in freqs:
+            layer = self.oscillator(f, duration, 'saw')
+            # Randomize phase for natural analog drift
+            shift = np.random.randint(0, 100)  # Small phase shift
+            layers.append(np.roll(layer, shift))
+
+        # Mix all layers equally
+        mixed = np.sum(layers, axis=0) / len(layers)
+
+        # Get filter envelope
+        num_samples = len(mixed)
+        filt_env = self.filter_envelope(num_samples, *filter_env)
+
+        # Apply time-varying filter
+        filtered = np.zeros_like(mixed)
+        chunk_size = 512  # Process in chunks for efficiency
+
+        # Save original filter state
+        orig_z1, orig_z2, orig_z3, orig_z4 = self.filter_z1, self.filter_z2, self.filter_z3, self.filter_z4
+
+        for i in range(0, num_samples, chunk_size):
+            end = min(i + chunk_size, num_samples)
+            # Calculate cutoff for this chunk
+            env_val = np.mean(filt_env[i:end])  # Average envelope value in chunk
+            cutoff = filter_base + filter_env_amount * env_val
+            cutoff = np.clip(cutoff, 20, self.nyquist * 0.95)
+
+            # Apply filter to chunk (filter state carries through)
+            filtered[i:end] = self.moog_filter(mixed[i:end], cutoff, resonance)
+
+        # Restore original filter state for other uses
+        self.filter_z1, self.filter_z2, self.filter_z3, self.filter_z4 = orig_z1, orig_z2, orig_z3, orig_z4
+
+        # Apply amplitude envelope
+        amp_env_signal = self.adsr_envelope(num_samples, *amp_env)
+        result = filtered * amp_env_signal
+
+        # Soft limiting to prevent clipping from multiple layers
+        result = np.tanh(result * 0.8) * 1.25  # Gentle compression
+
+        return result
 
     def adsr_envelope(self, num_samples, attack=0.01, decay=0.1, sustain=0.7, release=0.2, curve=0.3):
         """
