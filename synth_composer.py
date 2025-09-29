@@ -13,6 +13,7 @@ import random
 import re
 import numpy as np
 from abc import ABC, abstractmethod
+from scipy import signal
 
 class NarrativeProcess(ABC):
     """
@@ -1191,7 +1192,8 @@ class ChessSynthComposer:
 
         # Apply slow LFO to drone for movement
         lfo_freq = 0.1  # Very slow LFO
-        lfo = np.sin(2 * np.pi * lfo_freq * np.arange(len(base_drone)) / self.sample_rate)
+        #lfo = np.sin(2 * np.pi * lfo_freq * np.arange(len(base_drone)) / self.sample_rate)
+        lfo = signal.sawtooth(2 * np.pi * lfo_freq * np.arange(len(base_drone)) / self.sample_rate, width=0.5)
         base_drone = base_drone * (1 + lfo * 0.1)  # Subtle amplitude modulation
 
         # LAYER 2: Generate RHYTHMIC/MELODIC PATTERNS from section narrative
@@ -1227,7 +1229,7 @@ class ChessSynthComposer:
                     pattern_note = self.synth.create_synth_note(
                         freq=note_freq,
                         duration=note_duration_sec,
-                        waveform='pulse' if tension > 0.5 else 'triangle',  # Use simpler waveforms for clarity
+                        waveform='saw' if tension > 0.5 else 'pulse',  # Use simpler waveforms for clarity
                         filter_base=final_filter * 1.5,  # Brighter than drone
                         filter_env_amount=filter_env_amount,
                         resonance=final_resonance * 0.7,  # Less resonance for clarity
@@ -1493,16 +1495,16 @@ class ChessSynthComposer:
             # Generate note using the SubtractiveSynth
             freq = midi_to_freq(midi_note)
 
-            # Base note
-            note_audio = self.synth.create_synth_note(
-                freq=freq,
-                duration=note_duration,
-                waveform='supersaw' if current_base['waveform'] == 'supersaw' else 'saw',
-                filter_base=filter_frequency,
-                filter_env_amount=1000,
-                resonance=min(2.5, current_base['resonance'] + 1.0),
-                amp_env=(0.001, 0.02, 0.8, 0.05),
-                filter_env=(0.001, 0.1, 0.5, 0.1)
+            # LASER HARP synthesis - wide supersaw with rising filter sweep
+            note_audio = self.synth.supersaw(
+                freq,
+                note_duration,
+                detune_cents=[-15, -9, -4.5, 4.5, 9, 15],  # WIDE supersaw for laser effect
+                filter_base=800 + (i * 150),  # RISING filter sweep as sequence progresses
+                filter_env_amount=2000,  # Strong filter modulation
+                resonance=1.2,  # Moderate resonance for laser character
+                amp_env=(0.02, 0.1, 0.9, 0.8),  # Laser harp envelope
+                filter_env=(0.02, 0.2, 0.7, 0.3)  # Filter sweep envelope
             )
 
 
