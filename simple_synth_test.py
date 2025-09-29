@@ -188,6 +188,44 @@ def test_supersaw(freq=220, dur=3, detune=12, filter_base=1500, filter_env=2500,
     print(f"🌊 Supersaw @ {freq}Hz, detune ±{detune} cents, filter {filter_base}+{filter_env}Hz, res {res}, vol {vol}")
     play(samples)
 
+def test_laser_arpeggio(root_freq=110, tempo=120, vol=0.2, cycles=1):
+    """Simple laser harp pentatonic arpeggio using supersaw"""
+    synth = SubtractiveSynth()
+
+    # Pentatonic scale ratios
+    pentatonic_ratios = [1.0, 1.125, 1.333, 1.5, 1.667, 2.0, 2.25, 2.667]
+    note_freqs = [root_freq * ratio for ratio in pentatonic_ratios]
+    note_duration = 60.0 / tempo / 2  # 8th notes
+
+    # Create pattern going up and down
+    single_pattern = note_freqs + note_freqs[-2:0:-1]
+    full_pattern = single_pattern * int(cycles)
+
+    all_samples = []
+
+    for i, freq in enumerate(full_pattern):
+        # Use supersaw for laser harp sound
+        samples = synth.supersaw(
+            freq,
+            note_duration,
+            detune_cents=[-15, -9, -4.5, 4.5, 9, 15],  # Wide supersaw
+            filter_base=800 + (i * 150),  # Rising filter
+            filter_env_amount=2000,
+            resonance=1.2,
+            amp_env=(0.01, 0.05, 0.8, 0.2),
+            filter_env=(0.01, 0.15, 0.6, 0.3)
+        )
+
+        # Add small gap
+        gap = np.zeros(int(0.05 * synth.sample_rate))
+        all_samples.append(np.concatenate([samples[:int(note_duration * synth.sample_rate)], gap]))
+
+    # Mix and play
+    final = np.concatenate(all_samples) * vol
+    print(f"🌈 Laser harp arpeggio: pentatonic @ {root_freq}Hz, tempo {tempo}, {cycles} cycles, vol {vol}")
+    play(final)
+
+
 def test_arpeggio(root_freq=110, pattern='maj', wave='saw', tempo=120, vol=0.2, cycles=1):
     """Test arpeggio pattern to hear musical phrase"""
     synth = SubtractiveSynth()
@@ -257,6 +295,7 @@ def main():
         print("  note <freq> [wave] [attack] [decay] [sustain] [release] [filter_base] [filter_env] [res] [vol]")
         print("  super [freq] [dur] [detune] [filter_base] [filter_env] [res] [vol] - Supersaw")
         print("  arp [root_freq] [pattern] [wave] [tempo] [vol] [cycles] - Play arpeggio")
+        print("  laser [root_freq] [tempo] [vol] [cycles]   - Laser harp pentatonic arpeggio")
         print()
         print("Examples:")
         print("  ./simple_synth_test.py osc saw 110 0.1")
@@ -267,6 +306,7 @@ def main():
         print("  ./simple_synth_test.py super 110 3 15 1000 3000 0.7 0.2")
         print("  ./simple_synth_test.py arp 110 maj saw 120 0.2 2")
         print("  ./simple_synth_test.py arp 220 min pulse 140 0.15 3")
+        print("  ./simple_synth_test.py laser 110 120 0.2 2")
         print()
         print("Arpeggio patterns: maj, min, dom7, dim, sus4, pent, pent_min")
         return
@@ -332,6 +372,13 @@ def main():
         vol = float(sys.argv[6]) if len(sys.argv) > 6 else 0.2
         cycles = int(sys.argv[7]) if len(sys.argv) > 7 else 1
         test_arpeggio(root_freq, pattern, wave, tempo, vol, cycles)
+
+    elif cmd == 'laser':
+        root_freq = float(sys.argv[2]) if len(sys.argv) > 2 else 110
+        tempo = float(sys.argv[3]) if len(sys.argv) > 3 else 120
+        vol = float(sys.argv[4]) if len(sys.argv) > 4 else 0.2
+        cycles = int(sys.argv[5]) if len(sys.argv) > 5 else 1
+        test_laser_arpeggio(root_freq, tempo, vol, cycles)
 
     else:
         print(f"Unknown command: {cmd}")
