@@ -775,74 +775,131 @@ class ChessSynthComposer:
                 )
 
         elif moment_type == 'DEVELOPMENT':
-            # Darker, more integrated "piece coming online" sequence
-            # Lower frequencies and more filtered to blend with drone
+            # Melodic phrase representing "awakening" or "coming online"
+            # Rising phrase using current scale and rhythm
 
-            # Get current filter level to match the context
+            # Get musical context
             base_filter = current_params.get('filter', 1000)
+            scale = current_params.get('scale', [110, 123.47, 130.81, 146.83, 164.81])
 
-            # Beep 1: Low rising "power up" - in the drone's frequency range
-            beep1 = self.synth.pitch_sweep_note(
-                freq_start=220, freq_end=330, duration=0.3,
-                waveform='triangle', filter_base=base_filter * 0.8, resonance=0.8,
-                amp_env=(0.05, 0.1, 0.6, 0.2)  # Softer attack
-            )
+            # Create rising melodic phrase: 1 -> 2 -> 3 -> 5 (awakening pattern)
+            if 'DEFEAT' in self.overall_narrative:
+                # In defeat context: hesitant, not reaching the top note
+                melody_indices = [0, 1, 2, 1]  # Rise but fall back (foreshadowing)
+                note_duration = 0.3
+                waveform = 'triangle'  # Gentle
+            else:
+                # Normal context: confident rising
+                melody_indices = [0, 1, 2, 4]  # 1 -> 2 -> 3 -> 5
+                note_duration = 0.25
+                waveform = 'pulse'
 
-            # Beep 2: Subtle warble - very close frequencies for subtle effect
-            beep2 = self.synth.pitch_sweep_note(
-                freq_start=275, freq_end=300, duration=0.2,
-                waveform='sine', filter_base=base_filter * 0.6, resonance=1.2,
-                amp_env=(0.02, 0.05, 0.7, 0.15)
-            )
+            melody_freqs = [scale[i] for i in melody_indices if i < len(scale)]
 
-            # Beep 3: Gentle confirmation - not too bright
-            beep3 = self.synth.pitch_sweep_note(
-                freq_start=330, freq_end=440, duration=0.25,
-                waveform='triangle', filter_base=base_filter * 0.9, resonance=0.6,
-                amp_env=(0.03, 0.08, 0.5, 0.2)
-            )
+            # Generate melodic phrase
+            phrase_samples = []
+            for i, freq in enumerate(melody_freqs):
+                note = self.synth.create_synth_note(
+                    freq=freq,
+                    duration=note_duration,
+                    waveform=waveform,
+                    filter_base=base_filter * 0.8,
+                    filter_env_amount=800 + (i * 200),  # Rising brightness
+                    resonance=0.8,
+                    amp_env=(0.02, 0.05, 0.7, 0.1)
+                )
+                phrase_samples.append(note * 0.6)  # Integrate volume
 
-            # Combine with overlapping gaps for smoother flow
-            gap_samples = int(0.05 * self.sample_rate)  # Shorter 50ms gaps
-            combined = np.zeros(len(beep1) + gap_samples + len(beep2) + gap_samples + len(beep3))
+            # Connect notes with tiny gaps
+            gap_samples = int(0.02 * self.sample_rate)  # 20ms gaps
+            combined = []
+            for i, note_samples in enumerate(phrase_samples):
+                combined.append(note_samples)
+                if i < len(phrase_samples) - 1:  # No gap after last note
+                    combined.append(np.zeros(gap_samples))
 
-            # Place beeps with gaps
-            pos = 0
-            combined[pos:pos+len(beep1)] = beep1 * 0.7  # Reduce volume
-            pos += len(beep1) + gap_samples
-            combined[pos:pos+len(beep2)] = beep2 * 0.6  # Even quieter
-            pos += len(beep2) + gap_samples
-            combined[pos:pos+len(beep3)] = beep3 * 0.7
-
-            return combined
+            return np.concatenate(combined)
 
         elif moment_type == 'FIRST_EXCHANGE':
-            # Two quick notes representing the trade - call and response
-            note1 = self.synth.create_synth_note(
-                freq=220,
-                duration=0.4,
-                waveform='pulse',
-                filter_base=1000,
-                filter_env_amount=1000,
-                resonance=1.0,
-                amp_env=(0.01, 0.05, 0.6, 0.1)
-            )
-            note2 = self.synth.create_synth_note(
-                freq=165,  # Different pitch for the response
-                duration=0.4,
-                waveform='pulse',
-                filter_base=800,
-                filter_env_amount=1000,
-                resonance=1.0,
-                amp_env=(0.01, 0.05, 0.6, 0.1)
-            )
-            # Combine with slight delay
-            combined = np.zeros(int(1.0 * self.sample_rate))
-            combined[:len(note1)] += note1
-            delay_samples = int(0.3 * self.sample_rate)
-            if delay_samples + len(note2) < len(combined):
-                combined[delay_samples:delay_samples+len(note2)] += note2
-            return combined
+            # Melodic question-answer phrase representing the piece trade
+            # Get musical context
+            base_filter = current_params.get('filter', 1000)
+            scale = current_params.get('scale', [110, 123.47, 130.81, 146.83, 164.81])
+
+            if 'DEFEAT' in self.overall_narrative:
+                # Question: confident ascending phrase [1, 3, 5]
+                # Answer: descending, weaker response [4, 2, 1] (showing future weakness)
+                question_indices = [0, 2, 4]  # 1 -> 3 -> 5 (confident)
+                answer_indices = [3, 1, 0]    # 4 -> 2 -> 1 (weakening)
+
+                question_waveform = 'pulse'     # Assertive
+                answer_waveform = 'triangle'    # Softer, weaker
+                note_duration = 0.65
+
+            else:
+                # Balanced exchange
+                question_indices = [0, 2, 4]   # 1 -> 3 -> 5
+                answer_indices = [4, 2, 0]     # 5 -> 3 -> 1 (mirror)
+
+                question_waveform = 'square'
+                answer_waveform = 'pulse'
+                note_duration = 0.22
+
+            # Generate question phrase
+            question_freqs = [scale[i] for i in question_indices if i < len(scale)]
+            question_samples = []
+            for i, freq in enumerate(question_freqs):
+                note = self.synth.create_synth_note(
+                    freq=freq,
+                    duration=note_duration,
+                    waveform=question_waveform,
+                    filter_base=base_filter * 0.9,
+                    filter_env_amount=600 + (i * 100),  # Slight brightness increase
+                    resonance=1.0,
+                    amp_env=(0.01, 0.04, 0.7, 0.08)
+                )
+                question_samples.append(note)
+
+            # Generate answer phrase
+            answer_freqs = [scale[i] for i in answer_indices if i < len(scale)]
+            answer_samples = []
+            for i, freq in enumerate(answer_freqs):
+                brightness_mult = 0.7 if 'DEFEAT' in self.overall_narrative else 0.9
+                note = self.synth.create_synth_note(
+                    freq=freq,
+                    duration=note_duration,
+                    waveform=answer_waveform,
+                    filter_base=base_filter * brightness_mult,
+                    filter_env_amount=500 + (i * 50),  # Less dramatic than question
+                    resonance=0.8 if 'DEFEAT' in self.overall_narrative else 1.0,
+                    amp_env=(0.02, 0.06, 0.6, 0.1)  # Slightly softer
+                )
+                answer_samples.append(note)
+
+            # Combine question and answer with musical timing
+            gap_samples = int(0.02 * self.sample_rate)  # 20ms between notes
+            pause_samples = int(0.15 * self.sample_rate)  # 150ms between phrases
+
+            # Build complete phrase
+            combined = []
+
+            # Question phrase
+            for i, note in enumerate(question_samples):
+                combined.append(note * 0.7)  # Integrated volume
+                if i < len(question_samples) - 1:
+                    combined.append(np.zeros(gap_samples))
+
+            # Pause between question and answer
+            combined.append(np.zeros(pause_samples))
+
+            # Answer phrase
+            for i, note in enumerate(answer_samples):
+                volume = 0.6 if 'DEFEAT' in self.overall_narrative else 0.7
+                combined.append(note * volume)
+                if i < len(answer_samples) - 1:
+                    combined.append(np.zeros(gap_samples))
+
+            return np.concatenate(combined)
 
         elif moment_type == 'TACTICAL_SEQUENCE':
             # Quick burst of activity - rapid arpeggiated notes
