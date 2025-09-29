@@ -430,6 +430,51 @@ class SubtractiveSynth:
         """
         return self.adsr_envelope(num_samples, attack, decay, sustain, release)
 
+    def pitch_sweep_note(self, freq_start, freq_end, duration,
+                        waveform='sine',
+                        filter_base=2000,
+                        filter_env_amount=1000,
+                        resonance=0.3,
+                        amp_env=(0.01, 0.05, 0.7, 0.1)):
+        """
+        Create R2D2-style beep with pitch sweep from freq_start to freq_end
+        """
+        num_samples = int(duration * self.sample_rate)
+
+        # Create frequency sweep curve
+        freq_curve = np.linspace(freq_start, freq_end, num_samples)
+
+        # Generate signal with sweeping frequency
+        signal = np.zeros(num_samples)
+        phase = 0.0
+
+        for i in range(num_samples):
+            current_freq = freq_curve[i]
+
+            # Update phase
+            phase += 2 * np.pi * current_freq / self.sample_rate
+
+            # Generate sample based on waveform
+            if waveform == 'sine':
+                signal[i] = np.sin(phase)
+            elif waveform == 'triangle':
+                # Triangle wave
+                if (phase / (2 * np.pi)) % 1.0 < 0.5:
+                    signal[i] = 4.0 * ((phase / (2 * np.pi)) % 1.0) - 1.0
+                else:
+                    signal[i] = 3.0 - 4.0 * ((phase / (2 * np.pi)) % 1.0)
+            else:  # Default to sine
+                signal[i] = np.sin(phase)
+
+        # Apply simple filter (no envelope needed for R2D2 style)
+        filtered = self.moog_filter(signal, filter_base, resonance)
+
+        # Apply amplitude envelope
+        amp_envelope = self.adsr_envelope(num_samples, *amp_env)
+        output = filtered * amp_envelope
+
+        return output
+
     def create_synth_note(self, freq, duration,
                          waveform='saw',
                          filter_base=2000,
@@ -729,6 +774,95 @@ class ChessSynthComposer:
                     amp_env=(0.001, 0.01, 0.8, 0.05)
                 )
 
+        elif moment_type == 'DEVELOPMENT':
+            # Darker, more integrated "piece coming online" sequence
+            # Lower frequencies and more filtered to blend with drone
+
+            # Get current filter level to match the context
+            base_filter = current_params.get('filter', 1000)
+
+            # Beep 1: Low rising "power up" - in the drone's frequency range
+            beep1 = self.synth.pitch_sweep_note(
+                freq_start=220, freq_end=330, duration=0.3,
+                waveform='triangle', filter_base=base_filter * 0.8, resonance=0.8,
+                amp_env=(0.05, 0.1, 0.6, 0.2)  # Softer attack
+            )
+
+            # Beep 2: Subtle warble - very close frequencies for subtle effect
+            beep2 = self.synth.pitch_sweep_note(
+                freq_start=275, freq_end=300, duration=0.2,
+                waveform='sine', filter_base=base_filter * 0.6, resonance=1.2,
+                amp_env=(0.02, 0.05, 0.7, 0.15)
+            )
+
+            # Beep 3: Gentle confirmation - not too bright
+            beep3 = self.synth.pitch_sweep_note(
+                freq_start=330, freq_end=440, duration=0.25,
+                waveform='triangle', filter_base=base_filter * 0.9, resonance=0.6,
+                amp_env=(0.03, 0.08, 0.5, 0.2)
+            )
+
+            # Combine with overlapping gaps for smoother flow
+            gap_samples = int(0.05 * self.sample_rate)  # Shorter 50ms gaps
+            combined = np.zeros(len(beep1) + gap_samples + len(beep2) + gap_samples + len(beep3))
+
+            # Place beeps with gaps
+            pos = 0
+            combined[pos:pos+len(beep1)] = beep1 * 0.7  # Reduce volume
+            pos += len(beep1) + gap_samples
+            combined[pos:pos+len(beep2)] = beep2 * 0.6  # Even quieter
+            pos += len(beep2) + gap_samples
+            combined[pos:pos+len(beep3)] = beep3 * 0.7
+
+            return combined
+
+        elif moment_type == 'FIRST_EXCHANGE':
+            # Two quick notes representing the trade - call and response
+            note1 = self.synth.create_synth_note(
+                freq=220,
+                duration=0.4,
+                waveform='pulse',
+                filter_base=1000,
+                filter_env_amount=1000,
+                resonance=1.0,
+                amp_env=(0.01, 0.05, 0.6, 0.1)
+            )
+            note2 = self.synth.create_synth_note(
+                freq=165,  # Different pitch for the response
+                duration=0.4,
+                waveform='pulse',
+                filter_base=800,
+                filter_env_amount=1000,
+                resonance=1.0,
+                amp_env=(0.01, 0.05, 0.6, 0.1)
+            )
+            # Combine with slight delay
+            combined = np.zeros(int(1.0 * self.sample_rate))
+            combined[:len(note1)] += note1
+            delay_samples = int(0.3 * self.sample_rate)
+            if delay_samples + len(note2) < len(combined):
+                combined[delay_samples:delay_samples+len(note2)] += note2
+            return combined
+
+        elif moment_type == 'TACTICAL_SEQUENCE':
+            # Quick burst of activity - rapid arpeggiated notes
+            freqs = [220, 275, 330, 275]  # Up and down pattern
+            combined = np.zeros(int(1.2 * self.sample_rate))
+            for i, freq in enumerate(freqs):
+                note = self.synth.create_synth_note(
+                    freq=freq,
+                    duration=0.2,
+                    waveform='square',
+                    filter_base=1500,
+                    filter_env_amount=1500,
+                    resonance=1.5,
+                    amp_env=(0.001, 0.02, 0.5, 0.05)
+                )
+                start_sample = int(i * 0.15 * self.sample_rate)  # Slight overlap
+                if start_sample + len(note) < len(combined):
+                    combined[start_sample:start_sample+len(note)] += note * 0.7
+            return combined
+
         elif moment_type == 'MATE_SEQUENCE':
             # Mate sounds depend heavily on who's winning
             if 'DEFEAT' in self.overall_narrative:
@@ -754,14 +888,15 @@ class ChessSynthComposer:
                     amp_env=(0.001, 0.1, 0.8, 0.5)
                 )
 
-        # Default: return short click
+        # Default: return gentle click (much improved from before)
         return self.synth.create_synth_note(
-            freq=current_params['filter'],
-            duration=0.1,
-            waveform='square',
-            filter_base=current_params['filter'],
-            resonance=1.0,
-            amp_env=(0.001, 0.001, 0.5, 0.01)
+            freq=330,  # Higher, more pleasant
+            duration=0.3,  # A bit longer
+            waveform='triangle',  # Softer
+            filter_base=1000,
+            filter_env_amount=500,
+            resonance=0.5,
+            amp_env=(0.01, 0.05, 0.4, 0.1)
         )
 
     def _create_process(self, narrative: str, duration: float, plies: int) -> NarrativeProcess:
@@ -1257,15 +1392,35 @@ class ChessSynthComposer:
 
         # LAYER 3: Add key moments as context-aware synth voices
         print(f"\n    === LAYER 3: KEY MOMENTS ({len(section.get('key_moments', []))}) ===")
+
+        # Parse section start time from duration string
+        duration_str = section.get('duration', '0:10')
+        if ':' in duration_str:
+            parts = duration_str.split(':')
+            try:
+                section_start_second = int(parts[0])
+            except:
+                section_start_second = 0
+        else:
+            section_start_second = 0
+
         for moment in section.get('key_moments', []):
-            moment_time = (moment['ply'] - section['start_ply']) * note_duration
-            moment_sample_pos = int(moment_time * self.sample_rate)
+            # Use the ACTUAL second timing from the JSON, not calculated from ply
+            moment_second = moment.get('second', moment['ply'])  # Use second if available
+            moment_time_in_section = moment_second - section_start_second
+
+            # Validate timing is within section
+            if moment_time_in_section < 0 or moment_time_in_section > section_duration:
+                print(f"      WARNING: {moment['type']} at second {moment_second} outside section [{section_start_second}:{section_start_second + section_duration}]")
+                continue
+
+            moment_sample_pos = int(moment_time_in_section * self.sample_rate)
 
             if moment_sample_pos < len(samples) - self.sample_rate:
                 # Create context-aware moment voice
                 moment_voice = self.create_moment_voice(moment, current_base, progress)
 
-                print(f"      {moment['type']} at ply {moment['ply']} (context: {self.overall_narrative})")
+                print(f"      {moment['type']} at ply {moment['ply']}, second {moment_second} (relative: {moment_time_in_section:.1f}s)")
 
                 # Mix in the moment voice
                 mix_ratio = 0.3  # How much of the moment to mix in

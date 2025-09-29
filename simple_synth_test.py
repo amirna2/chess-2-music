@@ -188,6 +188,23 @@ def test_supersaw(freq=220, dur=3, detune=12, filter_base=1500, filter_env=2500,
     print(f"🌊 Supersaw @ {freq}Hz, detune ±{detune} cents, filter {filter_base}+{filter_env}Hz, res {res}, vol {vol}")
     play(samples)
 
+def test_r2d2_beep(freq_start=440, freq_end=880, duration=0.3, wave='sine', vol=0.3):
+    """Test R2D2-style pitch sweep beep"""
+    synth = SubtractiveSynth()
+    samples = synth.pitch_sweep_note(
+        freq_start=freq_start,
+        freq_end=freq_end,
+        duration=duration,
+        waveform=wave,
+        filter_base=3000,  # Bright filter
+        resonance=0.1,     # Clean
+        amp_env=(0.01, 0.02, 0.8, 0.05)  # Quick attack/release
+    ) * vol
+
+    direction = "rising" if freq_end > freq_start else "falling"
+    print(f"🤖 R2D2 {direction} beep: {freq_start}Hz → {freq_end}Hz, {duration}s, {wave} wave, vol {vol}")
+    play(samples)
+
 def test_laser_arpeggio(root_freq=110, tempo=120, vol=0.2, cycles=1):
     """Simple laser harp pentatonic arpeggio using supersaw"""
     synth = SubtractiveSynth()
@@ -294,6 +311,7 @@ def main():
         print("  filt <wave> <freq> <cutoff> <res> [vol]    - Oscillator + filter")
         print("  note <freq> [wave] [attack] [decay] [sustain] [release] [filter_base] [filter_env] [res] [vol]")
         print("  super [freq] [dur] [detune] [filter_base] [filter_env] [res] [vol] - Supersaw")
+        print("  r2d2 [freq_start] [freq_end] [duration] [wave] [vol] - R2D2-style pitch sweep beep")
         print("  arp [root_freq] [pattern] [wave] [tempo] [vol] [cycles] - Play arpeggio")
         print("  laser [root_freq] [tempo] [vol] [cycles]   - Laser harp pentatonic arpeggio")
         print()
@@ -304,6 +322,7 @@ def main():
         print("  ./simple_synth_test.py filt saw 110 500 2.0 0.2")
         print("  ./simple_synth_test.py note 220 pulse 0.01 0.2 0.5 0.3 800 3000 1.5 0.3")
         print("  ./simple_synth_test.py super 110 3 15 1000 3000 0.7 0.2")
+        print("  ./simple_synth_test.py r2d2 440 880 0.3 sine 0.3")
         print("  ./simple_synth_test.py arp 110 maj saw 120 0.2 2")
         print("  ./simple_synth_test.py arp 220 min pulse 140 0.15 3")
         print("  ./simple_synth_test.py laser 110 120 0.2 2")
@@ -372,6 +391,14 @@ def main():
         vol = float(sys.argv[6]) if len(sys.argv) > 6 else 0.2
         cycles = int(sys.argv[7]) if len(sys.argv) > 7 else 1
         test_arpeggio(root_freq, pattern, wave, tempo, vol, cycles)
+
+    elif cmd == 'r2d2':
+        freq_start = float(sys.argv[2]) if len(sys.argv) > 2 else 440
+        freq_end = float(sys.argv[3]) if len(sys.argv) > 3 else 880
+        duration = float(sys.argv[4]) if len(sys.argv) > 4 else 0.3
+        wave = sys.argv[5] if len(sys.argv) > 5 else 'sine'
+        vol = float(sys.argv[6]) if len(sys.argv) > 6 else 0.3
+        test_r2d2_beep(freq_start, freq_end, duration, wave, vol)
 
     elif cmd == 'laser':
         root_freq = float(sys.argv[2]) if len(sys.argv) > 2 else 110
