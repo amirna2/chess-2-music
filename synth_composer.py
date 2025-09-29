@@ -1309,19 +1309,61 @@ class ChessSynthComposer:
         def midi_to_freq(midi_note):
             return 440.0 * 2**((midi_note - 69) / 12.0)
 
-        # CONTINUOUS 16-STEP SEQUENCER
-        # This runs for the ENTIRE SECTION, not just at moments!
+        # LAYER 3: DYNAMIC PATTERN EVOLUTION SYSTEM
+        # Pattern BECOMES what it represents
 
-        # Base 16-step pattern (intervals from root)
-        # This is the hypnotic pattern that will evolve
-        base_pattern = [0, 3, 7, 12, 10, 7, 3, 0, -2, 3, 8, 12, 15, 12, 7, 0]
+        # Start with minimal seed pattern - will grow/change based on moments
+        current_pattern = [0, 7, 0, 7, 0, 7, 0, 7, 0, 7, 0, 7, 0, 7, 0, 7]  # Simple pulse
+        pattern_length = 16
 
-        # Initial sequencer state
+        # Pattern evolution tracking
+        pattern_state = {
+            'type': 'PULSE',  # Current pattern type
+            'intensity': 0.5,  # How intense/complex
+            'rhythm_division': 16,  # 16 = sixteenth notes, 8 = eighth notes, etc
+        }
+
+        # MEANINGFUL PATTERN LIBRARY - Patterns that SOUND like what they are
+        patterns = {
+            # PATTERNS THAT ACTUALLY SOUND LIKE WHAT THEY REPRESENT
+
+            # DEVELOPMENT - Building/Growing (starts small, adds notes)
+            'DEVELOPMENT': {
+                'early': [0, 0, 7, 0, 0, 0, 7, 0, 0, 0, 7, 0, 0, 0, 7, 0],  # Sparse beginning
+                'mid': [0, 3, 7, 0, 3, 7, 12, 0, 3, 7, 12, 15, 0, 7, 12, 15],  # Adding complexity
+                'full': [0, 3, 5, 7, 10, 12, 15, 17, 19, 17, 15, 12, 10, 7, 5, 3],  # Full development
+            },
+
+            # TACTICAL_SEQUENCE - Rapid heartbeat/morse code calculation
+            'TACTICAL_SEQUENCE': [0, 0, 0, 12, 0, 0, 0, 12, 0, 0, 0, 12, 0, 0, 0, 12],  # Like rapid thinking
+
+            # BLUNDER - Falling down stairs (large drops, irregular)
+            'BLUNDER': [24, 24, 12, 12, 0, 0, -12, -12, -24, None, None, -36, None, None, None, -48],  # Stumbling (None = rest)
+
+            # MISTAKE - Sliding downward
+            'MISTAKE': [12, 10, 8, 7, 5, 3, 2, 0, -2, -3, -5, -7, -8, -10, -12, -15],  # Gradual descent
+
+            # INACCURACY - Hesitation/uncertainty
+            'INACCURACY': [0, None, 3, 2, None, 7, 5, None, 3, None, 0, None, -2, None, 0, None],  # Hesitant (None = rest)
+
+            # FIRST_EXCHANGE - Call and immediate response
+            'FIRST_EXCHANGE': [0, 12, 19, 24, -24, -19, -12, 0, 0, 12, 19, 24, -24, -19, -12, 0],  # Up then down
+
+            # MATE_SEQUENCE - Funeral march doom (SLOW and HEAVY)
+            'MATE_SEQUENCE': [0, None, None, None, -12, None, None, None, 0, None, None, None, -24, None, None, None],  # Doom bells
+
+            # BRILLIANT - Ascending triumph
+            'BRILLIANT': [0, 7, 12, 19, 24, 31, 36, 43, 48, 43, 36, 31, 24, 19, 12, 7],  # Rising victory
+
+            # TIME_PRESSURE - Panic repetition
+            'TIME_PRESSURE': [0, 12, 0, 12, 0, 12, 0, 12, 0, 12, 0, 12, 0, 12, 0, 12],  # Frantic alternation
+        }
+
+        # Start with simple pulse
         current_root = 60  # Middle C
-        current_pattern = base_pattern.copy()
-        filter_frequency = 1000  # Starting filter cutoff
-        filter_target = 3000  # Where filter is heading
-        pattern_variation = 0  # How much to vary the pattern
+        filter_frequency = 1000
+        filter_target = 3000
+        development_count = 0  # Track development progression
 
         # Process key moments to determine evolution points
         evolution_points = []
@@ -1363,32 +1405,69 @@ class ChessSynthComposer:
                 if current_sample >= evolution_points[next_evolution_idx]['sample_pos']:
                     evolution = evolution_points[next_evolution_idx]
 
-                    # EVOLVE THE SEQUENCE BASED ON MOMENT TYPE
-                    if evolution['type'] == 'DEVELOPMENT':
-                        # Transpose up a fifth (7 semitones)
-                        current_root = min(current_root + 7, 72)  # Cap at C5
+                    # ACTUALLY CHANGE THE PATTERN TO A NEW ONE
+                    moment_type = evolution['type']
+                    print(f"        {moment_type}: CHANGING to {moment_type} pattern")
+
+                    # REPLACE THE ENTIRE PATTERN
+                    if moment_type == 'DEVELOPMENT':
+                        development_count += 1
+                        # Progressive development patterns
+                        if development_count == 1:
+                            current_pattern = patterns['DEVELOPMENT']['early']
+                        elif development_count == 2:
+                            current_pattern = patterns['DEVELOPMENT']['mid']
+                        else:
+                            current_pattern = patterns['DEVELOPMENT']['full']
+                        current_root = min(current_root + 7, 72)
                         filter_target = min(filter_target + 500, 5000)
-                        print(f"        DEVELOPMENT: Transposing to root {current_root}, filter target {filter_target}Hz")
 
-                    elif evolution['type'] == 'FIRST_EXCHANGE':
-                        # Add variation to pattern - make it more complex
-                        pattern_variation = 2
+                    elif moment_type == 'FIRST_EXCHANGE':
+                        current_pattern = patterns['FIRST_EXCHANGE']
                         filter_target = 4000
-                        print(f"        FIRST_EXCHANGE: Adding pattern variation")
 
-                    elif evolution['type'] in ['TACTICAL_SEQUENCE', 'MATE_SEQUENCE']:
-                        # Increase tension - narrow intervals, higher resonance
-                        current_pattern = [p // 2 if abs(p) > 7 else p for p in current_pattern]
-                        filter_target = 2000  # Darker sound for tension
-                        print(f"        {evolution['type']}: Increasing tension")
+                    elif moment_type == 'BLUNDER':
+                        current_pattern = patterns['BLUNDER']
+                        current_root = max(current_root - 12, 36)  # Drop an octave
+                        filter_target = 1000  # Dark
+
+                    elif moment_type == 'MISTAKE':
+                        current_pattern = patterns['MISTAKE']
+                        current_root = max(current_root - 5, 48)
+                        filter_target = 1500
+
+                    elif moment_type == 'INACCURACY':
+                        current_pattern = patterns['INACCURACY']
+                        filter_target = 2500
+
+                    elif moment_type in ['BRILLIANT', 'STRONG']:
+                        current_pattern = patterns['BRILLIANT']
+                        current_root = min(current_root + 12, 84)
+                        filter_target = 5000
+
+                    elif moment_type in ['TACTICAL_SEQUENCE', 'KING_ATTACK']:
+                        current_pattern = patterns['TACTICAL_SEQUENCE']
+                        filter_target = 3500
+
+                    elif moment_type == 'MATE_SEQUENCE':
+                        current_pattern = patterns['MATE_SEQUENCE']
+                        pattern_state['rhythm_division'] = 8  # SLOW DOWN for doom
+                        filter_target = 1500
+
+                    elif moment_type in ['TIME_PRESSURE', 'TIME_SCRAMBLE']:
+                        current_pattern = patterns['TIME_PRESSURE']
+                        filter_target = 4500
 
                     next_evolution_idx += 1
 
-            # Apply pattern variation if active
-            if pattern_variation > 0 and step_index in [3, 7, 11, 15]:
-                note_interval += random.choice([-pattern_variation, 0, pattern_variation])
+            # Use the actual note from the pattern
+            # Handle None values (rests) in patterns
+            if note_interval is None:
+                # Rest - no note
+                midi_note = None
+            else:
+                midi_note = current_root + note_interval
 
-            midi_note = current_root + note_interval
             full_sequence.append(midi_note)
 
             # Smooth filter movement
@@ -1401,30 +1480,37 @@ class ChessSynthComposer:
             if i * samples_per_step >= len(sequencer_layer):
                 break
 
+            # Skip rests (None values)
+            if midi_note is None:
+                continue
+
+            # Check if we need different rhythm for certain patterns
+            note_duration = sixteenth_duration
+            if pattern_state.get('rhythm_division') == 8:
+                # Slower rhythm for doom patterns like MATE_SEQUENCE
+                note_duration = sixteenth_duration * 2  # Eighth notes
+
             # Generate note using the SubtractiveSynth
             freq = midi_to_freq(midi_note)
 
-            # Use supersaw for rich Jarre-style sound
+            # Base note
             note_audio = self.synth.create_synth_note(
                 freq=freq,
-                duration=sixteenth_duration,
+                duration=note_duration,
                 waveform='supersaw' if current_base['waveform'] == 'supersaw' else 'saw',
                 filter_base=filter_frequency,
-                filter_env_amount=1000,  # Gentle filter envelope
-                resonance=min(2.5, current_base['resonance'] + 1.0),  # Jarre uses high resonance
-                amp_env=(0.001, 0.02, 0.8, 0.05),  # Fast attack for sequencer
+                filter_env_amount=1000,
+                resonance=min(2.5, current_base['resonance'] + 1.0),
+                amp_env=(0.001, 0.02, 0.8, 0.05),
                 filter_env=(0.001, 0.1, 0.5, 0.1)
             )
 
-            # Place note in sequence with slight overlap for smoothness
+
+            # Place note in sequence
             start_pos = int(i * samples_per_step * 0.98)  # 2% overlap
             end_pos = min(start_pos + len(note_audio), len(sequencer_layer))
 
             if end_pos > start_pos:
-                # Mix with overlap
-                overlap_samples = min(int(0.001 * self.sample_rate), end_pos - start_pos)
-
-                # Add the note
                 sequencer_layer[start_pos:end_pos] += note_audio[:end_pos-start_pos] * 0.4
 
         # Apply a global filter sweep to the entire sequence
