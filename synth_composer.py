@@ -480,6 +480,7 @@ class ChessSynthComposer:
 
         self.total_duration = chess_tags.get('duration_seconds', 60)
         self.total_plies = chess_tags.get('total_plies', 40)
+        self.overall_narrative = chess_tags.get('overall_narrative', 'COMPLEX_GAME')
 
         # Musical scales (frequencies in Hz)
         self.scales = {
@@ -488,11 +489,279 @@ class ChessSynthComposer:
             'dorian': [110, 123.47, 130.81, 146.83, 164.81, 185, 196, 220],  # Brighter minor
         }
 
+        # LAYER 1: Overall narrative defines the BASE PATCH
+        self.base_params = self.get_narrative_base_params()
+
         # Initialize narrative process
         self.narrative_process = self._create_process(
-            chess_tags.get('overall_narrative', 'COMPLEX_GAME'),
+            self.overall_narrative,
             self.total_duration,
             self.total_plies
+        )
+
+    def get_narrative_base_params(self):
+        """LAYER 1: Overall narrative sets the fundamental synth character"""
+
+        if 'DEFEAT' in self.overall_narrative:
+            return {
+                'base_waveform': 'supersaw',  # Detuned saws that become chaotic
+                'filter_start': 2500,    # Starts bright
+                'filter_end': 300,       # Ends very dark
+                'resonance_start': 0.8,
+                'resonance_end': 3.5,    # Ends near self-oscillation
+                'tempo_start': 1.0,
+                'tempo_end': 0.7,        # Slows down (defeat energy loss)
+                'detune_start': 3,       # Starts slightly detuned
+                'detune_end': 20,        # Ends very dissonant
+                'scale': 'phrygian',     # Dark mode
+            }
+
+        elif 'MASTERPIECE' in self.overall_narrative or 'VICTORY' in self.overall_narrative:
+            return {
+                'base_waveform': 'pulse',  # Hollow to start, will thicken
+                'filter_start': 500,       # Starts closed
+                'filter_end': 5000,        # Opens triumphantly
+                'resonance_start': 0.5,
+                'resonance_end': 1.8,      # Controlled power
+                'tempo_start': 0.8,
+                'tempo_end': 1.2,          # Accelerates to victory
+                'detune_start': 0,
+                'detune_end': 7,           # Adds richness, not chaos
+                'scale': 'dorian',         # Brighter minor
+            }
+
+        elif 'DRAW' in self.overall_narrative or 'PEACEFUL' in self.overall_narrative:
+            return {
+                'base_waveform': 'triangle',  # Soft, pure
+                'filter_start': 1500,
+                'filter_end': 1500,           # Stays stable
+                'resonance_start': 0.3,
+                'resonance_end': 0.3,         # No change
+                'tempo_start': 1.0,
+                'tempo_end': 1.0,             # Consistent
+                'detune_start': 0,
+                'detune_end': 0,              # Perfect tuning
+                'scale': 'dorian',            # Neutral mode
+            }
+
+        else:  # COMPLEX_GAME, UNKNOWN, etc
+            return {
+                'base_waveform': 'saw',
+                'filter_start': 1500,
+                'filter_end': 2000,        # Slight opening
+                'resonance_start': 1.0,
+                'resonance_end': 1.5,      # Mild increase
+                'tempo_start': 1.0,
+                'tempo_end': 1.0,
+                'detune_start': 0,
+                'detune_end': 5,
+                'scale': 'minor',          # Standard minor
+            }
+
+    def interpolate_base_params(self, progress):
+        """Get current base parameters based on progress through game"""
+        base = self.base_params
+        return {
+            'waveform': base['base_waveform'],  # Doesn't change during piece
+            'filter': base['filter_start'] + (base['filter_end'] - base['filter_start']) * progress,
+            'resonance': base['resonance_start'] + (base['resonance_end'] - base['resonance_start']) * progress,
+            'tempo': base['tempo_start'] + (base['tempo_end'] - base['tempo_start']) * progress,
+            'detune': base['detune_start'] + (base['detune_end'] - base['detune_start']) * progress,
+            'scale': self.scales[base['scale']],
+        }
+
+    def get_section_modulation(self, section_narrative, tension):
+        """LAYER 2: Section narrative modulates the base parameters"""
+
+        modulation = {
+            'filter_mult': 1.0,
+            'resonance_add': 0.0,
+            'tempo_mult': 1.0,
+            'note_density': 1.0,  # How many notes to play
+            'filter_env_amount': 2500,  # Default envelope amount
+        }
+
+        # Apply tension as a general modifier
+        tension_factor = tension
+
+        if 'DESPERATE_DEFENSE' in section_narrative:
+            modulation['filter_mult'] = 0.5      # Much darker
+            modulation['resonance_add'] = 1.5 * tension_factor    # More desperate with tension
+            modulation['tempo_mult'] = 0.85      # Slower, struggling
+            modulation['note_density'] = 0.7     # Fewer notes, exhausted
+            modulation['filter_env_amount'] = 800  # Minimal filter movement
+
+        elif 'KING_HUNT' in section_narrative or 'MATING_ATTACK' in section_narrative:
+            modulation['filter_mult'] = 1.3      # Brighter for intensity
+            modulation['resonance_add'] = 1.0 * tension_factor    # More aggressive
+            modulation['tempo_mult'] = 1.2       # Faster chase
+            modulation['note_density'] = 1.5     # More notes, frantic
+            modulation['filter_env_amount'] = 6000  # Dramatic sweeps
+
+        elif 'TACTICAL_CHAOS' in section_narrative or 'TACTICAL_BATTLE' in section_narrative:
+            modulation['filter_mult'] = 0.8      # Slightly darker
+            modulation['resonance_add'] = 2.0 * tension_factor    # Very resonant
+            modulation['tempo_mult'] = 1.3       # Fast exchanges
+            modulation['note_density'] = 2.0     # Many rapid notes
+            modulation['filter_env_amount'] = 5000  # Wild filter movement
+
+        elif 'QUIET' in section_narrative or 'POSITIONAL' in section_narrative:
+            modulation['filter_mult'] = 1.1      # Slightly brighter
+            modulation['resonance_add'] = -0.3   # Less resonant, cleaner
+            modulation['tempo_mult'] = 0.9       # Slower, thoughtful
+            modulation['note_density'] = 0.5     # Sparse notes
+            modulation['filter_env_amount'] = 1500  # Gentle movement
+
+        elif 'SACRIFICIAL_ATTACK' in section_narrative or 'CRUSHING_ATTACK' in section_narrative:
+            modulation['filter_mult'] = 0.7      # Start dark
+            modulation['resonance_add'] = 1.5 * tension_factor
+            modulation['tempo_mult'] = 1.1
+            modulation['note_density'] = 1.3
+            modulation['filter_env_amount'] = 8000  # Huge opening
+
+        elif 'ENDGAME_PRECISION' in section_narrative:
+            modulation['filter_mult'] = 1.0      # Clean
+            modulation['resonance_add'] = 0.3
+            modulation['tempo_mult'] = 0.8       # Deliberate
+            modulation['note_density'] = 0.8
+            modulation['filter_env_amount'] = 2000
+
+        elif 'COMPLEX_STRUGGLE' in section_narrative:
+            modulation['filter_mult'] = 0.9
+            modulation['resonance_add'] = 0.5 * tension_factor
+            modulation['tempo_mult'] = 1.0
+            modulation['note_density'] = 1.0
+            modulation['filter_env_amount'] = 3000
+
+        return modulation
+
+    def parse_section_duration(self, section):
+        """Helper to parse section duration from string format"""
+        duration_str = section.get('duration', '0:10')
+        if ':' in duration_str:
+            parts = duration_str.split(':')
+            try:
+                start_time = int(parts[0])
+                end_time = int(parts[1])
+                return end_time - start_time
+            except:
+                return 10
+        else:
+            return 10
+
+    def create_moment_voice(self, moment, current_params, progress):
+        """LAYER 3: Key moments as additional synth voices - context-aware"""
+
+        moment_type = moment.get('type', 'UNKNOWN')
+
+        if moment_type in ['BLUNDER', 'MISTAKE']:
+            # Different sound based on overall narrative context
+            if 'DEFEAT' in self.overall_narrative:
+                # In defeat context: deep, doomed sound (another nail in the coffin)
+                return self.synth.create_synth_note(
+                    freq=55,  # Very low
+                    duration=1.0,
+                    waveform='saw',
+                    filter_base=200,  # Very dark
+                    filter_env_amount=-150,  # Closing further
+                    resonance=4.0,  # Self-oscillating
+                    amp_env=(0.001, 0.01, 0.5, 0.4),
+                    filter_env=(0.001, 0.5, 0.0, 0.4)
+                )
+            elif 'MASTERPIECE' in self.overall_narrative:
+                # In masterpiece context: brief disturbance, quickly recovered
+                return self.synth.create_synth_note(
+                    freq=110,
+                    duration=0.3,
+                    waveform='pulse',
+                    filter_base=3000,
+                    filter_env_amount=-2500,
+                    resonance=2.0,
+                    amp_env=(0.001, 0.01, 0.3, 0.1)
+                )
+            else:
+                # Neutral context: standard error sound
+                return self.synth.create_synth_note(
+                    freq=82.5,
+                    duration=0.5,
+                    waveform='saw',
+                    filter_base=1000,
+                    filter_env_amount=-800,
+                    resonance=3.0,
+                    amp_env=(0.001, 0.01, 0.5, 0.2)
+                )
+
+        elif moment_type in ['BRILLIANT', 'STRONG']:
+            # Different based on context
+            if 'MASTERPIECE' in self.overall_narrative:
+                # In masterpiece: triumphant flourish building to climax
+                freq = 220 * (1 + progress)  # Higher as game progresses
+                return self.synth.create_synth_note(
+                    freq=freq,
+                    duration=0.5,
+                    waveform='pulse',
+                    filter_base=500,
+                    filter_env_amount=4000 * (1 + progress),  # Bigger sweeps later
+                    resonance=2.0,
+                    amp_env=(0.001, 0.05, 0.7, 0.1),
+                    filter_env=(0.001, 0.2, 0.5, 0.1)
+                )
+            elif 'DEFEAT' in self.overall_narrative:
+                # In defeat context: brief hope, quickly extinguished
+                return self.synth.create_synth_note(
+                    freq=220,
+                    duration=0.2,
+                    waveform='triangle',
+                    filter_base=2000,
+                    filter_env_amount=500,  # Small opening
+                    resonance=0.5,
+                    amp_env=(0.001, 0.01, 0.3, 0.3)
+                )
+            else:
+                # Neutral: standard brilliancy
+                return self.synth.create_synth_note(
+                    freq=330,
+                    duration=0.3,
+                    waveform='square',
+                    filter_base=1500,
+                    filter_env_amount=2000,
+                    resonance=1.5,
+                    amp_env=(0.001, 0.01, 0.8, 0.05)
+                )
+
+        elif moment_type == 'MATE_SEQUENCE':
+            # Mate sounds depend heavily on who's winning
+            if 'DEFEAT' in self.overall_narrative:
+                # Death knell
+                return self.synth.create_synth_note(
+                    freq=27.5,  # Extremely low
+                    duration=2.0,
+                    waveform='saw',
+                    filter_base=100,
+                    filter_env_amount=0,  # No movement, static doom
+                    resonance=4.0,
+                    amp_env=(0.5, 0.0, 1.0, 1.0)  # Sudden, sustained
+                )
+            elif 'MASTERPIECE' in self.overall_narrative:
+                # Victory fanfare
+                return self.synth.create_synth_note(
+                    freq=440,
+                    duration=1.0,
+                    waveform='pulse',
+                    filter_base=300,
+                    filter_env_amount=5000,
+                    resonance=2.5,
+                    amp_env=(0.001, 0.1, 0.8, 0.5)
+                )
+
+        # Default: return short click
+        return self.synth.create_synth_note(
+            freq=current_params['filter'],
+            duration=0.1,
+            waveform='square',
+            filter_base=current_params['filter'],
+            resonance=1.0,
+            amp_env=(0.001, 0.001, 0.5, 0.01)
         )
 
     def _create_process(self, narrative: str, duration: float, plies: int) -> NarrativeProcess:
@@ -510,29 +779,70 @@ class ChessSynthComposer:
         ProcessClass = process_map.get(narrative, DefaultProcess)
         return ProcessClass(duration, plies)
 
-    def compose_section(self, section):
-        """Compose a section using the synthesizer"""
-        samples = []
+    def compose_section(self, section, section_index, total_sections):
+        """Compose a section using all three narrative layers
+
+        Layer 1: Continuous drone/pad from overall narrative
+        Layer 2: Rhythmic/melodic patterns from section narrative
+        Layer 3: Punctuation from key moments
+        """
 
         # Parse section duration
-        duration_str = section.get('duration', '0:10')
-        if ':' in duration_str:
-            parts = duration_str.split(':')
-            try:
-                start_time = int(parts[0])
-                end_time = int(parts[1])
-                section_duration = end_time - start_time
-            except:
-                section_duration = 10
-        else:
-            section_duration = 10
+        section_duration = self.parse_section_duration(section)
 
         narrative = section.get('narrative', 'UNKNOWN')
         tension = section.get('tension', 0.5)
 
-        print(f"    Composing {section['name']}: {narrative} (tension: {tension:.2f}, duration: {section_duration}s)")
+        # Calculate progress through the piece (0.0 to 1.0)
+        progress = section_index / max(1, total_sections - 1)
 
-        # Choose synthesis parameters based on narrative
+        # LAYER 1: Get base parameters from overall narrative at current progress
+        current_base = self.interpolate_base_params(progress)
+
+        # LAYER 2: Apply section narrative modulation
+        modulation = self.get_section_modulation(narrative, tension)
+
+        # Calculate final synthesis parameters
+        final_filter = current_base['filter'] * modulation['filter_mult']
+        final_filter = np.clip(final_filter, 20, self.synth.nyquist * 0.95)
+
+        final_resonance = current_base['resonance'] + modulation['resonance_add']
+        final_resonance = np.clip(final_resonance, 0.1, 4.0)
+
+        filter_env_amount = modulation['filter_env_amount'] * (1 + current_base['detune'] / 20)  # Detune affects filter movement
+
+        print(f"\n  === COMPOSING SECTION: {section['name']} ===")
+        print(f"    Progress through game: {progress:.1%}")
+        print(f"    Overall narrative: {self.overall_narrative}")
+        print(f"    Section narrative: {narrative} (tension: {tension:.2f})")
+        print(f"    Duration: {section_duration}s")
+        print(f"    \n    LAYER 1 - Base params from '{self.overall_narrative}':")
+        print(f"      Waveform: {current_base['waveform']}")
+        print(f"      Filter: {current_base['filter']:.0f}Hz")
+        print(f"      Resonance: {current_base['resonance']:.2f}")
+        print(f"      Tempo factor: {current_base['tempo']:.2f}")
+        print(f"      Detune: {current_base['detune']:.1f} cents")
+        print(f"    \n    LAYER 2 - Section modulation from '{narrative}':")
+        print(f"      Filter multiplier: {modulation['filter_mult']:.2f}")
+        print(f"      Resonance addition: {modulation['resonance_add']:.2f}")
+        print(f"      Tempo multiplier: {modulation['tempo_mult']:.2f}")
+        print(f"      Note density: {modulation['note_density']:.2f}")
+        print(f"    \n    Final synthesis parameters:")
+        print(f"      Filter: {final_filter:.0f}Hz")
+        print(f"      Resonance: {final_resonance:.2f}")
+        print(f"      Filter envelope: {filter_env_amount:.0f}Hz")
+
+        # Use the base waveform from overall narrative
+        waveform = current_base['waveform']
+        scale = current_base['scale']
+
+        # Calculate note duration based on all layers
+        base_note_duration = 0.5  # Base duration
+        note_duration = base_note_duration * current_base['tempo'] * modulation['tempo_mult']
+
+        # OLD SECTION-SPECIFIC CODE BELOW IS NOW REPLACED BY THREE-LAYER SYSTEM
+        # Keeping for reference but commented out
+        """
         if 'TACTICAL_CHAOS' in narrative:
             # Chaotic tactical exchanges - aggressive saw with rapid filter sweeps
             waveform = 'saw'
@@ -682,11 +992,12 @@ class ChessSynthComposer:
             scale = self.scales['minor']
             note_duration = 0.5
             print(f"      DEFAULT ({narrative}): saw wave, filter {filter_base}Hz + {filter_envelope_amount:.0f}Hz sweep, resonance {resonance}")
+        """
 
-        print(f"      Scale: {scale}")
-        print(f"      Note duration: {note_duration}s")
+        print(f"      Note duration: {note_duration:.3f}s")
+        print(f"      Scale: {[f'{f:.1f}Hz' for f in scale[:4]]}...")
 
-        # Apply narrative process transformations
+        # Apply narrative process transformations (existing process system)
         current_time = section.get('start_ply', 0)  # Use ply as time
 
         # Check for key moments in this section for process update
@@ -725,22 +1036,31 @@ class ChessSynthComposer:
             volume_multiplier = 1.0  # Default if no process or no volume transform
 
         # Create a pattern based on the scale
-        pattern_length = 8
         pattern = []
 
-        # Generate an interesting pattern
-        if tension > 0.7:
-            # High tension - jumping intervals
-            indices = [0, 4, 2, 5, 1, 4, 3, 7]
-            print(f"      HIGH TENSION pattern: jumping intervals {indices}")
-        elif tension > 0.4:
-            # Medium - melodic
-            indices = [0, 2, 3, 2, 4, 3, 2, 1]
-            print(f"      MEDIUM TENSION pattern: melodic {indices}")
+        # Generate pattern based on tension AND overall narrative
+        if 'DEFEAT' in self.overall_narrative:
+            # Descending patterns for defeat
+            if tension > 0.7:
+                indices = [7, 5, 6, 4, 5, 3, 4, 2]  # Falling with struggle
+            else:
+                indices = [4, 3, 3, 2, 2, 1, 1, 0]  # Gradual descent
+        elif 'MASTERPIECE' in self.overall_narrative:
+            # Ascending patterns for victory
+            if tension > 0.7:
+                indices = [0, 2, 1, 3, 2, 5, 4, 7]  # Rising with energy
+            else:
+                indices = [0, 1, 2, 3, 3, 4, 5, 6]  # Steady climb
         else:
-            # Low - stepwise
-            indices = [0, 1, 2, 1, 3, 2, 1, 0]
-            print(f"      LOW TENSION pattern: stepwise {indices}")
+            # Neutral patterns
+            if tension > 0.7:
+                indices = [0, 4, 2, 5, 1, 4, 3, 7]  # Jumping
+            elif tension > 0.4:
+                indices = [0, 2, 3, 2, 4, 3, 2, 1]  # Melodic
+            else:
+                indices = [0, 1, 2, 1, 3, 2, 1, 0]  # Stepwise
+
+        print(f"      Pattern indices: {indices} (based on {self.overall_narrative} + tension {tension:.2f})")
 
         for idx in indices:
             if idx < len(scale):
@@ -748,13 +1068,12 @@ class ChessSynthComposer:
 
         print(f"      Generated pattern frequencies: {[f'{f:.1f}Hz' for f in pattern]}")
 
-        # Calculate how many times to play the pattern
-        num_notes = int(section_duration / note_duration)
+        # Calculate how many times to play the pattern (affected by note density)
+        num_notes = int(section_duration / note_duration * modulation['note_density'])
         print(f"      Will play {num_notes} notes over {section_duration}s")
 
-        # Generate CONTINUOUS audio with smooth frequency transitions (like real 1980s synths!)
+        # Generate CONTINUOUS audio with the chosen waveform
         total_samples = int(section_duration * self.sample_rate)
-        continuous_signal = self.synth.oscillator(110, section_duration, waveform)  # Base frequency
 
         # Create smooth frequency modulation over time
         freq_modulation = np.ones(total_samples)
@@ -792,32 +1111,138 @@ class ChessSynthComposer:
                 else:
                     freq_modulation[start_sample:end_sample] = freq_ratio
 
-        # Apply frequency modulation to continuous signal
-        phase = 0.0
-        modulated_signal = np.zeros_like(continuous_signal)
+        # LAYER 1: Generate CONTINUOUS BASE DRONE/PAD
+        print(f"\n    === LAYER 1: BASE DRONE ===")
 
-        for i in range(len(continuous_signal)):
-            # Current frequency
-            current_freq = 110 * freq_modulation[i]
+        # Base frequency for the drone - low and stable
+        drone_freq = scale[0] / 2  # Root note, one octave down
+        print(f"      Drone frequency: {drone_freq:.1f}Hz")
 
-            # Update phase
-            phase += 2 * np.pi * current_freq / self.sample_rate
+        if waveform == 'supersaw':
+            # Generate continuous supersaw drone for entire section
+            detune_spread = current_base['detune']
+            detune_cents = [-detune_spread*2, -detune_spread, -detune_spread/2,
+                          detune_spread/2, detune_spread, detune_spread*2]
 
-            # Generate modulated sample
-            if waveform == 'saw':
-                modulated_signal[i] = 2.0 * ((phase / (2 * np.pi)) % 1.0) - 1.0
-            elif waveform == 'pulse':
-                modulated_signal[i] = 1.0 if ((phase / (2 * np.pi)) % 1.0) < 0.3 else -1.0
-            elif waveform == 'square':
-                modulated_signal[i] = 1.0 if np.sin(phase) > 0 else -1.0
-            elif waveform == 'triangle':
-                modulated_signal[i] = 2.0 * np.abs(2.0 * ((phase / (2 * np.pi)) % 1.0) - 1.0) - 1.0
-            else:  # sine
-                modulated_signal[i] = np.sin(phase)
+            # Create the drone with slow filter evolution
+            base_drone = self.synth.supersaw(
+                freq=drone_freq,
+                duration=section_duration,
+                detune_cents=detune_cents,
+                filter_base=final_filter,
+                filter_env_amount=filter_env_amount * 0.3,  # Gentle filter movement
+                resonance=final_resonance,
+                amp_env=(0.5, 0.0, 1.0, 0.5),  # Slow attack, full sustain
+                filter_env=(0.5, 0.0, 1.0, 0.5)  # Minimal filter envelope
+            )
+            print(f"      Supersaw drone with {detune_spread:.1f} cent detune spread")
+        else:
+            # Generate simple oscillator drone for other waveforms
+            base_drone = self.synth.create_synth_note(
+                freq=drone_freq,
+                duration=section_duration,
+                waveform=waveform,
+                filter_base=final_filter,
+                filter_env_amount=filter_env_amount * 0.3,
+                resonance=final_resonance,
+                amp_env=(0.5, 0.0, 1.0, 0.5),
+                filter_env=(0.5, 0.0, 1.0, 0.5)
+            )
+            print(f"      {waveform.capitalize()} drone")
 
-        # Apply filter to the entire modulated signal
-        filtered_signal = self.synth.moog_filter(modulated_signal, filter_base + filter_envelope_amount/2, resonance)
-        print(f"      Applied Moog filter: {filter_base + filter_envelope_amount/2:.0f}Hz cutoff, {resonance} resonance")
+        # Apply slow LFO to drone for movement
+        lfo_freq = 0.1  # Very slow LFO
+        lfo = np.sin(2 * np.pi * lfo_freq * np.arange(len(base_drone)) / self.sample_rate)
+        base_drone = base_drone * (1 + lfo * 0.1)  # Subtle amplitude modulation
+
+        # LAYER 2: Generate RHYTHMIC/MELODIC PATTERNS from section narrative
+        print(f"\n    === LAYER 2: SECTION PATTERNS ===")
+
+        if waveform == 'supersaw':
+            # Generate rhythmic patterns with shorter, punchier supersaw notes
+            section_pattern = np.zeros(total_samples)
+            samples_per_note = int(note_duration * self.sample_rate)
+
+            # Calculate detune amounts based on progress (starts tight, becomes chaotic)
+            detune_spread = current_base['detune']  # This evolves from 3 to 20 cents in DEFEAT
+            detune_cents = [-detune_spread, -detune_spread/2, -detune_spread/4, detune_spread/4, detune_spread/2, detune_spread]
+
+            for i in range(num_notes):
+                start_sample = i * samples_per_note
+                end_sample = min(start_sample + samples_per_note, total_samples)
+
+                if start_sample < total_samples:
+                    note_freq = pattern[i % len(pattern)]
+
+                    # Vary the frequency for movement
+                    if i % 4 == 0:
+                        note_freq *= 2  # Octave up
+                    elif i % 7 == 0:
+                        note_freq *= 0.5  # Octave down
+
+                    # Generate supersaw for this note
+                    note_samples = end_sample - start_sample
+                    note_duration_sec = note_samples / self.sample_rate
+
+                    # Rhythmic/melodic notes - shorter and punchier than drone
+                    pattern_note = self.synth.create_synth_note(
+                        freq=note_freq,
+                        duration=note_duration_sec,
+                        waveform='pulse' if tension > 0.5 else 'triangle',  # Use simpler waveforms for clarity
+                        filter_base=final_filter * 1.5,  # Brighter than drone
+                        filter_env_amount=filter_env_amount,
+                        resonance=final_resonance * 0.7,  # Less resonance for clarity
+                        amp_env=(0.001, 0.05, 0.3, 0.1),  # Short, percussive envelope
+                        filter_env=(0.001, 0.1, 0.2, 0.1)
+                    )
+
+                    # Place the note in the pattern layer
+                    if len(pattern_note) > 0:
+                        actual_samples = min(len(pattern_note), end_sample - start_sample)
+                        section_pattern[start_sample:start_sample + actual_samples] += pattern_note[:actual_samples] * 0.5
+        else:
+            # Generate rhythmic patterns for other waveforms
+            section_pattern = np.zeros(total_samples)
+            samples_per_note = int(note_duration * self.sample_rate)
+
+            for i in range(num_notes):
+                start_sample = i * samples_per_note
+                end_sample = min(start_sample + samples_per_note, total_samples)
+
+                if start_sample < total_samples:
+                    note_freq = pattern[i % len(pattern)]
+
+                    # Vary frequency for movement
+                    if i % 4 == 0:
+                        note_freq *= 2
+                    elif i % 7 == 0:
+                        note_freq *= 0.5
+
+                    # Generate pattern note
+                    note_samples = end_sample - start_sample
+                    note_duration_sec = note_samples / self.sample_rate
+
+                    pattern_note = self.synth.create_synth_note(
+                        freq=note_freq,
+                        duration=note_duration_sec,
+                        waveform='pulse' if tension > 0.5 else 'triangle',
+                        filter_base=final_filter * 1.5,
+                        filter_env_amount=filter_env_amount,
+                        resonance=final_resonance * 0.7,
+                        amp_env=(0.001, 0.05, 0.3, 0.1),
+                        filter_env=(0.001, 0.1, 0.2, 0.1)
+                    )
+
+                    if len(pattern_note) > 0:
+                        actual_samples = min(len(pattern_note), end_sample - start_sample)
+                        section_pattern[start_sample:start_sample + actual_samples] += pattern_note[:actual_samples] * 0.5
+
+        print(f"      Generated {num_notes} pattern notes")
+
+        # MIX LAYER 1 AND LAYER 2
+        # Base drone is continuous, patterns are rhythmic on top
+        mixed_signal = base_drone * 0.6 + section_pattern * 0.4
+        print(f"\n    Mixed drone (60%) + patterns (40%)")
 
         # Apply smooth amplitude envelope over entire section
         section_envelope = np.ones(total_samples)
@@ -828,74 +1253,49 @@ class ChessSynthComposer:
         # Fade out
         section_envelope[-fade_samples:] = np.linspace(1, 0, fade_samples)
 
-        samples = filtered_signal * section_envelope * 0.3 * volume_multiplier  # Volume level with process modulation
+        samples = mixed_signal * section_envelope * 0.3 * volume_multiplier  # Volume level with process modulation
 
-        # Add key moments as filter sweeps or resonant hits
-        print(f"      Processing {len(section.get('key_moments', []))} key moments:")
+        # LAYER 3: Add key moments as context-aware synth voices
+        print(f"\n    === LAYER 3: KEY MOMENTS ({len(section.get('key_moments', []))}) ===")
         for moment in section.get('key_moments', []):
             moment_time = (moment['ply'] - section['start_ply']) * note_duration
             moment_sample_pos = int(moment_time * self.sample_rate)
 
             if moment_sample_pos < len(samples) - self.sample_rate:
-                if moment['type'] in ['BLUNDER', 'MISTAKE']:
-                    # Descending filter sweep
-                    print(f"        {moment['type']} at ply {moment['ply']}: descending filter sweep (55Hz, 5000->500Hz)")
-                    sweep = self.synth.create_synth_note(
-                        freq=55,  # Low note
-                        duration=0.5,
-                        waveform='saw',
-                        filter_base=5000,
-                        filter_env_amount=-4500,  # Negative for closing
-                        resonance=3.5,
-                        amp_env=(0.001, 0.01, 0.5, 0.4),
-                        filter_env=(0.001, 0.5, 0.0, 0.4)
-                    )
-                elif moment['type'] in ['BRILLIANT', 'STRONG']:
-                    # Rising resonant sweep
-                    print(f"        {moment['type']} at ply {moment['ply']}: rising filter sweep (220Hz, 200->8200Hz)")
-                    sweep = self.synth.create_synth_note(
-                        freq=220,
-                        duration=0.3,
-                        waveform='pulse',
-                        filter_base=200,
-                        filter_env_amount=8000,  # Big opening
-                        resonance=3.0,
-                        amp_env=(0.001, 0.05, 0.7, 0.1),
-                        filter_env=(0.001, 0.2, 0.5, 0.1)
-                    )
-                else:
-                    # Generic accent
-                    print(f"        {moment['type']} at ply {moment['ply']}: generic accent ({note_freq*2:.1f}Hz)")
-                    sweep = self.synth.create_synth_note(
-                        freq=note_freq * 2,
-                        duration=0.2,
-                        waveform='square',
-                        filter_base=1000,
-                        filter_env_amount=2000,
-                        resonance=2.0,
-                        amp_env=(0.001, 0.01, 0.8, 0.05)
-                    )
+                # Create context-aware moment voice
+                moment_voice = self.create_moment_voice(moment, current_base, progress)
 
-                # Mix in the sweep
-                for i, sample in enumerate(sweep):
+                print(f"      {moment['type']} at ply {moment['ply']} (context: {self.overall_narrative})")
+
+                # Mix in the moment voice
+                mix_ratio = 0.3  # How much of the moment to mix in
+                if 'DEFEAT' in self.overall_narrative and moment['type'] in ['BLUNDER', 'MISTAKE']:
+                    mix_ratio = 0.5  # Mistakes are more prominent in defeats
+                elif 'MASTERPIECE' in self.overall_narrative and moment['type'] in ['BRILLIANT', 'STRONG']:
+                    mix_ratio = 0.5  # Brilliancies are more prominent in masterpieces
+
+                for i, sample in enumerate(moment_voice):
                     if moment_sample_pos + i < len(samples):
-                        samples[moment_sample_pos + i] = samples[moment_sample_pos + i] * 0.5 + sample * 0.5
+                        samples[moment_sample_pos + i] = samples[moment_sample_pos + i] * (1 - mix_ratio) + sample * mix_ratio
 
         return np.array(samples)
 
     def compose(self):
         """Create the full composition"""
-        print("\n♫ SUBTRACTIVE SYNTHESIS CHESS MUSIC")
+        print("\n♫ SUBTRACTIVE SYNTHESIS CHESS MUSIC - THREE LAYER COMPOSITION")
         print(f"Result: {self.tags.get('game_result', '?')}")
-        print(f"Narrative: {self.tags.get('overall_narrative', 'UNKNOWN')}")
+        print(f"Overall Narrative: {self.overall_narrative}")
+        print(f"Base Synth Patch: {self.base_params['base_waveform']} wave")
+        print(f"Filter Evolution: {self.base_params['filter_start']}Hz → {self.base_params['filter_end']}Hz")
+        print(f"Resonance Evolution: {self.base_params['resonance_start']:.1f} → {self.base_params['resonance_end']:.1f}")
 
         composition = []
+        sections = self.tags.get('sections', [])
+        total_sections = len(sections)
 
-        print("\nSynthesizing sections:")
-        for section in self.tags.get('sections', []):
-            print(f"  {section['name']}: {section['narrative']} (tension: {section['tension']:.2f})")
-
-            section_music = self.compose_section(section)
+        print(f"\nSynthesizing {total_sections} sections with three-layer narrative system:")
+        for i, section in enumerate(sections):
+            section_music = self.compose_section(section, i, total_sections)
             composition.extend(section_music)
 
             # Brief silence between sections
