@@ -10,6 +10,7 @@ import wave
 import struct
 import sys
 import random
+import re
 import numpy as np
 from abc import ABC, abstractmethod
 
@@ -1032,160 +1033,6 @@ class ChessSynthComposer:
         base_note_duration = 0.5  # Base duration
         note_duration = base_note_duration * current_base['tempo'] * modulation['tempo_mult']
 
-        # OLD SECTION-SPECIFIC CODE BELOW IS NOW REPLACED BY THREE-LAYER SYSTEM
-        # Keeping for reference but commented out
-        """
-        if 'TACTICAL_CHAOS' in narrative:
-            # Chaotic tactical exchanges - aggressive saw with rapid filter sweeps
-            waveform = 'saw'
-            filter_base = 300
-            filter_envelope_amount = 5000 * tension
-            resonance = 3.0  # Very resonant for intensity
-            scale = self.scales['phrygian']
-            note_duration = 0.2  # Very fast notes
-            print(f"      TACTICAL_CHAOS: saw wave, filter {filter_base}Hz + {filter_envelope_amount:.0f}Hz sweep, resonance {resonance}")
-
-        elif 'TACTICAL_BATTLE' in narrative:
-            # Tactical battle with advantage gained - pulse with strong filter
-            waveform = 'pulse'
-            filter_base = 350
-            filter_envelope_amount = 4500 * tension
-            resonance = 2.5  # Strong resonance
-            scale = self.scales['minor']
-            note_duration = 0.25  # Fast but controlled
-            print(f"      TACTICAL_BATTLE: pulse wave, filter {filter_base}Hz + {filter_envelope_amount:.0f}Hz sweep, resonance {resonance}")
-
-        elif 'KING_HUNT' in narrative or 'KING_ATTACK' in narrative:
-            # Pursuing, relentless sound - pulse wave building intensity
-            waveform = 'pulse'
-            filter_base = 400
-            filter_envelope_amount = 6000 * tension
-            resonance = 2.0
-            scale = self.scales['minor']
-            note_duration = 0.3  # Moderate speed but building
-            print(f"      KING_HUNT/ATTACK: pulse wave, filter {filter_base}Hz + {filter_envelope_amount:.0f}Hz sweep, resonance {resonance}")
-
-        elif 'SACRIFICIAL_ATTACK' in narrative or 'CRUSHING_ATTACK' in narrative:
-            # Explosive, dramatic sound - saw with massive filter opening
-            waveform = 'saw'
-            filter_base = 100  # Start very closed
-            filter_envelope_amount = 8000 * tension  # Huge opening
-            resonance = 2.5
-            scale = self.scales['minor']
-            note_duration = 0.4
-            print(f"      SACRIFICIAL/CRUSHING_ATTACK: saw wave, filter {filter_base}Hz + {filter_envelope_amount:.0f}Hz sweep, resonance {resonance}")
-
-        elif 'DESPERATE_DEFENSE' in narrative or 'DEFENSIVE_STAND' in narrative:
-            # Dark, closed, tense sound - saw with minimal filter opening
-            waveform = 'saw'
-            filter_base = 120  # Very closed
-            filter_envelope_amount = 800  # Minimal opening
-            resonance = 3.5  # Near self-oscillation for tension
-            scale = self.scales['phrygian']
-            note_duration = 0.6  # Slower, more deliberate
-            print(f"      DESPERATE_DEFENSE: saw wave, filter {filter_base}Hz + {filter_envelope_amount}Hz sweep, resonance {resonance} (dark/tense)")
-
-        elif 'COMPLEX_STRUGGLE' in narrative:
-            # Evolving, complex sound - triangle with moderate filter movement
-            waveform = 'triangle'
-            filter_base = 600
-            filter_envelope_amount = 3000 * tension
-            resonance = 1.0
-            scale = self.scales['dorian']
-            note_duration = 0.5
-            print(f"      COMPLEX_STRUGGLE: triangle wave, filter {filter_base}Hz + {filter_envelope_amount:.0f}Hz sweep, resonance {resonance}")
-
-        elif 'POSITIONAL_SQUEEZE' in narrative or 'POSITIONAL_MANEUVERING' in narrative or 'QUIET_MANEUVERING' in narrative:
-            # Subtle, evolving sound - triangle with gentle filter movement
-            waveform = 'triangle'
-            filter_base = 1000
-            filter_envelope_amount = 1500 * tension
-            resonance = 0.3  # Very gentle
-            scale = self.scales['dorian']
-            note_duration = 0.8  # Slow, contemplative
-            print(f"      POSITIONAL: triangle wave, filter {filter_base}Hz + {filter_envelope_amount:.0f}Hz sweep, resonance {resonance} (gentle)")
-
-        elif 'ENDGAME_PRECISION' in narrative:
-            # Clean, precise sound - square wave with controlled filter
-            waveform = 'square'
-            filter_base = 800
-            filter_envelope_amount = 2000 * tension
-            resonance = 0.8
-            scale = self.scales['minor']
-            note_duration = 0.6
-            print(f"      ENDGAME_PRECISION: square wave, filter {filter_base}Hz + {filter_envelope_amount:.0f}Hz sweep, resonance {resonance}")
-
-        elif 'OPENING_THEORY' in narrative or 'DEVELOPMENT' in narrative:
-            # Bright, structured sound - triangle with rising filter
-            waveform = 'triangle'
-            filter_base = 1200
-            filter_envelope_amount = 2500 * tension
-            resonance = 0.5
-            scale = self.scales['dorian']
-            note_duration = 0.7
-            print(f"      OPENING_THEORY: triangle wave, filter {filter_base}Hz + {filter_envelope_amount:.0f}Hz sweep, resonance {resonance}")
-
-        elif 'MATING_ATTACK' in narrative:
-            # Inevitable, closing sound - saw with dramatic filter sweeps
-            waveform = 'saw'
-            filter_base = 150
-            filter_envelope_amount = 7000 * tension
-            resonance = 3.2
-            scale = self.scales['phrygian']
-            note_duration = 0.25
-            print(f"      MATING_ATTACK: saw wave, filter {filter_base}Hz + {filter_envelope_amount:.0f}Hz sweep, resonance {resonance}")
-
-        elif 'TENSE_EQUILIBRIUM' in narrative:
-            # Balanced but tense - pulse with moderate filter
-            waveform = 'pulse'
-            filter_base = 500
-            filter_envelope_amount = 2000 * tension
-            resonance = 1.5
-            scale = self.scales['minor']
-            note_duration = 0.6
-            print(f"      TENSE_EQUILIBRIUM: pulse wave, filter {filter_base}Hz + {filter_envelope_amount:.0f}Hz sweep, resonance {resonance}")
-
-        elif 'LIQUIDATION' in narrative:
-            # Simplifying, clearing out - triangle with falling filter
-            waveform = 'triangle'
-            filter_base = 2000
-            filter_envelope_amount = -1000  # Negative for closing
-            resonance = 0.4
-            scale = self.scales['dorian']
-            note_duration = 0.9
-            print(f"      LIQUIDATION: triangle wave, filter {filter_base}Hz + {filter_envelope_amount}Hz sweep, resonance {resonance}")
-
-        elif 'CRITICAL_DECISIONS' in narrative:
-            # Important moments - square with sharp filter
-            waveform = 'square'
-            filter_base = 600
-            filter_envelope_amount = 3500 * tension
-            resonance = 2.2
-            scale = self.scales['minor']
-            note_duration = 0.5
-            print(f"      CRITICAL_DECISIONS: square wave, filter {filter_base}Hz + {filter_envelope_amount:.0f}Hz sweep, resonance {resonance}")
-
-        elif 'COMPLEX_POSITION' in narrative:
-            # Unknown evaluation - mysterious, ambient sound
-            waveform = 'triangle'
-            filter_base = 800
-            filter_envelope_amount = 1800 * tension
-            resonance = 0.8
-            scale = self.scales['dorian']
-            note_duration = 0.7
-            print(f"      COMPLEX_POSITION: triangle wave, filter {filter_base}Hz + {filter_envelope_amount:.0f}Hz sweep, resonance {resonance}")
-
-        else:  # Default for any unmatched narratives
-            # Balanced sound - saw with moderate characteristics
-            waveform = 'saw'
-            filter_base = 500
-            filter_envelope_amount = 2500 * tension
-            resonance = 1.2
-            scale = self.scales['minor']
-            note_duration = 0.5
-            print(f"      DEFAULT ({narrative}): saw wave, filter {filter_base}Hz + {filter_envelope_amount:.0f}Hz sweep, resonance {resonance}")
-        """
-
         print(f"      Note duration: {note_duration:.3f}s")
         print(f"      Scale: {[f'{f:.1f}Hz' for f in scale[:4]]}...")
 
@@ -1447,48 +1294,187 @@ class ChessSynthComposer:
 
         samples = mixed_signal * section_envelope * 0.3 * volume_multiplier  # Volume level with process modulation
 
-        # LAYER 3: Add key moments as context-aware synth voices
-        print(f"\n    === LAYER 3: KEY MOMENTS ({len(section.get('key_moments', []))}) ===")
+        # LAYER 3: CONTINUOUS SEQUENCER - RUNS ENTIRE SECTION
+        print(f"\n    === LAYER 3: CONTINUOUS SEQUENCER ===")
 
-        # Parse section start time from duration string
-        duration_str = section.get('duration', '0:10')
-        if ':' in duration_str:
-            parts = duration_str.split(':')
-            try:
-                section_start_second = int(parts[0])
-            except:
-                section_start_second = 0
-        else:
-            section_start_second = 0
+        # Timing setup
+        bpm = section.get('bpm', 120)
+        beat_duration = 60.0 / bpm
+        sixteenth_duration = beat_duration / 4  # 16th notes for sequencer
 
+        # Initialize continuous sequencer output
+        sequencer_layer = np.zeros_like(samples)
+
+        # MIDI to frequency
+        def midi_to_freq(midi_note):
+            return 440.0 * 2**((midi_note - 69) / 12.0)
+
+        # CONTINUOUS 16-STEP SEQUENCER
+        # This runs for the ENTIRE SECTION, not just at moments!
+
+        # Base 16-step pattern (intervals from root)
+        # This is the hypnotic pattern that will evolve
+        base_pattern = [0, 3, 7, 12, 10, 7, 3, 0, -2, 3, 8, 12, 15, 12, 7, 0]
+
+        # Initial sequencer state
+        current_root = 60  # Middle C
+        current_pattern = base_pattern.copy()
+        filter_frequency = 1000  # Starting filter cutoff
+        filter_target = 3000  # Where filter is heading
+        pattern_variation = 0  # How much to vary the pattern
+
+        # Process key moments to determine evolution points
+        evolution_points = []
         for moment in section.get('key_moments', []):
-            # Use the ACTUAL second timing from the JSON, not calculated from ply
-            moment_second = moment.get('second', moment['ply'])  # Use second if available
-            moment_time_in_section = moment_second - section_start_second
+            moment_time = moment.get('second', moment.get('ply', 0))
+            duration_str = section.get('duration', '0:10')
+            section_start = int(duration_str.split(':')[0]) if ':' in duration_str else 0
+            relative_time = moment_time - section_start
 
-            # Validate timing is within section
-            if moment_time_in_section < 0 or moment_time_in_section > section_duration:
-                print(f"      WARNING: {moment['type']} at second {moment_second} outside section [{section_start_second}:{section_start_second + section_duration}]")
-                continue
+            if 0 <= relative_time <= section_duration:
+                evolution_points.append({
+                    'time': relative_time,
+                    'type': moment.get('type', 'UNKNOWN'),
+                    'sample_pos': int(relative_time * self.sample_rate)
+                })
 
-            moment_sample_pos = int(moment_time_in_section * self.sample_rate)
+        evolution_points.sort(key=lambda x: x['time'])
+        next_evolution_idx = 0
 
-            if moment_sample_pos < len(samples) - self.sample_rate:
-                # Create context-aware moment voice
-                moment_voice = self.create_moment_voice(moment, current_base, progress)
+        print(f"      Running continuous sequencer for {section_duration:.1f}s")
+        evolution_str = ", ".join([f"{e['type']} at {e['time']:.1f}s" for e in evolution_points])
+        print(f"      Evolution points: {evolution_str}")
 
-                print(f"      {moment['type']} at ply {moment['ply']}, second {moment_second} (relative: {moment_time_in_section:.1f}s)")
+        # Generate continuous sequence for entire section
+        samples_per_step = int(sixteenth_duration * self.sample_rate)
+        total_steps = int(section_duration / sixteenth_duration)
 
-                # Mix in the moment voice
-                mix_ratio = 0.3  # How much of the moment to mix in
-                if 'DEFEAT' in self.overall_narrative and moment['type'] in ['BLUNDER', 'MISTAKE']:
-                    mix_ratio = 0.5  # Mistakes are more prominent in defeats
-                elif 'MASTERPIECE' in self.overall_narrative and moment['type'] in ['BRILLIANT', 'STRONG']:
-                    mix_ratio = 0.5  # Brilliancies are more prominent in masterpieces
+        # Pre-generate the entire sequence pattern
+        full_sequence = []
+        for i in range(total_steps):
+            step_index = i % 16
+            note_interval = current_pattern[step_index]
 
-                for i, sample in enumerate(moment_voice):
-                    if moment_sample_pos + i < len(samples):
-                        samples[moment_sample_pos + i] = samples[moment_sample_pos + i] * (1 - mix_ratio) + sample * mix_ratio
+            # Check if we hit an evolution point
+            current_time = i * sixteenth_duration
+            current_sample = int(current_time * self.sample_rate)
+
+            if next_evolution_idx < len(evolution_points):
+                if current_sample >= evolution_points[next_evolution_idx]['sample_pos']:
+                    evolution = evolution_points[next_evolution_idx]
+
+                    # EVOLVE THE SEQUENCE BASED ON MOMENT TYPE
+                    if evolution['type'] == 'DEVELOPMENT':
+                        # Transpose up a fifth (7 semitones)
+                        current_root = min(current_root + 7, 72)  # Cap at C5
+                        filter_target = min(filter_target + 500, 5000)
+                        print(f"        DEVELOPMENT: Transposing to root {current_root}, filter target {filter_target}Hz")
+
+                    elif evolution['type'] == 'FIRST_EXCHANGE':
+                        # Add variation to pattern - make it more complex
+                        pattern_variation = 2
+                        filter_target = 4000
+                        print(f"        FIRST_EXCHANGE: Adding pattern variation")
+
+                    elif evolution['type'] in ['TACTICAL_SEQUENCE', 'MATE_SEQUENCE']:
+                        # Increase tension - narrow intervals, higher resonance
+                        current_pattern = [p // 2 if abs(p) > 7 else p for p in current_pattern]
+                        filter_target = 2000  # Darker sound for tension
+                        print(f"        {evolution['type']}: Increasing tension")
+
+                    next_evolution_idx += 1
+
+            # Apply pattern variation if active
+            if pattern_variation > 0 and step_index in [3, 7, 11, 15]:
+                note_interval += random.choice([-pattern_variation, 0, pattern_variation])
+
+            midi_note = current_root + note_interval
+            full_sequence.append(midi_note)
+
+            # Smooth filter movement
+            filter_frequency += (filter_target - filter_frequency) * 0.02
+
+        # Now generate the actual audio using SubtractiveSynth
+        print(f"      Generating {len(full_sequence)} steps of continuous sequence")
+
+        for i, midi_note in enumerate(full_sequence):
+            if i * samples_per_step >= len(sequencer_layer):
+                break
+
+            # Generate note using the SubtractiveSynth
+            freq = midi_to_freq(midi_note)
+
+            # Use supersaw for rich Jarre-style sound
+            note_audio = self.synth.create_synth_note(
+                freq=freq,
+                duration=sixteenth_duration,
+                waveform='supersaw' if current_base['waveform'] == 'supersaw' else 'saw',
+                filter_base=filter_frequency,
+                filter_env_amount=1000,  # Gentle filter envelope
+                resonance=min(2.5, current_base['resonance'] + 1.0),  # Jarre uses high resonance
+                amp_env=(0.001, 0.02, 0.8, 0.05),  # Fast attack for sequencer
+                filter_env=(0.001, 0.1, 0.5, 0.1)
+            )
+
+            # Place note in sequence with slight overlap for smoothness
+            start_pos = int(i * samples_per_step * 0.98)  # 2% overlap
+            end_pos = min(start_pos + len(note_audio), len(sequencer_layer))
+
+            if end_pos > start_pos:
+                # Mix with overlap
+                overlap_samples = min(int(0.001 * self.sample_rate), end_pos - start_pos)
+
+                # Add the note
+                sequencer_layer[start_pos:end_pos] += note_audio[:end_pos-start_pos] * 0.4
+
+        # Apply a global filter sweep to the entire sequence
+        # This creates the signature Jarre filter movement
+        sweep_length = len(sequencer_layer)
+        filter_sweep = np.zeros(sweep_length)
+
+        # Create smooth filter envelope over entire section
+        for i in range(sweep_length):
+            progress = i / sweep_length
+            # Sine wave LFO for filter
+            lfo = np.sin(2 * np.pi * 0.25 * progress)  # 0.25 Hz LFO
+            filter_sweep[i] = 2000 + 1500 * lfo + 1000 * progress  # Rising with LFO
+
+        # Apply the filter sweep using moog filter
+        filtered_sequence = np.zeros_like(sequencer_layer)
+        chunk_size = 512
+        for i in range(0, len(sequencer_layer), chunk_size):
+            chunk_end = min(i + chunk_size, len(sequencer_layer))
+            chunk = sequencer_layer[i:chunk_end]
+
+            # Average filter frequency for this chunk
+            avg_cutoff = np.mean(filter_sweep[i:chunk_end])
+
+            if len(chunk) > 0:
+                filtered_chunk = self.synth.moog_filter(chunk, cutoff_hz=avg_cutoff, resonance=2.0)
+                filtered_sequence[i:chunk_end] = filtered_chunk
+
+        # Mix the continuous sequencer with existing layers
+        # Apply sidechain compression for clarity
+
+        # Duck the main mix when sequencer is playing
+        sequencer_envelope = np.abs(filtered_sequence)
+        smoothing = int(0.005 * self.sample_rate)
+        if smoothing > 0:
+            sequencer_envelope = np.convolve(sequencer_envelope, np.ones(smoothing) / smoothing, mode='same')
+
+        max_env = np.max(sequencer_envelope)
+        if max_env > 0:
+            sequencer_envelope = sequencer_envelope / max_env
+
+        # Duck existing layers when sequencer plays
+        ducking = 1.0 - (sequencer_envelope * 0.3)  # Duck by 30%
+        samples = samples * ducking
+
+        # Add the filtered sequencer layer
+        samples = samples + filtered_sequence * 0.5
+
+        # Soft clipping to prevent distortion
+        samples = np.tanh(samples * 0.9) * 0.95
 
         return np.array(samples)
 
