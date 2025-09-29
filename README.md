@@ -1,25 +1,19 @@
-# Chess-to-Music Converter
+# Chess-to-Music: Algorithmic Composition from Chess Games
 
-A Python tool that converts chess games in PGN format into MIDI music compositions. This project translates chess moves, piece types, game events, and move quality annotations into corresponding musical elements, inspired by Laurie Spiegel's pioneering work on algorithmic composition and her Music Mouse software.
+A Python toolkit that transforms chess games into electronic music compositions using subtractive synthesis. Inspired by Laurie Spiegel's pioneering work on algorithmic composition, this project analyzes chess game narratives and translates them into evolving soundscapes through a three-layer synthesis architecture.
 
-## Features
+## Overview
 
-- **EMT-Aware Timing**: Uses per-move elapsed move time (EMT) to shape pre-move “thinking windows”
-- **Windowed Drone Layer**: Expands / compresses a sustained drone section proportional to think time (log / pow curve)
-- **Expression Modulation**: Classifies upcoming move (brilliant, blunder, check, forced, long, epic) to scale window & escalate modulation phases
-- **Phase-Based Drone Dynamics**: Idle → swell → tension (tritone) → pulses for very long thinks
-- **Short-Think Gating**: Ultra-fast moves ≤ 1s get a 1:1 micro-window; small thinks ≤ threshold stay flat (no jitter)
-- **Chess Game Processing**: Parses PGN & annotations with `python-chess`
-- **Opening Recognition**: ECO-based base drone pitch & harmonies
-- **Musical Mapping**:
-  - Pieces → configurable MIDI programs + automatic orchestral register shifts
-  - Squares → pitch via selectable mapping modes
-  - NAG & SAN markers → accents / effects
-  - Captures, check, mate → dedicated musical gestures
-- **Arpeggio Layer (optional)**: Legacy subtle background texture (disabled when drone modulation enabled)
-- **Rich Move Log**: Tabular output with EMT, compressed window seconds, expression tag, timing ticks
-- **Time Compression Summary**: Shows total EMT vs condensed musical window time & compression ratio
-- **Audio Export**: Convert MIDI to MP3 via Makefile helpers
+This system converts chess games (PGN format) into audio (WAV) through a multi-stage pipeline:
+
+1. **Analysis**: Extract game features, narratives, and key moments
+2. **Synthesis**: Generate music using subtractive synthesis with Moog-style filters
+3. **Output**: Direct-to-WAV audio file
+
+The music reflects the drama of the game through:
+- **Overall narrative arcs** (defeat, masterpiece, precision)
+- **Section-level tension** (tactical chaos, king hunts, quiet positions)
+- **Key moments** (brilliant moves, blunders, sacrifices)
 
 ## Quick Start
 
@@ -27,149 +21,314 @@ A Python tool that converts chess games in PGN format into MIDI music compositio
 
 ```bash
 # Install dependencies
-make install
-
-# Or with virtual environment
-make setup
-source venv/bin/activate
+pip install -r requirements.txt
 ```
+
+**Required packages:**
+- `python-chess` - Chess game parsing
+- `numpy` - Numerical computing
+- `scipy` - Signal processing
 
 ### Basic Usage
 
 ```bash
-# Convert PGN to MIDI
-python3 c2m.py data/game.pgn
+# Full pipeline: PGN → Audio
+./c2m path/to/game.pgn
 
-# Use custom configuration
-python3 c2m.py data/game.pgn --config my_config.yaml
-
-# Specify output filename
-python3 c2m.py data/game.pgn --output my_song.mid
-
-# Convert MIDI to MP3
-make to-mp3 MIDI=data/game.mid
+# This runs:
+# 1. thinking_time.py    - Add elapsed move time (EMT) to PGN
+# 2. feature_extractor.py - Extract game features
+# 3. tagger.py           - Generate narrative tags
+# 4. synth_composer.py   - Synthesize audio
 ```
 
-### Using Make Commands
+### Individual Pipeline Steps
 
 ```bash
-# See all available commands
-make help
+# Step 1: Add timing data to PGN
+python3 thinking_time.py data/game.pgn
 
-# Convert PGN to MIDI
-make run PGN=data/game.pgn
+# Step 2: Extract features
+python3 feature_extractor.py data/game.pgn
 
-# With custom config
-make run PGN=data/game.pgn CONFIG=custom_config.yaml
+# Step 3: Generate narrative tags
+python3 tagger.py data/game-feat.json
 
-# Run demo
-make demo
-
-# Convert MIDI to MP3
-make to-mp3 MIDI=data/game.mid
-
-# List available files
-make list-games
-make list-midi
-
-# Clean up generated files
-make clean        # Remove MIDI files only
-make clean-all    # Remove all audio files
+# Step 4: Synthesize music
+python3 synth_composer.py data/game-tags.json
+# → Creates: chess_synth.wav
 ```
 
-## CLI Options
+## Architecture
 
-Current script flags (`python3 c2m.py --help`):
+### Pipeline Components
 
 ```
-usage: c2m.py [-h] [--config CONFIG] [--output OUTPUT] [--play] [--sheet]
-              [--no-move-log] [--track-stats] [--trace-arps]
-              pgn_file
+thinking_time.py
+    ├── Adds EMT (Elapsed Move Time) annotations to PGN
+    └── Preserves all game data and comments
 
-Convert a PGN with EMT annotations into an expressive multi-track MIDI: includes drone thinking windows, expression-based scaling, and timing summary.
+feature_extractor.py
+    ├── Parses annotated PGN with python-chess
+    ├── Extracts tactical features (checks, captures, sacrifices)
+    ├── Analyzes position evaluation changes
+    └── Outputs: *-feat.json
 
-positional arguments:
-  pgn_file              Input PGN with EMT/time comments (mainline only)
+tagger.py
+    ├── Reads feature JSON
+    ├── Identifies narrative patterns
+    ├── Segments game into dramatic sections
+    ├── Tags key moments (brilliant, blunder, development)
+    └── Outputs: *-tags.json
 
-options:
-  -h, --help            show this help message and exit
-  --config CONFIG       Path to configuration YAML (default: config.yaml)
-  --output OUTPUT, -o OUTPUT
-                        Explicit output MIDI path (default: <pgn_basename>_music.mid)
-  --play                After render, attempt to play the MIDI file (system opener)
-  --sheet               Print first measures as ASCII sheet at end
-  --no-move-log         Suppress per-move tabular log
-  --track-stats         Print per-track basic statistics summary
-  --trace-arps          Verbose tracing for any (legacy) arpeggio generation
+synth_composer.py (REFACTORED)
+    ├── Three-layer synthesis architecture
+    ├── Uses narrative tags to drive synthesis
+    └── Outputs: chess_synth.wav
 ```
 
-## Musical Mapping
+### Synthesis Architecture (NEW)
 
-### Piece to Instrument
-- **Pawn (P)**: Piano (0)
-- **Knight (N)**: Violin (40)
-- **Bishop (B)**: Oboe (68)
-- **Rook (R)**: French Horn (69)
-- **Queen (Q)**: Piano (0)
-- **King (K)**: Organ (19)
+The synthesis engine has been **completely refactored** for clarity and maintainability:
 
-### Special Effects
-- **Move Quality (NAG codes)**: Great moves add harmonies, mistakes add discordant notes
-- **Captures**: Additional harmonic notes
-- **Check**: Higher pitch accent
-- **Checkmate**: C major chord
-- **Tempo Changes**: Game progresses from fast (140 BPM) to slow (90 BPM)
-- **Stereo Panning**: White pieces pan left, black pieces pan right
+```
+synth_composer.py (687 lines) - Main composition logic
+    └── ChessSynthComposer
+        ├── Three-layer narrative system
+        ├── Section composition
+        └── Audio output
 
-## Configuration
+synth_config.py (664 lines) - All parameters centralized
+    ├── Musical scales
+    ├── Envelope presets
+    ├── Narrative parameters
+    ├── Section modulations
+    ├── Moment voice parameters
+    ├── Sequencer patterns
+    └── Mixing levels
 
-The tool uses a YAML configuration file (`config.yaml` by default) to customize:
-- Instrument assignments
-- Pitch mappings
-- Musical effects
-- Tempo settings
-- Audio panning
+synth_engine.py (354 lines) - Pure synthesis engine
+    └── SubtractiveSynth
+        ├── Band-limited oscillators (PolyBLEP anti-aliasing)
+        ├── Moog-style 4-pole low-pass filter
+        ├── ADSR envelopes
+        └── Roland JP-8000 style supersaw
 
-See `config.yaml` for the complete configuration structure.
+synth_narrative.py (199 lines) - Narrative processes
+    ├── TumblingDefeatProcess - Gradual deterioration
+    ├── AttackingMasterpieceProcess - Building crescendo
+    └── QuietPrecisionProcess - Equilibrium-seeking
+```
+
+**Total: ~1,900 lines** (down from 1,627 in a single file)
+
+## Three-Layer Synthesis System
+
+The music generation uses three simultaneous layers:
+
+### Layer 1: Overall Narrative (Base Drone)
+Sets the fundamental character for the entire game:
+- **Tumbling Defeat**: Bright → dark, detuned supersaws, increasing chaos
+- **Attacking Masterpiece**: Closed → open filters, building momentum
+- **Peaceful Draw**: Stable parameters, gentle oscillation
+
+### Layer 2: Section Narratives (Rhythmic Patterns)
+Modulates the base sound for each game phase:
+- **Tactical Chaos**: Fast tempo, high resonance, many notes
+- **King Hunt**: Bright filters, dramatic sweeps, frantic density
+- **Quiet Positional**: Slow, clean, sparse patterns
+- **Desperate Defense**: Dark, slow, minimal filter movement
+
+### Layer 3: Key Moments (Punctuation)
+Adds musical accents for specific events:
+- **Brilliant moves**: Rising filter sweeps, triumphant tones
+- **Blunders**: Descending crashes, dissonant harmonies
+- **Development**: Rising melodic phrases
+- **First Exchange**: Question-answer call-and-response
+- **Mate Sequence**: Dramatic finality (victory fanfare or death knell)
+
+## Configuration & Tweaking
+
+All musical parameters are now in **`synth_config.py`** for easy modification:
+
+```python
+from synth_config import SynthConfig
+
+# Create custom config
+config = SynthConfig()
+
+# Modify parameters
+config.MIXING['drone_level'] = 0.8  # Louder drone
+config.TIMING['section_fade_sec'] = 0.2  # Longer fades
+config.NARRATIVE_BASE_PARAMS['TUMBLING_DEFEAT']['filter_end'] = 500  # Less dark
+
+# Use in composer
+composer = ChessSynthComposer(tags, config=config)
+composer.save()
+```
+
+### Key Configuration Sections
+
+- **`SCALES`**: Musical scales (minor, phrygian, dorian)
+- **`ENVELOPES`**: ADSR presets (percussive, pad, stab, etc.)
+- **`NARRATIVE_BASE_PARAMS`**: Overall game character settings
+- **`SECTION_MODULATIONS`**: Per-section parameter adjustments
+- **`MOMENT_VOICES`**: Synthesis settings for key moments
+- **`SEQUENCER_PATTERNS`**: 16-step MIDI patterns for Layer 3
+- **`MIXING`**: Volume levels for all layers
+- **`TIMING`**: Fade times, gaps, overlaps
+
+## Testing the Synthesizer
+
+```bash
+# Test subtractive synthesis directly
+python3 simple_synth_test.py
+
+# This exercises:
+# - Oscillators (saw, pulse, triangle, sine)
+# - Moog filter with resonance
+# - ADSR envelopes
+# - Supersaw detuning
+```
 
 ## Project Structure
 
 ```
-├── c2m.py              # Main conversion script
-├── config.yaml         # Default configuration
-├── data/               # PGN files and generated output
-├── openings/           # ECO opening database (a.tsv - e.tsv)
-├── Makefile           # Build and utility commands
-└── requirements.txt   # Python dependencies
+├── c2m                      # Main pipeline script
+├── thinking_time.py         # EMT annotation
+├── feature_extractor.py     # Game feature extraction
+├── tagger.py               # Narrative tagging
+├── synth_composer.py       # Main composition (REFACTORED)
+├── synth_config.py         # Configuration hub (NEW)
+├── synth_engine.py         # Synthesis engine (NEW)
+├── synth_narrative.py      # Narrative processes (NEW)
+├── simple_synth_test.py    # Synth testing tool
+├── data/                   # PGN files and generated output
+├── openings/               # ECO opening database
+├── REFACTORING_PLAN.md     # Refactoring documentation
+└── composer_architecture.md # Technical architecture docs
 ```
+
+## Example Output
+
+```
+♫ SUBTRACTIVE SYNTHESIS CHESS MUSIC - THREE LAYER COMPOSITION
+Result: 1-0
+Overall Narrative: TUMBLING_DEFEAT
+Base Synth Patch: supersaw wave
+Filter Evolution: 2500Hz → 300Hz
+Resonance Evolution: 0.8 → 3.5
+
+Synthesizing 5 sections:
+
+  === COMPOSING SECTION: OPENING ===
+    Progress: 0.0%, Duration: 12s
+    Narrative: TUMBLING_DEFEAT / COMPLEX_POSITION (tension: 0.45)
+    Filter: 2500Hz, Resonance: 0.8
+
+    === LAYER 1: BASE DRONE ===
+      Supersaw drone with 3.0 cent detune spread
+
+    === LAYER 2: SECTION PATTERNS ===
+      Generated 24 pattern notes
+
+    === LAYER 3: CONTINUOUS SEQUENCER ===
+      Running continuous sequencer for 12.0s
+      Evolution points: DEVELOPMENT at 3.2s, BLUNDER at 8.1s
+
+✓ Synthesis complete: 67.3 seconds
+Saved: chess_synth.wav
+```
+
+## Musical Features
+
+### Subtractive Synthesis
+- **Band-limited oscillators**: PolyBLEP anti-aliasing for clean waveforms
+- **Moog-style filter**: 4-pole ladder with resonance and soft clipping
+- **Supersaw**: Roland JP-8000 style detuned saw ensemble
+- **ADSR envelopes**: Exponential curves for natural sound
+
+### Musical Mapping
+- **Scales**: A minor, Phrygian (dark), Dorian (bright minor)
+- **Waveforms**: Saw, pulse, triangle, square, sine
+- **Filter ranges**: 20Hz - 20kHz with envelope modulation
+- **Resonance**: 0.0 - 4.0 (up to self-oscillation)
+- **Tempo**: Adaptive based on game narrative (0.7x - 1.3x)
+
+### Spiegel-Inspired Processes
+- **Entropy-based decay**: Mistakes accumulate, system becomes unstable
+- **Momentum building**: Brilliant moves create positive feedback
+- **Equilibrium-seeking**: Quiet games maintain balance with gentle breathing
+
+## Benefits of Refactored Architecture
+
+✓ **Clarity**: Clean separation of synthesis, configuration, and composition
+✓ **Tweakability**: Change parameters in seconds without code search
+✓ **Testability**: Import config, modify values, test instantly
+✓ **Maintainability**: Each module has single responsibility
+✓ **AI-Friendly**: Clear structure for experimentation
 
 ## Dependencies
 
-- `python-chess`: Chess game parsing and analysis
-- `mido`: MIDI file generation
-- `PyYAML`: Configuration file parsing
+### Core Requirements
+- `python-chess >= 1.9.0` - Chess game parsing and analysis
+- `numpy >= 1.20.0` - Array operations and DSP
+- `scipy >= 1.7.0` - Signal processing (filters, waveforms)
 
-### External Tools (for audio conversion)
-- `timidity`: MIDI to WAV conversion
-- `lame`: WAV to MP3 encoding
+### Python Version
+- Python 3.8 or higher
 
-## Examples
+## Technical Details
 
-```bash
-# Basic conversion
-python3 c2m.py data/game.pgn
-# → Creates data/game.mid
+### Audio Specifications
+- **Sample Rate**: 44.1 kHz
+- **Bit Depth**: 16-bit
+- **Channels**: Mono
+- **Format**: WAV (uncompressed PCM)
 
-# Full pipeline to MP3
-python3 c2m.py data/game.pgn
-make to-mp3 MIDI=data/game.mid
-# → Creates data/game.mp3
+### Synthesis Parameters
+- **Filter**: State-variable 4-pole Moog ladder
+- **Anti-aliasing**: PolyBLEP (Polynomial Band-Limited Edge Pulse)
+- **Envelope curves**: Exponential (configurable curve factor)
+- **Supersaw voices**: 7 detuned oscillators (configurable)
+- **Pattern length**: 16 steps (sequencer layer)
 
-# Using Make for everything
-make run PGN=data/game.pgn
-make to-mp3 MIDI=data/game.mid
-```
+## Inspired By
+
+**Laurie Spiegel** - Pioneer of algorithmic composition and creator of Music Mouse, an intelligent instrument that understands musical context and responds to player intent.
+
+> "I automate whatever can be automated to be freer to focus on those aspects of music that can't be automated. The challenge is to figure out which is which." - Laurie Spiegel
 
 ## License
 
 See LICENSE file for details.
+
+## Contributing
+
+The refactored architecture makes contributions much easier:
+- **Add new narrative types**: Edit `synth_config.py` → `NARRATIVE_BASE_PARAMS`
+- **Create new processes**: Subclass `NarrativeProcess` in `synth_narrative.py`
+- **Add moment types**: Edit `MOMENT_VOICES` in `synth_config.py`
+- **Tweak synthesis**: Modify `SubtractiveSynth` in `synth_engine.py`
+
+## Troubleshooting
+
+### Import Errors
+Ensure all modules are in the same directory:
+```bash
+ls synth_*.py
+# Should show: synth_composer.py, synth_config.py, synth_engine.py, synth_narrative.py
+```
+
+### Audio Quality Issues
+Adjust parameters in `synth_config.py`:
+```python
+config.MIXING['master_limiter'] = 0.8  # Reduce if clipping
+config.MIXING['soft_clip_pre'] = 0.7   # More headroom
+```
+
+### Performance
+For faster rendering, reduce:
+- `note_density` in section modulations
+- `filter_chunk_size_samples` in timing config
+- Section durations in tagger output
