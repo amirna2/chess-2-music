@@ -142,6 +142,18 @@ class SynthConfig:
             'detune_end': 5,
             'scale': 'dorian',
         },
+        'DEATH_SPIRAL': {
+            'base_waveform': 'saw',
+            'filter_start': 1800,
+            'filter_end': 400,
+            'resonance_start': 1.5,
+            'resonance_end': 3.0,
+            'tempo_start': 1.0,
+            'tempo_end': 0.6,
+            'detune_start': 5,
+            'detune_end': 18,
+            'scale': 'phrygian',
+        },
         'DEFAULT': {
             'base_waveform': 'saw',
             'filter_start': 1500,

@@ -338,6 +338,162 @@ class ChessSynthComposer:
 
         return section_pattern
 
+    def generate_crushing_attack_pattern(self, section_duration, scale, tension,
+                                         final_filter, filter_env_amount, final_resonance,
+                                         note_duration, modulation, total_samples):
+        """
+        CRUSHING_ATTACK: Generative relentless assault algorithm
+        - State machine: ADVANCE (building pressure), STRIKE (hammer blows), OVERWHELM (climax)
+        - Downward bias (crushing down on opponent)
+        - Random chord stabs (multiple simultaneous notes)
+        - Accelerating rhythm and increasing volume
+        """
+        section_pattern = np.zeros(total_samples)
+        base_note_dur = note_duration * 0.4  # Fast, aggressive
+        current_sample = 0
+
+        # State machine
+        STATE_ADVANCE = 0
+        STATE_STRIKE = 1
+        STATE_OVERWHELM = 2
+        current_state = STATE_ADVANCE
+
+        # Evolving parameters
+        current_note_idx = 7  # Start high (crushing down from above)
+        strike_count = 0  # Consecutive strikes
+
+        while current_sample < total_samples:
+            progress = current_sample / total_samples
+
+            # State transitions
+            if current_state == STATE_ADVANCE:
+                # Build pressure, then strike
+                if np.random.random() < 0.3 + progress * 0.2:  # More strikes as attack intensifies
+                    current_state = STATE_STRIKE
+                    strike_count = np.random.randint(2, 5)  # Multiple hammer blows
+
+            elif current_state == STATE_STRIKE:
+                strike_count -= 1
+                if strike_count <= 0:
+                    if progress > 0.6 and np.random.random() < 0.3:
+                        current_state = STATE_OVERWHELM  # Climax
+                    else:
+                        current_state = STATE_ADVANCE
+
+            elif current_state == STATE_OVERWHELM:
+                # Stay in overwhelm mode once reached
+                pass
+
+            # Note selection based on state
+            if current_state == STATE_ADVANCE:
+                # Downward movement (pressure building)
+                if np.random.random() < 0.7:
+                    current_note_idx = max(0, current_note_idx - np.random.randint(1, 3))
+                else:
+                    current_note_idx = min(7, current_note_idx + 1)  # Occasional upward jab
+
+            elif current_state == STATE_STRIKE:
+                # Hammer on low notes (powerful blows)
+                current_note_idx = np.random.choice([0, 1, 2])  # Low register only
+
+            elif current_state == STATE_OVERWHELM:
+                # Chaotic attacks across entire range
+                current_note_idx = np.random.randint(0, 8)
+
+            # Get base frequency
+            note_freq = scale[current_note_idx]
+
+            # Octave variations (more powerful with wider range)
+            octave_shift = 0.0  # Default no shift
+            if current_state == STATE_STRIKE:
+                # Strike uses lower octave (bass power)
+                if np.random.random() < 0.5:
+                    note_freq *= 0.5
+                    octave_shift = -1.0
+            elif current_state == STATE_OVERWHELM:
+                # Overwhelm uses wide octave range
+                octave_shift = float(np.random.choice([-1, 0, 0, 1]))  # Bias toward higher
+                note_freq *= (2.0 ** octave_shift)
+
+            # Duration varies by state and progress
+            if current_state == STATE_ADVANCE:
+                duration = base_note_dur * np.random.uniform(0.8, 1.2) * (1.0 - progress * 0.3)
+            elif current_state == STATE_STRIKE:
+                # Short, sharp attacks
+                duration = base_note_dur * np.random.uniform(0.3, 0.5)
+            else:  # OVERWHELM
+                # Very fast, relentless
+                duration = base_note_dur * np.random.uniform(0.2, 0.4) * (1.0 - progress * 0.2)
+
+            # Velocity increases with progress and state
+            if current_state == STATE_ADVANCE:
+                velocity = np.random.uniform(0.7, 0.9) * (1.0 + progress * 0.3)
+            elif current_state == STATE_STRIKE:
+                velocity = 1.0  # Maximum power
+            else:  # OVERWHELM
+                velocity = np.random.uniform(0.9, 1.0) * (1.0 + progress * 0.5)
+
+            # Generate main note
+            note_samples = int(duration * self.sample_rate)
+            note_samples = min(note_samples, total_samples - current_sample)
+
+            if note_samples > 0:
+                note_duration_sec = note_samples / self.sample_rate
+
+                # Filter opens more as attack intensifies
+                filter_mult = 1.0 + progress * 2.5
+                if current_state == STATE_STRIKE or current_state == STATE_OVERWHELM:
+                    filter_mult *= 1.5  # Extra brightness on strikes
+
+                resonance_mult = 1.0 + progress * 1.2
+
+                pattern_note = self.synth.create_synth_note(
+                    freq=note_freq,
+                    duration=note_duration_sec,
+                    waveform='saw',  # Aggressive, bright
+                    filter_base=final_filter * filter_mult,
+                    filter_env_amount=filter_env_amount * np.random.uniform(1.0, 1.5),
+                    resonance=final_resonance * resonance_mult,
+                    amp_env=get_envelope('stab', self.config),
+                    filter_env=get_filter_envelope('sweep', self.config)
+                )
+
+                level = self.config.LAYER_MIXING['pattern_note_level'] * velocity
+                end_sample = min(current_sample + len(pattern_note), total_samples)
+                section_pattern[current_sample:end_sample] += pattern_note[:end_sample - current_sample] * level
+
+                # CHORD STABS: Add harmonic notes on strikes and overwhelm
+                if (current_state == STATE_STRIKE or current_state == STATE_OVERWHELM) and np.random.random() < 0.6:
+                    # Add fifth or octave
+                    chord_interval = np.random.choice([4, 7])  # Perfect fourth or fifth
+                    chord_idx = min(7, current_note_idx + chord_interval)
+                    chord_freq = scale[chord_idx] * (2 ** octave_shift if current_state == STATE_OVERWHELM else 1.0)
+
+                    chord_note = self.synth.create_synth_note(
+                        freq=chord_freq,
+                        duration=note_duration_sec,
+                        waveform='saw',
+                        filter_base=final_filter * filter_mult,
+                        filter_env_amount=filter_env_amount * np.random.uniform(1.0, 1.5),
+                        resonance=final_resonance * resonance_mult,
+                        amp_env=get_envelope('stab', self.config),
+                        filter_env=get_filter_envelope('sweep', self.config)
+                    )
+
+                    section_pattern[current_sample:end_sample] += chord_note[:end_sample - current_sample] * level * 0.6
+
+            # Pause between notes (decreases as attack intensifies)
+            if current_state == STATE_ADVANCE:
+                pause_samples = int(base_note_dur * 0.2 * self.sample_rate * (1.0 - progress * 0.5))
+            elif current_state == STATE_STRIKE:
+                pause_samples = int(base_note_dur * 0.05 * self.sample_rate)  # Minimal pause
+            else:  # OVERWHELM
+                pause_samples = int(base_note_dur * 0.02 * self.sample_rate)  # Almost no pause
+
+            current_sample += note_samples + pause_samples
+
+        return section_pattern
+
     def create_evolving_drone(self, drone_freq, section_duration, waveform, current_base,
                               progress, total_sections, total_samples):
         """
@@ -758,6 +914,12 @@ class ChessSynthComposer:
                 )
             elif narrative == 'KING_HUNT':
                 section_pattern = self.generate_king_hunt_pattern(
+                    section_duration, scale, tension,
+                    final_filter, filter_env_amount, final_resonance,
+                    note_duration, modulation, total_samples
+                )
+            elif narrative == 'CRUSHING_ATTACK':
+                section_pattern = self.generate_crushing_attack_pattern(
                     section_duration, scale, tension,
                     final_filter, filter_env_amount, final_resonance,
                     note_duration, modulation, total_samples
