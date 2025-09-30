@@ -5,7 +5,7 @@ Quick testing of basic synth components
 """
 
 import sys
-from synth_composer import SubtractiveSynth
+from synth_engine import SubtractiveSynth
 import tempfile
 import os
 import numpy as np
