@@ -65,7 +65,7 @@ echo ""
 
 # Step 1: Add EMT annotations
 echo "Step 1: Adding elapsed move time annotations..."
-OUTPUT=$(python3 "${SCRIPT_DIR}/thinking-time.py" --in "$INPUT_PGN" --out "$EMT_PGN" 2>&1)
+OUTPUT=$(python3 "${SCRIPT_DIR}/thinking_time.py" --in "$INPUT_PGN" --out "$EMT_PGN" 2>&1)
 EXIT_CODE=$?
 
 echo "$OUTPUT"
@@ -108,12 +108,25 @@ else
     exit 1
 fi
 
+# Step 4: Synthesize music
+echo ""
+echo "Step 4: Synthesizing music..."
+AUDIO_WAV="chess_synth.wav"
+python3 "${SCRIPT_DIR}/synth_composer.py" "$TAGS_JSON"
+if [ $? -eq 0 ]; then
+    echo "✓ Audio synthesis completed: $AUDIO_WAV"
+else
+    echo "✗ Audio synthesis failed"
+    exit 1
+fi
+
 echo ""
 echo "=== Pipeline Complete ==="
 echo "Generated files:"
 echo "  - $EMT_PGN (PGN with thinking times)"
 echo "  - $FEATURES_JSON (structured game features)"
 echo "  - $TAGS_JSON (narrative structure)"
+echo "  - $AUDIO_WAV (synthesized audio)"
 echo ""
 
 # Show brief summary of results

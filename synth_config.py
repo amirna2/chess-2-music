@@ -1,6 +1,22 @@
 """
 SYNTH_CONFIG - Centralized Configuration for Chess Music Synthesis
 All musical parameters, presets, and mappings in one place
+
+IMPORTANT: Tagger Moment Types vs. Internal Voice Mappings
+-----------------------------------------------------------
+The tagger (tagger.py) produces simple moment types like:
+    - BLUNDER, BRILLIANT, MISTAKE, INACCURACY, STRONG
+    - MATE_SEQUENCE, TACTICAL_SEQUENCE, KING_ATTACK
+    - DEVELOPMENT, FIRST_EXCHANGE
+    - CHECKMATE, CASTLING, PROMOTION, etc.
+
+The composer (synth_composer.py) uses context-aware mapping:
+    - Takes tagger type (e.g., "BLUNDER")
+    - Combines with overall_narrative (e.g., "TUMBLING_DEFEAT")
+    - Looks up voice (e.g., "BLUNDER_IN_DEFEAT")
+
+This allows the SAME chess event to sound different in different game contexts!
+Example: A blunder in a defeat sounds like doom, but in a masterpiece it's a brief disturbance.
 """
 
 from dataclasses import dataclass, field
@@ -114,6 +130,18 @@ class SynthConfig:
             'detune_end': 0,
             'scale': 'dorian',
         },
+        'QUIET_PRECISION': {
+            'base_waveform': 'triangle',
+            'filter_start': 600,
+            'filter_end': 2500,
+            'resonance_start': 0.8,
+            'resonance_end': 1.2,
+            'tempo_start': 0.9,
+            'tempo_end': 1.0,
+            'detune_start': 2,
+            'detune_end': 5,
+            'scale': 'dorian',
+        },
         'DEFAULT': {
             'base_waveform': 'saw',
             'filter_start': 1500,
@@ -143,7 +171,7 @@ class SynthConfig:
             'resonance_add': 1.0,
             'tempo_mult': 1.2,
             'note_density': 1.5,
-            'filter_env_amount': 6000,
+            'filter_env_amount': 2000,
         },
         'MATING_ATTACK': {
             'filter_mult': 1.3,
@@ -206,7 +234,7 @@ class SynthConfig:
             'resonance_add': 0.5,
             'tempo_mult': 1.0,
             'note_density': 1.0,
-            'filter_env_amount': 3000,
+            'filter_env_amount': 1200,
         },
         'DEFAULT': {
             'filter_mult': 1.0,
@@ -218,7 +246,10 @@ class SynthConfig:
     })
 
     # === KEY MOMENT VOICE PARAMETERS ===
-    # Organized by moment type and narrative context
+    # NOTE: These are INTERNAL mappings used by the composer
+    # The tagger produces simple types (BLUNDER, BRILLIANT, etc.)
+    # The composer maps them to context-aware voices based on overall_narrative
+    # Example: BLUNDER + TUMBLING_DEFEAT context → BLUNDER_IN_DEFEAT voice
     MOMENT_VOICES: Dict[str, Dict] = field(default_factory=lambda: {
         'BLUNDER_IN_DEFEAT': {
             'freq': 55,
@@ -474,13 +505,21 @@ class SynthConfig:
         'sequencer_lfo_frequency': 0.25,
     })
 
+    # === LAYER MUTING (True = enabled, False = muted) ===
+    LAYER_ENABLE: Dict[str, bool] = field(default_factory=lambda: {
+        'drone': True,      # Layer 1: Base drone (overall narrative)
+        'patterns': True,   # Layer 2: Rhythmic patterns (section narrative)
+        'sequencer': True,  # Layer 3: Continuous sequencer
+        'moments': True,    # Key moment punctuation
+    })
+
     # === MIXING LEVELS ===
     MIXING: Dict[str, float] = field(default_factory=lambda: {
-        'drone_level': 0.6,
+        'drone_level': 0.3,
         'pattern_level': 0.4,
         'sequencer_level': 0.5,
-        'moment_level': 0.7,
-        'section_level': 0.3,
+        'moment_level': 0.8,
+        'section_level': 0.7,
         'master_limiter': 0.9,
         'sidechain_amount': 0.3,
         'supersaw_compression': 0.8,

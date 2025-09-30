@@ -391,79 +391,100 @@ class ChessSynthComposer:
         total_samples = int(section_duration * self.sample_rate)
 
         # LAYER 1: Generate BASE DRONE
-        print(f"\n    === LAYER 1: BASE DRONE ===")
-        drone_freq = scale[0] / 2
-
-        if waveform == 'supersaw':
-            detune_spread = current_base['detune']
-            detune_cents = [-detune_spread*2, -detune_spread, -detune_spread/2,
-                          detune_spread/2, detune_spread, detune_spread*2]
-
-            base_drone = self.synth.supersaw(
-                freq=drone_freq,
-                duration=section_duration,
-                detune_cents=detune_cents,
-                filter_base=final_filter,
-                filter_env_amount=filter_env_amount * 0.3,
-                resonance=final_resonance,
-                amp_env=get_envelope('pad', self.config),
-                filter_env=get_filter_envelope('minimal', self.config)
-            )
+        if self.config.LAYER_ENABLE['drone']:
+            print(f"\n    === LAYER 1: BASE DRONE ===")
         else:
-            base_drone = self.synth.create_synth_note(
-                freq=drone_freq,
-                duration=section_duration,
-                waveform=waveform,
-                filter_base=final_filter,
-                filter_env_amount=filter_env_amount * 0.3,
-                resonance=final_resonance,
-                amp_env=get_envelope('pad', self.config),
-                filter_env=get_filter_envelope('minimal', self.config)
-            )
+            print(f"\n    === LAYER 1: BASE DRONE === (muted)")
 
-        # Apply LFO
-        lfo_freq = self.config.TIMING['lfo_frequency']
-        lfo = signal.sawtooth(2 * np.pi * lfo_freq * np.arange(len(base_drone)) / self.sample_rate, width=0.5)
-        base_drone = base_drone * (1 + lfo * self.config.LAYER_MIXING['lfo_modulation_depth'])
+        drone_freq = scale[0] / 2
+        base_drone = np.zeros(total_samples)
+
+        if self.config.LAYER_ENABLE['drone']:
+            if waveform == 'supersaw':
+                detune_spread = current_base['detune']
+                detune_cents = [-detune_spread*2, -detune_spread, -detune_spread/2,
+                              detune_spread/2, detune_spread, detune_spread*2]
+
+                base_drone = self.synth.supersaw(
+                    freq=drone_freq,
+                    duration=section_duration,
+                    detune_cents=detune_cents,
+                    filter_base=final_filter,
+                    filter_env_amount=filter_env_amount * 0.3,
+                    resonance=final_resonance,
+                    amp_env=get_envelope('pad', self.config),
+                    filter_env=get_filter_envelope('minimal', self.config)
+                )
+            else:
+                base_drone = self.synth.create_synth_note(
+                    freq=drone_freq,
+                    duration=section_duration,
+                    waveform=waveform,
+                    filter_base=final_filter,
+                    filter_env_amount=filter_env_amount * 0.3,
+                    resonance=final_resonance,
+                    amp_env=get_envelope('pad', self.config),
+                    filter_env=get_filter_envelope('minimal', self.config)
+                )
+
+            # Apply LFO
+            lfo_freq = self.config.TIMING['lfo_frequency']
+            lfo = signal.sawtooth(2 * np.pi * lfo_freq * np.arange(len(base_drone)) / self.sample_rate, width=0.5)
+            base_drone = base_drone * (1 + lfo * self.config.LAYER_MIXING['lfo_modulation_depth'])
 
         # LAYER 2: Generate RHYTHMIC PATTERNS
-        print(f"\n    === LAYER 2: SECTION PATTERNS ===")
+        if self.config.LAYER_ENABLE['patterns']:
+            print(f"\n    === LAYER 2: SECTION PATTERNS ===")
+        else:
+            print(f"\n    === LAYER 2: SECTION PATTERNS === (muted)")
+
         section_pattern = np.zeros(total_samples)
         samples_per_note = int(note_duration * self.sample_rate)
 
-        for i in range(num_notes):
-            start_sample = i * samples_per_note
-            end_sample = min(start_sample + samples_per_note, total_samples)
+        if self.config.LAYER_ENABLE['patterns']:
+            for i in range(num_notes):
+                start_sample = i * samples_per_note
+                end_sample = min(start_sample + samples_per_note, total_samples)
 
-            if start_sample < total_samples:
-                note_freq = pattern[i % len(pattern)]
+                if start_sample < total_samples:
+                    note_freq = pattern[i % len(pattern)]
 
-                # Octave variations
-                if i % pattern_config['octave_up_mod'] == 0:
-                    note_freq *= 2
-                elif i % pattern_config['octave_down_mod'] == 0:
-                    note_freq *= 0.5
+                    # Octave variations
+                    if i % pattern_config['octave_up_mod'] == 0:
+                        note_freq *= 2
+                    elif i % pattern_config['octave_down_mod'] == 0:
+                        note_freq *= 0.5
 
-                note_samples = end_sample - start_sample
-                note_duration_sec = note_samples / self.sample_rate
+                    note_samples = end_sample - start_sample
+                    note_duration_sec = note_samples / self.sample_rate
 
-                pattern_note = self.synth.create_synth_note(
-                    freq=note_freq,
-                    duration=note_duration_sec,
-                    waveform='saw' if tension > 0.5 else 'pulse',
-                    filter_base=final_filter * 1.5,
-                    filter_env_amount=filter_env_amount,
-                    resonance=final_resonance * 0.7,
-                    amp_env=get_envelope('percussive', self.config),
-                    filter_env=get_filter_envelope('smooth', self.config)
-                )
+                    pattern_note = self.synth.create_synth_note(
+                        freq=note_freq,
+                        duration=note_duration_sec,
+                        waveform='saw' if tension > 0.5 else 'pulse',
+                        filter_base=final_filter * 1.5,
+                        filter_env_amount=filter_env_amount,
+                        resonance=final_resonance * 0.7,
+                        amp_env=get_envelope('percussive', self.config),
+                        filter_env=get_filter_envelope('smooth', self.config)
+                    )
 
-                if len(pattern_note) > 0:
-                    actual_samples = min(len(pattern_note), end_sample - start_sample)
-                    section_pattern[start_sample:start_sample + actual_samples] += pattern_note[:actual_samples] * self.config.LAYER_MIXING['pattern_note_level']
+                    if len(pattern_note) > 0:
+                        actual_samples = min(len(pattern_note), end_sample - start_sample)
+                        section_pattern[start_sample:start_sample + actual_samples] += pattern_note[:actual_samples] * self.config.LAYER_MIXING['pattern_note_level']
 
-        # MIX LAYERS 1 AND 2
-        mixed_signal = base_drone * self.config.LAYER_MIXING['drone_in_supersaw'] + section_pattern * self.config.LAYER_MIXING['pattern_in_supersaw']
+        # MIX LAYERS 1 AND 2 (with auto-gain compensation for soloing)
+        active_layers = sum([
+            self.config.LAYER_ENABLE['drone'],
+            self.config.LAYER_ENABLE['patterns'],
+            self.config.LAYER_ENABLE['sequencer']
+        ])
+        # If only 1 or 2 layers active, boost volume so they're audible
+        solo_boost = 2.5 if active_layers == 1 else (1.5 if active_layers == 2 else 1.0)
+
+        drone_contribution = base_drone * self.config.LAYER_MIXING['drone_in_supersaw'] * solo_boost
+        pattern_contribution = section_pattern * self.config.LAYER_MIXING['pattern_in_supersaw'] * solo_boost
+        mixed_signal = drone_contribution + pattern_contribution
 
         # Apply section envelope
         section_envelope = np.ones(total_samples)
@@ -474,154 +495,161 @@ class ChessSynthComposer:
         samples = mixed_signal * section_envelope * self.config.MIXING['section_level'] * volume_multiplier
 
         # LAYER 3: CONTINUOUS SEQUENCER
-        print(f"\n    === LAYER 3: CONTINUOUS SEQUENCER ===")
-
-        bpm = section.get('bpm', self.config.DEFAULT_BPM)
-        beat_duration = 60.0 / bpm
-        sixteenth_duration = beat_duration / 4
+        if self.config.LAYER_ENABLE['sequencer']:
+            print(f"\n    === LAYER 3: CONTINUOUS SEQUENCER ===")
+        else:
+            print(f"\n    === LAYER 3: CONTINUOUS SEQUENCER === (muted)")
 
         sequencer_layer = np.zeros_like(samples)
+        filtered_sequence = np.zeros_like(samples)
 
-        def midi_to_freq(midi_note):
-            return 440.0 * 2**((midi_note - 69) / 12.0)
+        if self.config.LAYER_ENABLE['sequencer']:
+            bpm = section.get('bpm', self.config.DEFAULT_BPM)
+            beat_duration = 60.0 / bpm
+            sixteenth_duration = beat_duration / 4
 
-        # Initialize pattern evolution
-        current_pattern = self.config.SEQUENCER_PATTERNS['PULSE']
-        current_root = 60
-        filter_frequency = 1000
-        filter_target = 3000
-        development_count = 0
+            def midi_to_freq(midi_note):
+                return 440.0 * 2**((midi_note - 69) / 12.0)
 
-        # Process evolution points
-        evolution_points = []
-        for moment in section.get('key_moments', []):
-            moment_time = moment.get('second', moment.get('ply', 0))
-            duration_str = section.get('duration', '0:10')
-            section_start = int(duration_str.split(':')[0]) if ':' in duration_str else 0
-            relative_time = moment_time - section_start
+            # Initialize pattern evolution
+            current_pattern = self.config.SEQUENCER_PATTERNS['PULSE']
+            current_root = 60
+            filter_frequency = 1000
+            filter_target = 3000
+            development_count = 0
 
-            if 0 <= relative_time <= section_duration:
-                evolution_points.append({
-                    'time': relative_time,
-                    'type': moment.get('type', 'UNKNOWN'),
-                    'sample_pos': int(relative_time * self.sample_rate)
-                })
+            # Process evolution points
+            evolution_points = []
+            for moment in section.get('key_moments', []):
+                moment_time = moment.get('second', moment.get('ply', 0))
+                duration_str = section.get('duration', '0:10')
+                section_start = int(duration_str.split(':')[0]) if ':' in duration_str else 0
+                relative_time = moment_time - section_start
 
-        evolution_points.sort(key=lambda x: x['time'])
-        next_evolution_idx = 0
+                if 0 <= relative_time <= section_duration:
+                    evolution_points.append({
+                        'time': relative_time,
+                        'type': moment.get('type', 'UNKNOWN'),
+                        'sample_pos': int(relative_time * self.sample_rate)
+                    })
 
-        # Generate sequence
-        samples_per_step = int(sixteenth_duration * self.sample_rate)
-        total_steps = int(section_duration / sixteenth_duration)
+            evolution_points.sort(key=lambda x: x['time'])
+            next_evolution_idx = 0
 
-        full_sequence = []
-        for i in range(total_steps):
-            step_index = i % 16
-            note_interval = current_pattern[step_index]
+            # Generate sequence
+            samples_per_step = int(sixteenth_duration * self.sample_rate)
+            total_steps = int(section_duration / sixteenth_duration)
 
-            current_time = i * sixteenth_duration
-            current_sample = int(current_time * self.sample_rate)
+            full_sequence = []
+            for i in range(total_steps):
+                step_index = i % 16
+                note_interval = current_pattern[step_index]
 
-            # Check for pattern evolution
-            if next_evolution_idx < len(evolution_points):
-                if current_sample >= evolution_points[next_evolution_idx]['sample_pos']:
-                    evolution = evolution_points[next_evolution_idx]
-                    moment_type = evolution['type']
+                current_time = i * sixteenth_duration
+                current_sample = int(current_time * self.sample_rate)
 
-                    if moment_type in self.config.SEQUENCER_PATTERNS:
-                        if moment_type == 'DEVELOPMENT':
-                            development_count += 1
-                            if development_count == 1:
-                                current_pattern = self.config.SEQUENCER_PATTERNS['DEVELOPMENT']['early']
-                            elif development_count == 2:
-                                current_pattern = self.config.SEQUENCER_PATTERNS['DEVELOPMENT']['mid']
+                # Check for pattern evolution
+                if next_evolution_idx < len(evolution_points):
+                    if current_sample >= evolution_points[next_evolution_idx]['sample_pos']:
+                        evolution = evolution_points[next_evolution_idx]
+                        moment_type = evolution['type']
+
+                        if moment_type in self.config.SEQUENCER_PATTERNS:
+                            if moment_type == 'DEVELOPMENT':
+                                development_count += 1
+                                if development_count == 1:
+                                    current_pattern = self.config.SEQUENCER_PATTERNS['DEVELOPMENT']['early']
+                                elif development_count == 2:
+                                    current_pattern = self.config.SEQUENCER_PATTERNS['DEVELOPMENT']['mid']
+                                else:
+                                    current_pattern = self.config.SEQUENCER_PATTERNS['DEVELOPMENT']['full']
+                                current_root = min(current_root + 7, 72)
+                                filter_target = min(filter_target + 500, 5000)
                             else:
-                                current_pattern = self.config.SEQUENCER_PATTERNS['DEVELOPMENT']['full']
-                            current_root = min(current_root + 7, 72)
-                            filter_target = min(filter_target + 500, 5000)
-                        else:
-                            current_pattern = self.config.SEQUENCER_PATTERNS[moment_type]
+                                current_pattern = self.config.SEQUENCER_PATTERNS[moment_type]
 
-                            # Adjust root and filter based on moment type
-                            if moment_type in ['BLUNDER', 'MISTAKE']:
-                                current_root = max(current_root - 12, 36)
-                                filter_target = 1000
-                            elif moment_type in ['BRILLIANT', 'STRONG']:
-                                current_root = min(current_root + 12, 84)
-                                filter_target = 5000
+                                # Adjust root and filter based on moment type
+                                if moment_type in ['BLUNDER', 'MISTAKE']:
+                                    current_root = max(current_root - 12, 36)
+                                    filter_target = 1000
+                                elif moment_type in ['BRILLIANT', 'STRONG']:
+                                    current_root = min(current_root + 12, 84)
+                                    filter_target = 5000
 
-                    next_evolution_idx += 1
+                        next_evolution_idx += 1
 
-            if note_interval is None:
-                midi_note = None
-            else:
-                midi_note = current_root + note_interval
+                if note_interval is None:
+                    midi_note = None
+                else:
+                    midi_note = current_root + note_interval
 
-            full_sequence.append(midi_note)
-            filter_frequency += (filter_target - filter_frequency) * 0.02
+                full_sequence.append(midi_note)
+                filter_frequency += (filter_target - filter_frequency) * 0.02
 
-        # Generate audio from sequence
-        for i, midi_note in enumerate(full_sequence):
-            if i * samples_per_step >= len(sequencer_layer):
-                break
+            # Generate audio from sequence
+            for i, midi_note in enumerate(full_sequence):
+                if i * samples_per_step >= len(sequencer_layer):
+                    break
 
-            if midi_note is None:
-                continue
+                if midi_note is None:
+                    continue
 
-            freq = midi_to_freq(midi_note)
+                freq = midi_to_freq(midi_note)
 
-            note_audio = self.synth.supersaw(
-                freq,
-                sixteenth_duration,
-                detune_cents=self.config.SEQUENCER_SYNTH['detune_cents'],
-                filter_base=self.config.SEQUENCER_SYNTH['filter_base_start'] + (i * self.config.SEQUENCER_SYNTH['filter_increment_per_step']),
-                filter_env_amount=self.config.SEQUENCER_SYNTH['filter_env_amount'],
-                resonance=self.config.SEQUENCER_SYNTH['resonance'],
-                amp_env=self.config.SEQUENCER_SYNTH['amp_env'],
-                filter_env=self.config.SEQUENCER_SYNTH['filter_env']
-            )
+                note_audio = self.synth.supersaw(
+                    freq,
+                    sixteenth_duration,
+                    detune_cents=self.config.SEQUENCER_SYNTH['detune_cents'],
+                    filter_base=self.config.SEQUENCER_SYNTH['filter_base_start'] + (i * self.config.SEQUENCER_SYNTH['filter_increment_per_step']),
+                    filter_env_amount=self.config.SEQUENCER_SYNTH['filter_env_amount'],
+                    resonance=self.config.SEQUENCER_SYNTH['resonance'],
+                    amp_env=self.config.SEQUENCER_SYNTH['amp_env'],
+                    filter_env=self.config.SEQUENCER_SYNTH['filter_env']
+                )
 
-            start_pos = int(i * samples_per_step * self.config.TIMING['sequencer_overlap'])
-            end_pos = min(start_pos + len(note_audio), len(sequencer_layer))
+                start_pos = int(i * samples_per_step * self.config.TIMING['sequencer_overlap'])
+                end_pos = min(start_pos + len(note_audio), len(sequencer_layer))
 
-            if end_pos > start_pos:
-                sequencer_layer[start_pos:end_pos] += note_audio[:end_pos-start_pos] * self.config.LAYER_MIXING['sequencer_note_level']
+                if end_pos > start_pos:
+                    sequencer_layer[start_pos:end_pos] += note_audio[:end_pos-start_pos] * self.config.LAYER_MIXING['sequencer_note_level']
 
-        # Apply global filter sweep
-        sweep_length = len(sequencer_layer)
-        filter_sweep = np.zeros(sweep_length)
+            # Apply global filter sweep
+            sweep_length = len(sequencer_layer)
+            filter_sweep = np.zeros(sweep_length)
 
-        for i in range(sweep_length):
-            progress_local = i / sweep_length
-            lfo = np.sin(2 * np.pi * self.config.SEQUENCER_SYNTH['global_filter_lfo_amount'] * progress_local)
-            filter_sweep[i] = self.config.SEQUENCER_SYNTH['global_filter_base'] + self.config.SEQUENCER_SYNTH['global_filter_lfo_amount'] * lfo + self.config.SEQUENCER_SYNTH['global_filter_sweep_amount'] * progress_local
+            for i in range(sweep_length):
+                progress_local = i / sweep_length
+                lfo = np.sin(2 * np.pi * self.config.SEQUENCER_SYNTH['global_filter_lfo_amount'] * progress_local)
+                filter_sweep[i] = self.config.SEQUENCER_SYNTH['global_filter_base'] + self.config.SEQUENCER_SYNTH['global_filter_lfo_amount'] * lfo + self.config.SEQUENCER_SYNTH['global_filter_sweep_amount'] * progress_local
 
-        filtered_sequence = np.zeros_like(sequencer_layer)
-        chunk_size = int(self.config.TIMING['chunk_size_samples'])
-        for i in range(0, len(sequencer_layer), chunk_size):
-            chunk_end = min(i + chunk_size, len(sequencer_layer))
-            chunk = sequencer_layer[i:chunk_end]
+            filtered_sequence = np.zeros_like(sequencer_layer)
+            chunk_size = int(self.config.TIMING['chunk_size_samples'])
+            for i in range(0, len(sequencer_layer), chunk_size):
+                chunk_end = min(i + chunk_size, len(sequencer_layer))
+                chunk = sequencer_layer[i:chunk_end]
 
-            avg_cutoff = np.mean(filter_sweep[i:chunk_end])
+                avg_cutoff = np.mean(filter_sweep[i:chunk_end])
 
-            if len(chunk) > 0:
-                filtered_chunk = self.synth.moog_filter(chunk, cutoff_hz=avg_cutoff, resonance=self.config.SEQUENCER_SYNTH['global_filter_resonance'])
-                filtered_sequence[i:chunk_end] = filtered_chunk
+                if len(chunk) > 0:
+                    filtered_chunk = self.synth.moog_filter(chunk, cutoff_hz=avg_cutoff, resonance=self.config.SEQUENCER_SYNTH['global_filter_resonance'])
+                    filtered_sequence[i:chunk_end] = filtered_chunk
 
-        # Apply sidechain compression
-        sequencer_envelope = np.abs(filtered_sequence)
-        smoothing = int(self.config.SEQUENCER_SYNTH['smoothing_window_sec'] * self.sample_rate)
-        if smoothing > 0:
-            sequencer_envelope = np.convolve(sequencer_envelope, np.ones(smoothing) / smoothing, mode='same')
+            # Apply sidechain compression
+            sequencer_envelope = np.abs(filtered_sequence)
+            smoothing = int(self.config.SEQUENCER_SYNTH['smoothing_window_sec'] * self.sample_rate)
+            if smoothing > 0:
+                sequencer_envelope = np.convolve(sequencer_envelope, np.ones(smoothing) / smoothing, mode='same')
 
-        max_env = np.max(sequencer_envelope)
-        if max_env > 0:
-            sequencer_envelope = sequencer_envelope / max_env
+            max_env = np.max(sequencer_envelope)
+            if max_env > 0:
+                sequencer_envelope = sequencer_envelope / max_env
 
-        ducking = 1.0 - (sequencer_envelope * self.config.MIXING['ducking_amount'])
-        samples = samples * ducking
+            ducking = 1.0 - (sequencer_envelope * self.config.MIXING['ducking_amount'])
+            samples = samples * ducking
 
-        samples = samples + filtered_sequence * self.config.MIXING['filtered_sequence_level']
+        # Add Layer 3 (sequencer) if enabled
+        if self.config.LAYER_ENABLE['sequencer']:
+            samples = samples + filtered_sequence * self.config.MIXING['filtered_sequence_level']
 
         # Soft clipping
         samples = np.tanh(samples * self.config.MIXING['soft_clip_pre']) * self.config.MIXING['soft_clip_post']
@@ -673,15 +701,57 @@ class ChessSynthComposer:
 
 
 def main():
-    if len(sys.argv) < 2:
-        print("Usage: python synth_composer.py tags.json")
-        sys.exit(1)
+    import argparse
 
-    with open(sys.argv[1], 'r') as f:
+    parser = argparse.ArgumentParser(description='Synthesize chess game music')
+    parser.add_argument('tags_file', help='JSON file with narrative tags')
+    parser.add_argument('--only-layer', nargs='+', type=int, choices=[1, 2, 3],
+                        help='Only enable specific layers (1=drone, 2=patterns, 3=sequencer). Example: --only-layer 1 3')
+    parser.add_argument('--only-section', nargs='+',
+                        help='Only render specific sections by name. Example: --only-section OPENING MIDDLEGAME_1')
+    parser.add_argument('-o', '--output', default='chess_synth.wav', help='Output filename')
+
+    args = parser.parse_args()
+
+    with open(args.tags_file, 'r') as f:
         tags = json.load(f)
 
-    composer = ChessSynthComposer(tags)
-    composer.save()
+    # Create config with layer muting
+    from synth_config import SynthConfig
+    config = SynthConfig()
+
+    # Handle layer filtering
+    if args.only_layer:
+        # Disable all layers first
+        config.LAYER_ENABLE['drone'] = False
+        config.LAYER_ENABLE['patterns'] = False
+        config.LAYER_ENABLE['sequencer'] = False
+
+        # Enable only requested layers
+        if 1 in args.only_layer:
+            config.LAYER_ENABLE['drone'] = True
+        if 2 in args.only_layer:
+            config.LAYER_ENABLE['patterns'] = True
+        if 3 in args.only_layer:
+            config.LAYER_ENABLE['sequencer'] = True
+
+    # Handle section filtering
+    if args.only_section:
+        # Filter sections to only include requested ones
+        section_names_upper = [s.upper() for s in args.only_section]
+        original_sections = tags.get('sections', [])
+        filtered_sections = [s for s in original_sections if s.get('name', '').upper() in section_names_upper]
+
+        if not filtered_sections:
+            print(f"Warning: No sections matched {args.only_section}")
+            print(f"Available sections: {[s.get('name') for s in original_sections]}")
+            sys.exit(1)
+
+        tags['sections'] = filtered_sections
+        print(f"Rendering {len(filtered_sections)} section(s): {[s.get('name') for s in filtered_sections]}")
+
+    composer = ChessSynthComposer(tags, config=config)
+    composer.save(args.output)
 
 
 if __name__ == '__main__':
