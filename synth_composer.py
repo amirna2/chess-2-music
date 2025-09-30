@@ -86,6 +86,84 @@ class ChessSynthComposer:
         else:
             return 10
 
+    def create_evolving_drone(self, drone_freq, section_duration, waveform, current_base,
+                              progress, total_sections, total_samples):
+        """
+        Create a multi-timescale evolving drone with:
+        - Multiple detuned oscillators with time-varying detune
+        - MACRO evolution: Linear filter sweep across entire section
+        - MESO evolution: Slow LFO cycles (30-50 seconds)
+        - MICRO evolution: Fast LFO shimmer (10 seconds)
+        """
+        # Generate multiple detuned oscillators with FIXED detune spread
+        num_voices = 7
+        oscillators = []
+
+        for v in range(num_voices):
+            # Fixed detune per voice (in cents)
+            detune_cents = (v - 3) * current_base['detune'] / 3
+            detune_hz = drone_freq * (2 ** (detune_cents / 1200.0) - 1.0)
+
+            osc = self.synth.oscillator(drone_freq + detune_hz, section_duration, waveform)
+
+            # Apply time-varying amplitude modulation to create beating
+            detune_lfo = np.sin(2 * np.pi * 0.03 * np.arange(len(osc)) / self.sample_rate + v * 0.5)
+            osc = osc * (1.0 + detune_lfo * 0.1)  # ±10% amplitude modulation
+
+            oscillators.append(osc)
+
+        # Mix oscillators
+        base_osc = np.sum(oscillators, axis=0) / num_voices
+
+        # Create three-timescale LFO system
+        section_progress = np.linspace(0, 1, len(base_osc))
+        slow_lfo = np.sin(2 * np.pi * 0.02 * np.arange(len(base_osc)) / self.sample_rate)
+        fast_lfo = signal.sawtooth(2 * np.pi * 0.1 * np.arange(len(base_osc)) / self.sample_rate, width=0.5)
+
+        # Get filter parameters
+        params_start = self.interpolate_base_params(progress)
+        params_end = self.interpolate_base_params(min(1.0, progress + (1.0 / total_sections)))
+        filter_start = params_start['filter']
+        filter_end = params_end['filter']
+        resonance_start = params_start['resonance']
+        resonance_end = params_end['resonance']
+
+        # Apply filter with multi-timescale modulation
+        base_drone = np.zeros_like(base_osc)
+        chunk_size = 512
+
+        for i in range(0, len(base_osc), chunk_size):
+            end = min(i + chunk_size, len(base_osc))
+            chunk = base_osc[i:end]
+
+            # MACRO: Linear evolution across section
+            macro_progress = section_progress[i]
+            base_cutoff = filter_start + (filter_end - filter_start) * macro_progress
+            base_resonance = resonance_start + (resonance_end - resonance_start) * macro_progress
+
+            # MESO: Slow LFO (30-50 second cycles)
+            meso_mod = slow_lfo[i] * 500
+
+            # MICRO: Fast LFO (10 second cycles)
+            micro_mod = fast_lfo[i] * 100
+
+            # Combine all timescales
+            current_cutoff = base_cutoff + meso_mod + micro_mod
+            current_resonance = base_resonance + slow_lfo[i] * 0.3
+
+            current_cutoff = np.clip(current_cutoff, 20, self.synth.nyquist * 0.95)
+            current_resonance = np.clip(current_resonance, 0.1, 4.0)
+
+            # Apply filter
+            filtered_chunk = self.synth.moog_filter(chunk, current_cutoff, current_resonance)
+            base_drone[i:end] = filtered_chunk
+
+        # Apply amplitude envelope
+        amp_env = self.synth.adsr_envelope(len(base_drone), *get_envelope('pad', self.config))
+        base_drone = base_drone * amp_env
+
+        return base_drone
+
     def create_moment_voice(self, moment, current_params, progress):
         """LAYER 3: Key moments as additional synth voices - context-aware"""
 
@@ -400,37 +478,15 @@ class ChessSynthComposer:
         base_drone = np.zeros(total_samples)
 
         if self.config.LAYER_ENABLE['drone']:
-            if waveform == 'supersaw':
-                detune_spread = current_base['detune']
-                detune_cents = [-detune_spread*2, -detune_spread, -detune_spread/2,
-                              detune_spread/2, detune_spread, detune_spread*2]
-
-                base_drone = self.synth.supersaw(
-                    freq=drone_freq,
-                    duration=section_duration,
-                    detune_cents=detune_cents,
-                    filter_base=final_filter,
-                    filter_env_amount=filter_env_amount * 0.3,
-                    resonance=final_resonance,
-                    amp_env=get_envelope('pad', self.config),
-                    filter_env=get_filter_envelope('minimal', self.config)
-                )
-            else:
-                base_drone = self.synth.create_synth_note(
-                    freq=drone_freq,
-                    duration=section_duration,
-                    waveform=waveform,
-                    filter_base=final_filter,
-                    filter_env_amount=filter_env_amount * 0.3,
-                    resonance=final_resonance,
-                    amp_env=get_envelope('pad', self.config),
-                    filter_env=get_filter_envelope('minimal', self.config)
-                )
-
-            # Apply LFO
-            lfo_freq = self.config.TIMING['lfo_frequency']
-            lfo = signal.sawtooth(2 * np.pi * lfo_freq * np.arange(len(base_drone)) / self.sample_rate, width=0.5)
-            base_drone = base_drone * (1 + lfo * self.config.LAYER_MIXING['lfo_modulation_depth'])
+            base_drone = self.create_evolving_drone(
+                drone_freq=drone_freq,
+                section_duration=section_duration,
+                waveform=waveform,
+                current_base=current_base,
+                progress=progress,
+                total_sections=total_sections,
+                total_samples=total_samples
+            )
 
         # LAYER 2: Generate RHYTHMIC PATTERNS
         if self.config.LAYER_ENABLE['patterns']:
