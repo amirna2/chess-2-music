@@ -86,6 +86,242 @@ class ChessSynthComposer:
         else:
             return 10
 
+    def generate_complex_struggle_pattern(self, section_duration, scale, tension,
+                                          final_filter, filter_env_amount, final_resonance,
+                                          note_duration, modulation, total_samples):
+        """
+        COMPLEX_STRUGGLE: Generative Markov chain - cautious random walk
+        - Probabilistic note selection (prefers returning to tonic)
+        - Random walk with gravity toward root
+        - Irregular durations based on random choices
+        - Evolving hesitation (more pauses as tension builds)
+        """
+        section_pattern = np.zeros(total_samples)
+
+        # Markov chain: probability of next note based on current note
+        # Rows = current note, columns = next note probabilities
+        # Higher weight on returning to tonic (index 0)
+        transition_matrix = np.array([
+            [0.4, 0.3, 0.2, 0.1, 0.0, 0.0, 0.0, 0.0],  # From tonic: likely stay nearby
+            [0.5, 0.1, 0.2, 0.1, 0.1, 0.0, 0.0, 0.0],  # From 1: pull back to tonic
+            [0.4, 0.2, 0.1, 0.2, 0.1, 0.0, 0.0, 0.0],  # From 2: pull back to tonic
+            [0.3, 0.1, 0.2, 0.1, 0.2, 0.1, 0.0, 0.0],  # From 3: can go either way
+            [0.2, 0.0, 0.1, 0.2, 0.1, 0.2, 0.2, 0.0],  # From 4: mid-range
+            [0.1, 0.0, 0.0, 0.1, 0.3, 0.2, 0.2, 0.1],  # From 5: upper range
+            [0.2, 0.0, 0.0, 0.1, 0.2, 0.2, 0.1, 0.2],  # From 6: pull back down
+            [0.3, 0.0, 0.0, 0.0, 0.1, 0.2, 0.2, 0.2],  # From 7: strong pull to descend
+        ])
+
+        # Normalize rows to sum to 1
+        for i in range(len(transition_matrix)):
+            row_sum = np.sum(transition_matrix[i])
+            if row_sum > 0:
+                transition_matrix[i] /= row_sum
+
+        # State: current position in scale
+        current_note_idx = 0  # Start on tonic
+        base_note_dur = note_duration * 1.5
+        current_sample = 0
+
+        while current_sample < total_samples:
+            progress = current_sample / total_samples
+
+            # Get current note
+            note_freq = scale[current_note_idx] if current_note_idx < len(scale) else scale[0]
+
+            # Random duration (longer when on tonic = thinking)
+            if current_note_idx == 0:
+                duration = base_note_dur * np.random.uniform(1.2, 2.5 + tension)
+            else:
+                duration = base_note_dur * np.random.uniform(0.6, 1.2)
+
+            # Generate note
+            note_samples = int(duration * self.sample_rate)
+            note_samples = min(note_samples, total_samples - current_sample)
+
+            if note_samples > 0:
+                note_duration_sec = note_samples / self.sample_rate
+
+                # Filter: darker on tonic, brighter when exploring
+                filter_mult = 0.7 + (current_note_idx / len(scale)) * 0.8
+
+                # Random velocity variation
+                velocity = np.random.uniform(0.6, 1.0)
+
+                pattern_note = self.synth.create_synth_note(
+                    freq=note_freq,
+                    duration=note_duration_sec,
+                    waveform='pulse',
+                    filter_base=final_filter * filter_mult,
+                    filter_env_amount=filter_env_amount * np.random.uniform(0.4, 0.8),
+                    resonance=final_resonance * np.random.uniform(0.7, 0.9),
+                    amp_env=get_envelope('soft', self.config),
+                    filter_env=get_filter_envelope('gentle', self.config)
+                )
+
+                # Add to pattern with random velocity
+                end_sample = min(current_sample + len(pattern_note), total_samples)
+                section_pattern[current_sample:end_sample] += pattern_note[:end_sample - current_sample] * self.config.LAYER_MIXING['pattern_note_level'] * velocity
+
+            # Random pause (more hesitation as time goes on)
+            pause_duration = base_note_dur * np.random.uniform(0.2, 0.8 + progress * tension)
+            pause_samples = int(pause_duration * self.sample_rate)
+            current_sample += note_samples + pause_samples
+
+            # Choose next note using Markov chain
+            if current_note_idx < len(transition_matrix):
+                probabilities = transition_matrix[current_note_idx]
+                current_note_idx = np.random.choice(len(probabilities), p=probabilities)
+            else:
+                current_note_idx = 0  # Fallback to tonic
+
+        return section_pattern
+
+    def generate_king_hunt_pattern(self, section_duration, scale, tension,
+                                   final_filter, filter_env_amount, final_resonance,
+                                   note_duration, modulation, total_samples):
+        """
+        KING_HUNT: Generative aggressive pursuit algorithm
+        - State machine: ATTACK (ascending), RETREAT (descending), PAUSE (regrouping)
+        - Probabilistic upward bias with evolving aggression
+        - Random octave jumps and velocity variations
+        - Building intensity and speed over time
+        """
+        section_pattern = np.zeros(total_samples)
+        base_note_dur = note_duration * 0.5  # Fast, aggressive
+        current_sample = 0
+
+        # State machine
+        STATE_ATTACK = 0
+        STATE_RETREAT = 1
+        STATE_PAUSE = 2
+        current_state = STATE_ATTACK
+
+        # Evolving parameters
+        current_note_idx = 0  # Position in scale [0-7]
+        current_octave = 0  # Octave offset (0, 1, 2)
+        attack_run_length = 0  # How long we've been attacking
+
+        while current_sample < total_samples:
+            progress = current_sample / total_samples
+
+            # State transitions (probabilistic)
+            if current_state == STATE_ATTACK:
+                # Stay in attack mode with increasing probability
+                if np.random.random() < 0.15 - progress * 0.1:  # Less retreat as hunt intensifies
+                    current_state = STATE_RETREAT
+                    attack_run_length = 0
+                elif np.random.random() < 0.05:
+                    current_state = STATE_PAUSE
+                    attack_run_length = 0
+                else:
+                    attack_run_length += 1
+
+            elif current_state == STATE_RETREAT:
+                # Quick retreat, return to attack
+                if np.random.random() < 0.6 + progress * 0.3:  # Return faster as hunt intensifies
+                    current_state = STATE_ATTACK
+
+            elif current_state == STATE_PAUSE:
+                # Brief pause, then attack
+                if np.random.random() < 0.8:
+                    current_state = STATE_ATTACK
+
+            # Note selection based on state
+            if current_state == STATE_ATTACK:
+                # Upward bias (70% up, 20% repeat, 10% down)
+                rand = np.random.random()
+                if rand < 0.7:
+                    # Move up
+                    current_note_idx = min(7, current_note_idx + np.random.randint(1, 3))
+
+                    # Octave jumps (increasing probability with progress and attack length)
+                    if np.random.random() < 0.1 + progress * 0.2 + attack_run_length * 0.05:
+                        current_octave = min(2, current_octave + 1)
+                        current_note_idx = np.random.randint(0, 4)  # Reset to lower note after jump
+
+                elif rand < 0.9:
+                    # Repeat (stabbing same note)
+                    pass
+                else:
+                    # Small step down
+                    current_note_idx = max(0, current_note_idx - 1)
+
+            elif current_state == STATE_RETREAT:
+                # Downward motion
+                current_note_idx = max(0, current_note_idx - np.random.randint(1, 3))
+                if current_note_idx == 0 and current_octave > 0:
+                    current_octave -= 1
+
+            elif current_state == STATE_PAUSE:
+                # Hold on dominant or tonic
+                if np.random.random() < 0.5:
+                    current_note_idx = 0  # Tonic
+                else:
+                    current_note_idx = 4  # Dominant
+
+            # Get frequency
+            note_freq = scale[current_note_idx] * (2 ** current_octave)
+
+            # Duration varies by state and progress
+            if current_state == STATE_ATTACK:
+                # Faster as hunt intensifies
+                duration = base_note_dur * np.random.uniform(0.4, 0.8) * (1.0 - progress * 0.3)
+            elif current_state == STATE_RETREAT:
+                duration = base_note_dur * np.random.uniform(0.5, 1.0)
+            else:  # PAUSE
+                duration = base_note_dur * np.random.uniform(1.5, 2.5)
+
+            # Velocity varies by state
+            if current_state == STATE_ATTACK:
+                velocity = np.random.uniform(0.8, 1.0) * (1.0 + progress * 0.3)  # Louder as hunt intensifies
+            elif current_state == STATE_RETREAT:
+                velocity = np.random.uniform(0.6, 0.8)
+            else:  # PAUSE
+                velocity = np.random.uniform(0.5, 0.7)
+
+            # Generate note
+            note_samples = int(duration * self.sample_rate)
+            note_samples = min(note_samples, total_samples - current_sample)
+
+            if note_samples > 0:
+                note_duration_sec = note_samples / self.sample_rate
+
+                # Filter and resonance evolve with progress and state
+                filter_mult = 1.0 + progress * 2.0  # Much brighter as hunt intensifies
+                if current_state == STATE_ATTACK:
+                    filter_mult *= np.random.uniform(1.2, 1.5)  # Extra brightness on attack
+
+                resonance_mult = 1.0 + progress * 0.8
+
+                pattern_note = self.synth.create_synth_note(
+                    freq=note_freq,
+                    duration=note_duration_sec,
+                    waveform='saw',  # Aggressive, bright
+                    filter_base=final_filter * filter_mult,
+                    filter_env_amount=filter_env_amount * np.random.uniform(0.8, 1.2),
+                    resonance=final_resonance * resonance_mult,
+                    amp_env=get_envelope('stab', self.config),
+                    filter_env=get_filter_envelope('sweep', self.config)
+                )
+
+                # Volume
+                level = self.config.LAYER_MIXING['pattern_note_level'] * velocity
+                end_sample = min(current_sample + len(pattern_note), total_samples)
+                section_pattern[current_sample:end_sample] += pattern_note[:end_sample - current_sample] * level
+
+            # Pause between notes (minimal in attack, longer in pause)
+            if current_state == STATE_ATTACK:
+                pause_samples = int(base_note_dur * 0.05 * self.sample_rate * (1.0 - progress * 0.5))
+            elif current_state == STATE_RETREAT:
+                pause_samples = int(base_note_dur * 0.15 * self.sample_rate)
+            else:  # PAUSE
+                pause_samples = int(base_note_dur * 0.5 * self.sample_rate)
+
+            current_sample += note_samples + pause_samples
+
+        return section_pattern
+
     def create_evolving_drone(self, drone_freq, section_duration, waveform, current_base,
                               progress, total_sections, total_samples):
         """
@@ -495,39 +731,54 @@ class ChessSynthComposer:
             print(f"\n    === LAYER 2: SECTION PATTERNS === (muted)")
 
         section_pattern = np.zeros(total_samples)
-        samples_per_note = int(note_duration * self.sample_rate)
 
         if self.config.LAYER_ENABLE['patterns']:
-            for i in range(num_notes):
-                start_sample = i * samples_per_note
-                end_sample = min(start_sample + samples_per_note, total_samples)
+            # NARRATIVE-SPECIFIC PATTERN GENERATION
+            if narrative == 'COMPLEX_STRUGGLE':
+                section_pattern = self.generate_complex_struggle_pattern(
+                    section_duration, scale, tension,
+                    final_filter, filter_env_amount, final_resonance,
+                    note_duration, modulation, total_samples
+                )
+            elif narrative == 'KING_HUNT':
+                section_pattern = self.generate_king_hunt_pattern(
+                    section_duration, scale, tension,
+                    final_filter, filter_env_amount, final_resonance,
+                    note_duration, modulation, total_samples
+                )
+            else:
+                # DEFAULT FALLBACK (keep old logic for now)
+                samples_per_note = int(note_duration * self.sample_rate)
+                for i in range(num_notes):
+                    start_sample = i * samples_per_note
+                    end_sample = min(start_sample + samples_per_note, total_samples)
 
-                if start_sample < total_samples:
-                    note_freq = pattern[i % len(pattern)]
+                    if start_sample < total_samples:
+                        note_freq = pattern[i % len(pattern)]
 
-                    # Octave variations
-                    if i % pattern_config['octave_up_mod'] == 0:
-                        note_freq *= 2
-                    elif i % pattern_config['octave_down_mod'] == 0:
-                        note_freq *= 0.5
+                        # Octave variations
+                        if i % pattern_config['octave_up_mod'] == 0:
+                            note_freq *= 2
+                        elif i % pattern_config['octave_down_mod'] == 0:
+                            note_freq *= 0.5
 
-                    note_samples = end_sample - start_sample
-                    note_duration_sec = note_samples / self.sample_rate
+                        note_samples = end_sample - start_sample
+                        note_duration_sec = note_samples / self.sample_rate
 
-                    pattern_note = self.synth.create_synth_note(
-                        freq=note_freq,
-                        duration=note_duration_sec,
-                        waveform='saw' if tension > 0.5 else 'pulse',
-                        filter_base=final_filter * 1.5,
-                        filter_env_amount=filter_env_amount,
-                        resonance=final_resonance * 0.7,
-                        amp_env=get_envelope('percussive', self.config),
-                        filter_env=get_filter_envelope('smooth', self.config)
-                    )
+                        pattern_note = self.synth.create_synth_note(
+                            freq=note_freq,
+                            duration=note_duration_sec,
+                            waveform='saw' if tension > 0.5 else 'pulse',
+                            filter_base=final_filter * 1.5,
+                            filter_env_amount=filter_env_amount,
+                            resonance=final_resonance * 0.7,
+                            amp_env=get_envelope('percussive', self.config),
+                            filter_env=get_filter_envelope('smooth', self.config)
+                        )
 
-                    if len(pattern_note) > 0:
-                        actual_samples = min(len(pattern_note), end_sample - start_sample)
-                        section_pattern[start_sample:start_sample + actual_samples] += pattern_note[:actual_samples] * self.config.LAYER_MIXING['pattern_note_level']
+                        if len(pattern_note) > 0:
+                            actual_samples = min(len(pattern_note), end_sample - start_sample)
+                            section_pattern[start_sample:start_sample + actual_samples] += pattern_note[:actual_samples] * self.config.LAYER_MIXING['pattern_note_level']
 
         # MIX LAYERS 1 AND 2 (with auto-gain compensation for soloing)
         active_layers = sum([
