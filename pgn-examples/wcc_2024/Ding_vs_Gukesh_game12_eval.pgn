@@ -1,0 +1,27 @@
+[Event "2024 FIDE Chess World Championship"]
+[Date "2024.12.09"]
+[Round "12"]
+[White "Ding, Liren"]
+[Black "Gukesh D"]
+[Result "1-0"]
+[WhiteElo "2728"]
+[WhiteTeam "CHN"]
+[WhiteFideId "8603677"]
+[BlackElo "2783"]
+[BlackTeam "IND"]
+[BlackFideId "46616543"]
+[TimeControl "40/7200:1800+30"]
+[Board "1"]
+[WhiteClock "0:03:35"]
+[BlackClock "0:03:11"]
+[Variant "Standard"]
+[ECO "A13"]
+[Opening "English Opening: Agincourt Defense"]
+[StudyName "amnth's Study"]
+[ChapterName "Ding, Liren - Gukesh D"]
+[ChapterURL "https://lichess.org/study/X66u6Vru/rXnhYjWs"]
+[Annotator "https://lichess.org/@/amnth"]
+
+1. c4 { [%eval 0.12] [%clk 1:59:53] } 1... e6 { [%eval 0.25] [%clk 1:59:53] } 2. g3 { [%eval 0.14] [%clk 1:56:47] } 2... d5 { [%eval 0.17] [%clk 1:59:45] } 3. Bg2 { [%eval 0.15] [%clk 1:56:44] } 3... Nf6 { [%eval 0.14] [%clk 1:58:38] } 4. Nf3 { [%eval 0.12] [%clk 1:56:39] } 4... d4 { [%eval 0.21] [%clk 1:58:33] } 5. O-O { [%eval 0.12] [%clk 1:56:04] } 5... Nc6 { [%eval 0.24] [%clk 1:58:26] } 6. e3 { [%eval 0.11] [%clk 1:53:24] } 6... Be7 { [%eval 0.28] [%clk 1:57:41] } 7. d3 { [%eval 0.19] [%clk 1:45:36] } 7... dxe3 { [%eval 0.2] [%clk 1:57:02] } 8. Bxe3 { [%eval 0.24] [%clk 1:41:13] } 8... e5 { [%eval 0.26] [%clk 1:56:52] } 9. Nc3 { [%eval 0.35] [%clk 1:29:17] } 9... O-O { [%eval 0.27] [%clk 1:56:43] } 10. Re1 { [%eval 0.27] [%clk 1:23:36] } 10... h6 { [%eval 0.28] [%clk 1:41:09] } 11. a3 { [%eval 0.25] [%clk 1:06:06] } 11... a5 { [%eval 0.34] [%clk 1:39:25] } 12. h3 { [%eval 0.33] [%clk 0:58:57] } 12... Be6 { [%eval 0.27] [%clk 1:34:17] } 13. Kh2 { [%eval 0.34] [%clk 0:57:45] } 13... Rb8?! { [%eval 0.6] [%clk 1:19:07] } 14. Qc2 { [%eval 0.41] [%clk 0:54:55] } 14... Re8 { [%eval 0.41] [%clk 1:07:08] } 15. Nb5 { [%eval 0.4] [%clk 0:53:30] } 15... Bf5 { [%eval 0.43] [%clk 1:01:43] } 16. Rad1 { [%eval 0.44] [%clk 0:53:10] } 16... Nd7?! { [%eval 0.64] [%clk 0:59:37] } 17. Qd2 { [%eval 0.62] [%clk 0:37:01] } 17... Bg6?! { [%eval 1.1] [%clk 0:33:16] } 18. d4! { [%eval 1.1] [%clk 0:36:32] } 18... e4 { [%eval 1.01] [%clk 0:29:06] } 19. Ng1 { [%eval 1.25] [%clk 0:36:09] } 19... Nb6?! { [%eval 1.41] [%clk 0:28:58] } 20. Qc3?! { [%eval 1.04] [%clk 0:30:02] } 20... Bf6?! { [%eval 1.53] [%clk 0:25:11] } 21. Qc2?! { [%eval 1.47] [%clk 0:24:10] } 21... a4 { [%eval 1.54] [%clk 0:23:18] } 22. Ne2 { [%eval 1.52] [%clk 0:23:53] } 22... Bg5?! { [%eval 2.3] } { Inaccuracy. Na5 was best. } { [%clk 0:18:14] } (22... Na5 23. c5) 23. Nf4! { [%eval 2.41] [%clk 0:18:20] } 23... Bxf4 { [%eval 2.24] [%clk 0:14:12] } 24. Bxf4 { [%eval 2.36] [%clk 0:18:16] } 24... Rc8 { [%eval 2.34] [%clk 0:13:13] } 25. Qc3 { [%eval 2.3] [%clk 0:17:11] } 25... Nb8?! { [%eval 3.15] } { Inaccuracy. f6 was best. } { [%clk 0:07:42] } (25... f6 26. d5 Ne5 27. d6 c5 28. Bxe4 Bxe4 29. Rxe4 Qd7 30. Bxe5 Rxe5 31. Rxe5) 26. d5 { [%eval 2.57] [%clk 0:13:57] } 26... Qd7?! { [%eval 3.56] } { Inaccuracy. Na6 was best. } { [%clk 0:07:41] } (26... Na6 27. Qd4 Qd7 28. Nxc7 Rxc7 29. Qxb6 Rxc4 30. Bf1 Rc2 31. Be3 Re5 32. Bb5) 27. d6 { [%eval 3.69] [%clk 0:11:44] } 27... c5 { [%eval 3.72] [%clk 0:07:37] } 28. Nc7 { [%eval 3.71] [%clk 0:11:15] } 28... Rf8 { [%eval 3.36] [%clk 0:07:30] } 29. Bxe4 { [%eval 3.55] [%clk 0:08:43] } 29... Nc6 { [%eval 4.3] [%clk 0:07:29] } 30. Bg2 { [%eval 4.08] [%clk 0:08:00] } 30... Rcd8 { [%eval 4.44] [%clk 0:06:47] } 31. Nd5 { [%eval 4.51] [%clk 0:06:53] } 31... Nxd5 { [%eval 4.38] [%clk 0:06:46] } 32. cxd5 { [%eval 4.32] [%clk 0:06:48] } 32... Nb8 { [%eval 4.45] [%clk 0:05:43] } 33. Qxc5 { [%eval 4.52] [%clk 0:06:36] } 33... Rc8 { [%eval 4.5] [%clk 0:05:43] } 34. Qd4 { [%eval 4.46] [%clk 0:05:58] } 34... Na6 { [%eval 5.28] [%clk 0:05:01] } 35. Re7 { [%eval 5.24] [%clk 0:05:47] } 35... Qb5 { [%eval 5.28] [%clk 0:05:00] } 36. d7 { [%eval 5.24] [%clk 0:05:15] } 36... Rc4?! { [%eval 6.91] } { Inaccuracy. Rcd8 was best. } { [%clk 0:05:00] } (36... Rcd8 37. Bd6 Bf5 38. Re5 Bxd7 39. Bxf8 Rxf8 40. d6 Qb3 41. Rd2 Nb8 42. Re3) 37. Qe3 { [%eval 5.57] [%clk 0:04:50] } 37... Rc2 { [%eval 5.73] [%clk 0:04:49] } 38. Bd6 { [%eval 5.67] [%clk 0:03:43] } 38... f6?? { [%eval #8] } { Checkmate is now unavoidable. Nb8 was best. } { [%clk 0:03:11] } (38... Nb8 39. Bxb8 Rxb8 40. Rc1 Rxc1 41. Re8+ Rxe8 42. dxe8=Q+ Qxe8 43. Qxe8+ Kh7 44. d6) 39. Rxg7+ { [%eval #7] } { 1-0 White wins. } { [%clk 0:03:35] } 1-0
+
+

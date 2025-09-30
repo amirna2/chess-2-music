@@ -1,0 +1,17 @@
+[Event "Karpov - Kasparov World Championship Match"]
+[Site "Moscow URS"]
+[Date "1985.10.15"]
+[Round "16"]
+[White "Anatoly Karpov"]
+[Black "Garry Kasparov"]
+[Result "0-1"]
+[Variant "Standard"]
+[ECO "B44"]
+[Opening "Sicilian Defense: Taimanov Variation, Gary Gambit"]
+[StudyName "amnth's Study"]
+[ChapterName "Anatoly Karpov - Garry Kasparov"]
+[ChapterURL "https://lichess.org/study/QO61Y7XD/r2eCFAp2"]
+[Annotator "https://lichess.org/@/amnth"]
+
+1. e4 { [%eval 0.18] } 1... c5 { [%eval 0.24] } 2. Nf3 { [%eval 0.2] } 2... e6 { [%eval 0.28] } 3. d4 { [%eval 0.4] } 3... cxd4 { [%eval 0.29] } 4. Nxd4 { [%eval 0.35] } 4... Nc6 { [%eval 0.28] } 5. Nb5 { [%eval 0.23] } 5... d6 { [%eval 0.1] } 6. c4 { [%eval 0.13] } 6... Nf6 { [%eval 0.21] } 7. N1c3 { [%eval 0.23] } 7... a6 { [%eval 0.1] } 8. Na3 { [%eval 0.29] } 8... d5 { [%eval 0.31] } 9. cxd5 { [%eval 0.44] } 9... exd5 { [%eval 0.55] } 10. exd5 { [%eval 0.62] } 10... Nb4 { [%eval 0.59] } 11. Be2 { [%eval 0.28] } 11... Bc5 { [%eval 0.35] } 12. O-O { [%eval 0.34] } 12... O-O { [%eval 0.47] } 13. Bf3 { [%eval 0.41] } 13... Bf5 { [%eval 0.36] } 14. Bg5 { [%eval 0.17] } 14... Re8 { [%eval 0.43] } 15. Qd2?! { [%eval -0.23] } { Inaccuracy. Nc4 was best. } (15. Nc4 Nd3) 15... b5 { [%eval -0.18] } 16. Rad1 { [%eval -0.48] } 16... Nd3 { [%eval -0.33] } 17. Nab1? { [%eval -1.55] } { Mistake. b4 was best. } (17. b4 Bxb4) 17... h6 { [%eval -1.58] } 18. Bh4 { [%eval -1.59] } 18... b4 { [%eval -1.69] } 19. Na4 { [%eval -1.8] } 19... Bd6 { [%eval -1.85] } 20. Bg3 { [%eval -1.85] } 20... Rc8 { [%eval -1.66] } 21. b3 { [%eval -1.83] } 21... g5 { [%eval -2.19] } 22. Bxd6 { [%eval -1.96] } 22... Qxd6 { [%eval -1.9] } 23. g3 { [%eval -1.5] } 23... Nd7 { [%eval -1.78] } 24. Bg2?! { [%eval -2.96] } { Inaccuracy. Nb2 was best. } (24. Nb2 N7e5) 24... Qf6 { [%eval -2.73] } 25. a3 { [%eval -2.86] } 25... a5 { [%eval -2.86] } 26. axb4 { [%eval -2.99] } 26... axb4 { [%eval -2.8] } 27. Qa2 { [%eval -2.94] } 27... Bg6 { [%eval -2.61] } 28. d6 { [%eval -2.65] } 28... g4 { [%eval -2.85] } 29. Qd2 { [%eval -2.83] } 29... Kg7 { [%eval -2.76] } 30. f3?! { [%eval -4.38] } { Inaccuracy. h3 was best. } (30. h3 h5 31. h4 Qxd6 32. Nb2 N7e5 33. Nxd3 Nxd3 34. Rde1 Red8 35. Re2 Qc5) 30... Qxd6 { [%eval -4.47] } 31. fxg4 { [%eval -5.19] } 31... Qd4+ { [%eval -4.95] } 32. Kh1 { [%eval -4.68] } 32... Nf6 { [%eval -4.66] } 33. Rf4 { [%eval -5.38] } 33... Ne4 { [%eval -5.81] } 34. Qxd3 { [%eval -5.62] } 34... Nf2+ { [%eval -5.39] } 35. Rxf2 { [%eval -5.61] } 35... Bxd3 { [%eval -5.57] } 36. Rfd2 { [%eval -5.64] } 36... Qe3 { [%eval -5.67] } 37. Rxd3 { [%eval -5.34] } 37... Rc1 { [%eval -5.39] } 38. Nb2?? { [%eval #-5] } { Checkmate is now unavoidable. h3 was best. } (38. h3 Rxb1 39. Rxb1 Qxd3 40. Rg1 Qxb3 41. Nb6 Re2 42. g5 Qc2 43. gxh6+ Kxh6) 38... Qf2 { [%eval #-4] } 39. Nd2 { [%eval #-2] } 39... Rxd1+ { [%eval #-3] } 40. Nxd1 { [%eval #-3] } 40... Re1+ { [%eval #-2] } { 0-1 Black wins. } 0-1
+
