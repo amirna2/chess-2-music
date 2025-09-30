@@ -197,15 +197,15 @@ python3 simple_synth_test.py
 ├── c2m                      # Main pipeline script
 ├── thinking_time.py         # EMT annotation
 ├── feature_extractor.py     # Game feature extraction
-├── tagger.py               # Narrative tagging
-├── synth_composer.py       # Main composition (REFACTORED)
-├── synth_config.py         # Configuration hub (NEW)
-├── synth_engine.py         # Synthesis engine (NEW)
-├── synth_narrative.py      # Narrative processes (NEW)
-├── simple_synth_test.py    # Synth testing tool
-├── data/                   # PGN files and generated output
-├── openings/               # ECO opening database
-├── REFACTORING_PLAN.md     # Refactoring documentation
+├── tagger.py                # Narrative tagging
+├── synth_composer.py        # Main composition (REFACTORED)
+├── synth_config.py          # Configuration hub (NEW)
+├── synth_engine.py          # Synthesis engine (NEW)
+├── synth_narrative.py       # Narrative processes (NEW)
+├── simple_synth_test.py     # Synth testing tool
+├── data/                    # PGN files and generated output
+├── openings/                # ECO opening database
+├── REFACTORING_PLAN.md      # Refactoring documentation
 └── composer_architecture.md # Technical architecture docs
 ```
 
