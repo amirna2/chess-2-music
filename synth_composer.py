@@ -838,10 +838,13 @@ class ChessSynthComposer:
 
         filter_env_amount = modulation['filter_env_amount'] * (1 + current_base['detune'] / 20)
 
-        print(f"\n  === COMPOSING SECTION: {section['name']} ===")
-        print(f"    Progress: {progress:.1%}, Duration: {section_duration}s")
-        print(f"    Narrative: {self.overall_narrative} / {narrative} (tension: {tension:.2f})")
-        print(f"    Filter: {final_filter:.0f}Hz, Resonance: {final_resonance:.2f}")
+        key_moments_count = len(section.get('key_moments', []))
+        section_num = section_index + 1
+
+        print(f"\nSECTION {section_num}/{total_sections}: {section['name']} ({section_duration}s)")
+        print(f"  Narrative: {narrative} | Tension: {tension:.2f}")
+        print(f"  Filter: {final_filter:.0f}Hz | Resonance: {final_resonance:.2f}")
+        print(f"  Key Moments: {key_moments_count}")
 
         waveform = current_base['waveform']
         scale = current_base['scale']
@@ -877,13 +880,13 @@ class ChessSynthComposer:
         total_samples = int(section_duration * self.sample_rate)
 
         # LAYER 1: Generate BASE DRONE
-        if self.config.LAYER_ENABLE['drone']:
-            print(f"\n    === LAYER 1: BASE DRONE ===")
-        else:
-            print(f"\n    === LAYER 1: BASE DRONE === (muted)")
-
         drone_freq = scale[0] / 2
         base_drone = np.zeros(total_samples)
+
+        if self.config.LAYER_ENABLE['drone']:
+            print(f"  → Layer 1: Evolving drone ({drone_freq:.1f}Hz base)")
+        else:
+            print(f"  → Layer 1: (muted)")
 
         if self.config.LAYER_ENABLE['drone']:
             base_drone = self.create_evolving_drone(
@@ -897,34 +900,37 @@ class ChessSynthComposer:
             )
 
         # LAYER 2: Generate RHYTHMIC PATTERNS
-        if self.config.LAYER_ENABLE['patterns']:
-            print(f"\n    === LAYER 2: SECTION PATTERNS ===")
-        else:
-            print(f"\n    === LAYER 2: SECTION PATTERNS === (muted)")
-
         section_pattern = np.zeros(total_samples)
 
         if self.config.LAYER_ENABLE['patterns']:
             # NARRATIVE-SPECIFIC PATTERN GENERATION
             if narrative == 'COMPLEX_STRUGGLE':
+                print(f"  → Layer 2: Generative patterns (Markov chain)")
                 section_pattern = self.generate_complex_struggle_pattern(
                     section_duration, scale, tension,
                     final_filter, filter_env_amount, final_resonance,
                     note_duration, modulation, total_samples
                 )
             elif narrative == 'KING_HUNT':
+                print(f"  → Layer 2: Generative patterns (State machine: ATTACK/RETREAT/PAUSE)")
                 section_pattern = self.generate_king_hunt_pattern(
                     section_duration, scale, tension,
                     final_filter, filter_env_amount, final_resonance,
                     note_duration, modulation, total_samples
                 )
             elif narrative == 'CRUSHING_ATTACK':
+                print(f"  → Layer 2: Generative patterns (State machine: ADVANCE/STRIKE/OVERWHELM)")
                 section_pattern = self.generate_crushing_attack_pattern(
                     section_duration, scale, tension,
                     final_filter, filter_env_amount, final_resonance,
                     note_duration, modulation, total_samples
                 )
             else:
+                print(f"  → Layer 2: Fixed patterns (fallback)")
+        else:
+            print(f"  → Layer 2: (muted)")
+
+        if self.config.LAYER_ENABLE['patterns'] and narrative not in ['COMPLEX_STRUGGLE', 'KING_HUNT', 'CRUSHING_ATTACK']:
                 # DEFAULT FALLBACK (keep old logic for now)
                 samples_per_note = int(note_duration * self.sample_rate)
                 for i in range(num_notes):
@@ -980,13 +986,13 @@ class ChessSynthComposer:
         samples = mixed_signal * section_envelope * self.config.MIXING['section_level'] * volume_multiplier
 
         # LAYER 3: CONTINUOUS SEQUENCER
-        if self.config.LAYER_ENABLE['sequencer']:
-            print(f"\n    === LAYER 3: CONTINUOUS SEQUENCER ===")
-        else:
-            print(f"\n    === LAYER 3: CONTINUOUS SEQUENCER === (muted)")
-
         sequencer_layer = np.zeros_like(samples)
         filtered_sequence = np.zeros_like(samples)
+
+        if self.config.LAYER_ENABLE['sequencer']:
+            print(f"  → Layer 3: Sequencer ({key_moments_count} key moments)")
+        else:
+            print(f"  → Layer 3: (muted)")
 
         if self.config.LAYER_ENABLE['sequencer']:
             bpm = section.get('bpm', self.config.DEFAULT_BPM)
@@ -1143,19 +1149,25 @@ class ChessSynthComposer:
 
     def compose(self):
         """Create the full composition"""
-        print("\n♫ SUBTRACTIVE SYNTHESIS CHESS MUSIC - THREE LAYER COMPOSITION")
-        print(f"Result: {self.tags.get('game_result', '?')}")
+        print("\n♫ CHESS TO MUSIC SYNTHESIS")
+        print("━" * 50)
+        print(f"Game: {self.tags.get('game_result', '?')} | ECO: {self.eco} | Scale: {self.base_params['scale'].title()}")
         print(f"Overall Narrative: {self.overall_narrative}")
-        print(f"Base Synth Patch: {self.base_params['base_waveform']} wave")
+        print(f"Base Waveform: {self.base_params['base_waveform']} | Detune: {self.base_params['detune_start']}→{self.base_params['detune_end']} cents")
 
         sections = self.tags.get('sections', [])
         total_sections = len(sections)
         section_audios = []
 
-        print(f"\nSynthesizing {total_sections} sections:")
+        print(f"\nSynthesizing {total_sections} sections with {self.config.TIMING['section_crossfade_sec']}s crossfades...")
         for i, section in enumerate(sections):
             section_music = self.compose_section(section, i, total_sections)
             section_audios.append(np.array(section_music))
+
+            # Show crossfade indicator for next section
+            if i < total_sections - 1:
+                next_section_name = sections[i + 1]['name']
+                print(f"  ↓ Crossfading to {next_section_name}...")
 
         # Crossfade sections together
         crossfade_samples = int(self.sample_rate * self.config.TIMING['section_crossfade_sec'])
@@ -1186,10 +1198,17 @@ class ChessSynthComposer:
 
         # Final normalization
         max_val = np.max(np.abs(composition))
-        if max_val > self.config.WAV_OUTPUT['normalization_threshold']:
+        peak_db = 20 * np.log10(max_val) if max_val > 0 else -100
+
+        # Clipping detected if normalization was needed
+        clipping = max_val > self.config.WAV_OUTPUT['normalization_threshold']
+
+        if clipping:
             composition = composition * (self.config.WAV_OUTPUT['normalization_threshold'] / max_val)
 
-        print(f"\n✓ Synthesis complete: {len(composition)/self.sample_rate:.1f} seconds")
+        print(f"\n{'━' * 50}")
+        print(f"✓ Synthesis complete: {len(composition)/self.sample_rate:.1f} seconds")
+        print(f"  Audio Stats: Peak {peak_db:.1f}dB | {'⚠ Normalized (was clipping)' if clipping else 'No clipping'}")
         return composition
 
     def save(self, filename='chess_synth.wav'):
@@ -1207,7 +1226,12 @@ class ChessSynthComposer:
                                 min(self.config.WAV_OUTPUT['clamp_max'], int_sample))
                 wav.writeframes(struct.pack('<h', int_sample))
 
-        print(f"Saved: {filename}")
+        # Get file size
+        import os
+        file_size = os.path.getsize(filename)
+        size_mb = file_size / (1024 * 1024)
+
+        print(f"  Output: {filename} ({size_mb:.1f} MB)")
 
 
 def main():
