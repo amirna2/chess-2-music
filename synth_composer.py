@@ -35,6 +35,10 @@ class ChessSynthComposer:
         self.total_duration = chess_tags.get('duration_seconds', 60)
         self.total_plies = chess_tags.get('total_plies', 40)
         self.overall_narrative = chess_tags.get('overall_narrative', 'COMPLEX_GAME')
+        self.eco = chess_tags.get('eco', 'A00')
+
+        # Seed randomness with ECO code for reproducibility
+        self._seed_from_eco(self.eco)
 
         # LAYER 1: Overall narrative defines the BASE PATCH
         self.base_params = self._get_narrative_base_params()
@@ -45,6 +49,18 @@ class ChessSynthComposer:
             self.total_duration,
             self.total_plies
         )
+
+    def _seed_from_eco(self, eco_code):
+        """Convert ECO code to integer seed for reproducible randomness"""
+        # ECO format: Letter (A-E) + two digits (00-99)
+        # Convert to integer: A00=0, A01=1, ..., E99=599
+        if len(eco_code) >= 3:
+            letter_value = ord(eco_code[0].upper()) - ord('A')  # 0-4
+            number_value = int(eco_code[1:3])  # 0-99
+            seed = letter_value * 100 + number_value
+        else:
+            seed = 0  # Fallback
+        np.random.seed(seed)
 
     def _get_narrative_base_params(self):
         """LAYER 1: Overall narrative sets the fundamental synth character"""
@@ -970,18 +986,43 @@ class ChessSynthComposer:
         print(f"Overall Narrative: {self.overall_narrative}")
         print(f"Base Synth Patch: {self.base_params['base_waveform']} wave")
 
-        composition = []
         sections = self.tags.get('sections', [])
         total_sections = len(sections)
+        section_audios = []
 
         print(f"\nSynthesizing {total_sections} sections:")
         for i, section in enumerate(sections):
             section_music = self.compose_section(section, i, total_sections)
-            composition.extend(section_music)
-            composition.extend(np.zeros(int(self.sample_rate * self.config.TIMING['section_gap_sec'])))
+            section_audios.append(np.array(section_music))
+
+        # Crossfade sections together
+        crossfade_samples = int(self.sample_rate * self.config.TIMING['section_crossfade_sec'])
+
+        composition = section_audios[0]
+        for i in range(1, len(section_audios)):
+            next_section = section_audios[i]
+
+            # Create crossfade if sections are long enough
+            if len(composition) > crossfade_samples and len(next_section) > crossfade_samples:
+                # Fade out end of current composition
+                fade_out = np.linspace(1.0, 0.0, crossfade_samples)
+                composition[-crossfade_samples:] *= fade_out
+
+                # Fade in start of next section
+                fade_in = np.linspace(0.0, 1.0, crossfade_samples)
+                next_section[:crossfade_samples] *= fade_in
+
+                # Overlap: remove crossfade length from composition, add full next section
+                composition = np.concatenate([
+                    composition[:-crossfade_samples],
+                    composition[-crossfade_samples:] + next_section[:crossfade_samples],
+                    next_section[crossfade_samples:]
+                ])
+            else:
+                # Sections too short for crossfade, just concatenate
+                composition = np.concatenate([composition, next_section])
 
         # Final normalization
-        composition = np.array(composition)
         max_val = np.max(np.abs(composition))
         if max_val > self.config.WAV_OUTPUT['normalization_threshold']:
             composition = composition * (self.config.WAV_OUTPUT['normalization_threshold'] / max_val)

@@ -36,6 +36,7 @@ class NarrativeStructure:
     duration_seconds: int
     game_result: str
     overall_narrative: str
+    eco: str
     sections: List[NarrativeSection]
 
     def to_dict(self) -> Dict:
@@ -550,6 +551,7 @@ class ChessNarrativeTagger:
             duration_seconds=self.total_plies,
             game_result=self.metadata.get('result', ''),
             overall_narrative=overall,
+            eco=self.metadata.get('eco', 'A00'),
             sections=sections
         )
 

@@ -495,7 +495,8 @@ class SynthConfig:
     # === TIMING PARAMETERS (in seconds or milliseconds) ===
     TIMING: Dict[str, float] = field(default_factory=lambda: {
         'section_fade_sec': 0.1,
-        'section_gap_sec': 0.1,
+        'section_gap_sec': 0.0,
+        'section_crossfade_sec': 2.0,
         'note_gap_sec': 0.02,
         'phrase_pause_sec': 0.15,
         'chunk_size_samples': 512,
@@ -534,7 +535,7 @@ class SynthConfig:
     LAYER_MIXING: Dict[str, float] = field(default_factory=lambda: {
         'drone_in_supersaw': 0.6,
         'pattern_in_supersaw': 0.4,
-        'pattern_note_level': 0.5,
+        'pattern_note_level': 0.2,
         'sequencer_note_level': 0.4,
         'lfo_modulation_depth': 0.1,
     })
