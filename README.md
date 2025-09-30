@@ -212,32 +212,44 @@ python3 simple_synth_test.py
 ## Example Output
 
 ```
-♫ SUBTRACTIVE SYNTHESIS CHESS MUSIC - THREE LAYER COMPOSITION
-Result: 1-0
-Overall Narrative: TUMBLING_DEFEAT
-Base Synth Patch: supersaw wave
-Filter Evolution: 2500Hz → 300Hz
-Resonance Evolution: 0.8 → 3.5
+♫ CHESS TO MUSIC SYNTHESIS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Game: 1-0 | ECO: A13 | Scale: Phrygian
+Overall Narrative: DEATH_SPIRAL
+Base Waveform: saw | Detune: 5→18 cents
 
-Synthesizing 5 sections:
+Synthesizing 3 sections with 2.0s crossfades...
 
-  === COMPOSING SECTION: OPENING ===
-    Progress: 0.0%, Duration: 12s
-    Narrative: TUMBLING_DEFEAT / COMPLEX_POSITION (tension: 0.45)
-    Filter: 2500Hz, Resonance: 0.8
+SECTION 1/3: OPENING (20s)
+  Narrative: COMPLEX_STRUGGLE | Tension: 0.55
+  Filter: 1620Hz | Resonance: 1.77
+  Key Moments: 3
+  → Layer 1: Evolving drone (55.0Hz base)
+  → Layer 2: Generative patterns (Markov chain)
+  → Layer 3: Sequencer (3 key moments)
+  ↓ Crossfading to MIDDLEGAME...
 
-    === LAYER 1: BASE DRONE ===
-      Supersaw drone with 3.0 cent detune spread
+SECTION 2/3: MIDDLEGAME (36s)
+  Narrative: CRUSHING_ATTACK | Tension: 0.53
+  Filter: 770Hz | Resonance: 3.04
+  Key Moments: 4
+  → Layer 1: Evolving drone (55.0Hz base)
+  → Layer 2: Generative patterns (State machine: ADVANCE/STRIKE/OVERWHELM)
+  → Layer 3: Sequencer (4 key moments)
+  ↓ Crossfading to ENDGAME...
 
-    === LAYER 2: SECTION PATTERNS ===
-      Generated 24 pattern notes
+SECTION 3/3: ENDGAME (21s)
+  Narrative: CRUSHING_ATTACK | Tension: 0.73
+  Filter: 280Hz | Resonance: 4.00
+  Key Moments: 4
+  → Layer 1: Evolving drone (55.0Hz base)
+  → Layer 2: Generative patterns (State machine: ADVANCE/STRIKE/OVERWHELM)
+  → Layer 3: Sequencer (4 key moments)
 
-    === LAYER 3: CONTINUOUS SEQUENCER ===
-      Running continuous sequencer for 12.0s
-      Evolution points: DEVELOPMENT at 3.2s, BLUNDER at 8.1s
-
-✓ Synthesis complete: 67.3 seconds
-Saved: chess_synth.wav
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+✓ Synthesis complete: 73.0 seconds
+  Audio Stats: Peak -8.4dB | No clipping
+  Output: chess_synth.wav (6.1 MB)
 ```
 
 ## Musical Features
