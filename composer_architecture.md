@@ -7,29 +7,33 @@ The synthesis system has been **completely refactored** from a 1,627-line monoli
 ## Architecture Diagram
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                     ChessSynthComposer                      │
-│                   (synth_composer.py)                       │
-│                                                             │
-│  Orchestrates the three-layer composition system           │
-│  Uses config for all parameters                            │
-│  Uses engine for all synthesis                             │
-│  Uses narrative processes for evolution                    │
-└─────────────────────────────────────────────────────────────┘
-                        │
-        ┌───────────────┼───────────────┐
-        │               │               │
-        ▼               ▼               ▼
-┌──────────────┐ ┌──────────────┐ ┌──────────────┐
-│ SynthConfig  │ │SubtractiveSyn│ │  Narrative   │
-│              │ │    th        │ │  Processes   │
-│ (config.py)  │ │ (engine.py)  │ │(narrative.py)│
-│              │ │              │ │              │
-│ All musical  │ │ Pure DSP:    │ │ Spiegel-     │
-│ parameters   │ │ • Oscillators│ │ inspired     │
-│ in one place │ │ • Filters    │ │ evolution    │
-│              │ │ • Envelopes  │ │              │
-└──────────────┘ └──────────────┘ └──────────────┘
+┌─────────────────────────────────────────────────────────────────────┐
+│                      ChessSynthComposer                             │
+│                    (synth_composer.py)                              │
+│                                                                     │
+│  Three-layer composition system orchestration:                      │
+│  • Layer 1: Evolving drone (overall narrative)                      │
+│  • Layer 2: Generative patterns (section narrative)                 │
+│  • Layer 3: Sequencer (key moments)                                 │
+│                                                                     │
+│  ECO-seeded randomness for reproducibility                          │
+│  Section crossfading for smooth transitions                         │
+└─────────────────────────────────────────────────────────────────────┘
+                              │
+              ┌───────────────┼───────────────┐
+              │               │               │
+              ▼               ▼               ▼
+┌──────────────────┐ ┌─────────────────┐ ┌───────────────────────┐
+│  SynthConfig     │ │ SubtractiveSynth│ │ Narrative Processes   │
+│  (config.py)     │ │  (engine.py)    │ │  (narrative.py)       │
+│                  │ │                 │ │                       │
+│ Config-driven:   │ │ Pure DSP:       │ │ Generative:           │
+│ • Scales         │ │ • Oscillators   │ │ • Markov chains       │
+│ • Envelopes      │ │ • Moog filters  │ │ • State machines      │
+│ • Narratives     │ │ • ADSR          │ │ • Evolution rules     │
+│ • Patterns       │ │ • Supersaw      │ │ • Spiegel-inspired    │
+│ • Mixing levels  │ │ • Anti-aliasing │ │ • Probabilistic       │
+└──────────────────┘ └─────────────────┘ └───────────────────────┘
 ```
 
 ## Module Breakdown

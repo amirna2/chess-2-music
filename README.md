@@ -1,6 +1,6 @@
 # Chess-to-Music: Algorithmic Composition from Chess Games
 
-A Python toolkit that transforms chess games into electronic music compositions using subtractive synthesis. Inspired by Laurie Spiegel's pioneering work on algorithmic composition, this project analyzes chess game narratives and translates them into evolving soundscapes through a three-layer synthesis architecture.
+A Python toolkit that transforms chess games into electronic music compositions using subtractive synthesis. Inspired by Laurie Spiegel's work on algorithmic composition, this project analyzes chess game narratives and translates them into evolving soundscapes through a three-layer synthesis architecture.
 
 ## Overview
 
