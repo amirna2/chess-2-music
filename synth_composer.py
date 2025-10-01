@@ -494,6 +494,241 @@ class ChessSynthComposer:
 
         return section_pattern
 
+    def generate_sharp_theory_pattern(self, section_duration, scale, tension,
+                                       final_filter, filter_env_amount, final_resonance,
+                                       note_duration, modulation, total_samples):
+        """
+        SHARP_THEORY: Fast arpeggios and energetic ascending patterns
+        - Bright, energetic character for Sicilians, gambits, tactical openings
+        - Fast ascending arpeggios with occasional descents
+        - Bright filters, short note durations
+        - Random velocity for natural feel but maintains energy
+        """
+        section_pattern = np.zeros(total_samples)
+        base_note_dur = note_duration * 0.4  # Fast, energetic
+        current_sample = 0
+        current_note_idx = 0  # Start on tonic
+        direction = 1  # 1 = ascending, -1 = descending
+
+        while current_sample < total_samples:
+            progress = current_sample / total_samples
+
+            # Get current note with possible octave shift
+            octave_shift = 0
+            if current_note_idx >= len(scale):
+                octave_shift = 1
+                display_idx = current_note_idx - len(scale)
+            else:
+                display_idx = current_note_idx
+
+            note_freq = scale[display_idx] * (2 ** octave_shift)
+
+            # Duration: fast and consistent with slight variation
+            duration = base_note_dur * np.random.uniform(0.8, 1.2)
+
+            # Generate note
+            note_samples = int(duration * self.sample_rate)
+            note_samples = min(note_samples, total_samples - current_sample)
+
+            if note_samples > 0:
+                note_duration_sec = note_samples / self.sample_rate
+
+                # Bright, energetic filter settings
+                filter_mult = 1.5 + tension * 0.5  # Bright and gets brighter
+
+                # Velocity: mostly high with variation for natural feel
+                velocity = np.random.uniform(0.75, 1.0)
+
+                pattern_note = self.synth.create_synth_note(
+                    freq=note_freq,
+                    duration=note_duration_sec,
+                    waveform='saw',  # Bright, sharp
+                    filter_base=final_filter * filter_mult,
+                    filter_env_amount=filter_env_amount * np.random.uniform(0.9, 1.1),
+                    resonance=final_resonance * 0.8,  # Moderate resonance
+                    amp_env=get_envelope('pluck', self.config),
+                    filter_env=get_filter_envelope('sweep', self.config)
+                )
+
+                # Add to pattern
+                end_sample = min(current_sample + len(pattern_note), total_samples)
+                section_pattern[current_sample:end_sample] += pattern_note[:end_sample - current_sample] * self.config.LAYER_MIXING['pattern_note_level'] * velocity
+
+            # Minimal pause for energetic feel
+            pause_samples = int(base_note_dur * 0.05 * self.sample_rate)
+            current_sample += note_samples + pause_samples
+
+            # Move to next note (ascending arpeggios with occasional direction changes)
+            current_note_idx += direction
+
+            # Change direction or reset
+            if direction == 1 and current_note_idx >= len(scale) + 4:  # Go up to octave + 4th
+                # 70% chance to descend, 30% to jump back down
+                if np.random.random() < 0.7:
+                    direction = -1
+                else:
+                    current_note_idx = 0
+                    direction = 1
+            elif direction == -1 and current_note_idx <= 0:
+                # Back to ascending from tonic
+                current_note_idx = 0
+                direction = 1
+
+        return section_pattern
+
+    def generate_positional_theory_pattern(self, section_duration, scale, tension,
+                                           final_filter, filter_env_amount, final_resonance,
+                                           note_duration, modulation, total_samples):
+        """
+        POSITIONAL_THEORY: Methodical build with structured patterns
+        - Strategic, patient character for French, English, closed systems
+        - Slower tempo than sharp theory
+        - Structured patterns (ascending, then descending, then both)
+        - Smooth, controlled dynamics
+        """
+        section_pattern = np.zeros(total_samples)
+        base_note_dur = note_duration * 1.0  # Moderate tempo
+        current_sample = 0
+
+        # Phase structure: ascending → descending → alternating
+        phase_duration = section_duration / 3.0
+        phase_1_samples = int(phase_duration * self.sample_rate)
+        phase_2_samples = int(phase_duration * 2 * self.sample_rate)
+
+        current_note_idx = 0
+        direction = 1
+
+        while current_sample < total_samples:
+            progress = current_sample / total_samples
+
+            # Determine phase
+            if current_sample < phase_1_samples:
+                # Phase 1: Ascending only
+                phase = 'ascending'
+            elif current_sample < phase_2_samples:
+                # Phase 2: Descending only
+                phase = 'descending'
+            else:
+                # Phase 3: Alternating
+                phase = 'alternating'
+
+            # Get note
+            note_freq = scale[current_note_idx]
+
+            # Duration: controlled and consistent
+            duration = base_note_dur * np.random.uniform(0.9, 1.1)
+
+            # Generate note
+            note_samples = int(duration * self.sample_rate)
+            note_samples = min(note_samples, total_samples - current_sample)
+
+            if note_samples > 0:
+                note_duration_sec = note_samples / self.sample_rate
+
+                # Filter: moderate brightness, evolving slowly
+                filter_mult = 0.9 + progress * 0.4
+
+                # Velocity: smooth and controlled
+                velocity = 0.7 + np.random.uniform(-0.1, 0.1)
+
+                pattern_note = self.synth.create_synth_note(
+                    freq=note_freq,
+                    duration=note_duration_sec,
+                    waveform='pulse',  # Warmer than saw
+                    filter_base=final_filter * filter_mult,
+                    filter_env_amount=filter_env_amount * 0.8,
+                    resonance=final_resonance * 0.7,
+                    amp_env=get_envelope('soft', self.config),
+                    filter_env=get_filter_envelope('gentle', self.config)
+                )
+
+                # Add to pattern
+                end_sample = min(current_sample + len(pattern_note), total_samples)
+                section_pattern[current_sample:end_sample] += pattern_note[:end_sample - current_sample] * self.config.LAYER_MIXING['pattern_note_level'] * velocity
+
+            # Moderate pause
+            pause_samples = int(base_note_dur * 0.15 * self.sample_rate)
+            current_sample += note_samples + pause_samples
+
+            # Move according to phase
+            if phase == 'ascending':
+                current_note_idx = (current_note_idx + 1) % len(scale)
+            elif phase == 'descending':
+                current_note_idx = (current_note_idx - 1) % len(scale)
+            else:  # alternating
+                current_note_idx += direction
+                if current_note_idx >= len(scale) - 1:
+                    direction = -1
+                elif current_note_idx <= 0:
+                    direction = 1
+
+        return section_pattern
+
+    def generate_solid_theory_pattern(self, section_duration, scale, tension,
+                                      final_filter, filter_env_amount, final_resonance,
+                                      note_duration, modulation, total_samples):
+        """
+        SOLID_THEORY: Grounded bass patterns with stable rhythms
+        - Safe, solid character for Queen's Gambit Declined, Slav, solid openings
+        - Lower register emphasis
+        - Predictable, repetitive patterns (building blocks)
+        - Steady rhythm with minimal variation
+        """
+        section_pattern = np.zeros(total_samples)
+        base_note_dur = note_duration * 1.2  # Slower, grounded
+        current_sample = 0
+
+        # Build a simple repeating pattern (tonic, fifth, third, fifth)
+        pattern_sequence = [0, 4, 2, 4]  # Scale degrees
+        pattern_idx = 0
+
+        while current_sample < total_samples:
+            progress = current_sample / total_samples
+
+            # Get note from pattern (lower octave for grounded feel)
+            scale_idx = pattern_sequence[pattern_idx % len(pattern_sequence)]
+            note_freq = scale[scale_idx] * 0.75  # Lower by perfect fourth
+
+            # Duration: very consistent for stability
+            duration = base_note_dur * np.random.uniform(0.95, 1.05)
+
+            # Generate note
+            note_samples = int(duration * self.sample_rate)
+            note_samples = min(note_samples, total_samples - current_sample)
+
+            if note_samples > 0:
+                note_duration_sec = note_samples / self.sample_rate
+
+                # Filter: darker, grounded
+                filter_mult = 0.6 + progress * 0.2  # Stays dark
+
+                # Velocity: very stable
+                velocity = 0.75 + np.random.uniform(-0.05, 0.05)
+
+                pattern_note = self.synth.create_synth_note(
+                    freq=note_freq,
+                    duration=note_duration_sec,
+                    waveform='pulse',  # Warm, solid
+                    filter_base=final_filter * filter_mult,
+                    filter_env_amount=filter_env_amount * 0.6,
+                    resonance=final_resonance * 0.5,  # Low resonance for solid feel
+                    amp_env=get_envelope('soft', self.config),
+                    filter_env=get_filter_envelope('gentle', self.config)
+                )
+
+                # Add to pattern
+                end_sample = min(current_sample + len(pattern_note), total_samples)
+                section_pattern[current_sample:end_sample] += pattern_note[:end_sample - current_sample] * self.config.LAYER_MIXING['pattern_note_level'] * velocity
+
+            # Consistent pause
+            pause_samples = int(base_note_dur * 0.2 * self.sample_rate)
+            current_sample += note_samples + pause_samples
+
+            # Advance pattern
+            pattern_idx += 1
+
+        return section_pattern
+
     def create_evolving_drone(self, drone_freq, section_duration, waveform, current_base,
                               progress, total_sections, total_samples):
         """
@@ -925,12 +1160,33 @@ class ChessSynthComposer:
                     final_filter, filter_env_amount, final_resonance,
                     note_duration, modulation, total_samples
                 )
+            elif narrative == 'SHARP_THEORY':
+                print(f"  → Layer 2: Generative patterns (Sharp opening: Fast arpeggios)")
+                section_pattern = self.generate_sharp_theory_pattern(
+                    section_duration, scale, tension,
+                    final_filter, filter_env_amount, final_resonance,
+                    note_duration, modulation, total_samples
+                )
+            elif narrative == 'POSITIONAL_THEORY':
+                print(f"  → Layer 2: Generative patterns (Positional opening: Methodical build)")
+                section_pattern = self.generate_positional_theory_pattern(
+                    section_duration, scale, tension,
+                    final_filter, filter_env_amount, final_resonance,
+                    note_duration, modulation, total_samples
+                )
+            elif narrative == 'SOLID_THEORY':
+                print(f"  → Layer 2: Generative patterns (Solid opening: Grounded bass)")
+                section_pattern = self.generate_solid_theory_pattern(
+                    section_duration, scale, tension,
+                    final_filter, filter_env_amount, final_resonance,
+                    note_duration, modulation, total_samples
+                )
             else:
                 print(f"  → Layer 2: Fixed patterns (fallback)")
         else:
             print(f"  → Layer 2: (muted)")
 
-        if self.config.LAYER_ENABLE['patterns'] and narrative not in ['COMPLEX_STRUGGLE', 'KING_HUNT', 'CRUSHING_ATTACK']:
+        if self.config.LAYER_ENABLE['patterns'] and narrative not in ['COMPLEX_STRUGGLE', 'KING_HUNT', 'CRUSHING_ATTACK', 'SHARP_THEORY', 'POSITIONAL_THEORY', 'SOLID_THEORY']:
                 # DEFAULT FALLBACK (keep old logic for now)
                 samples_per_note = int(note_duration * self.sample_rate)
                 for i in range(num_notes):

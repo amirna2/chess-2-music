@@ -365,7 +365,81 @@ class ChessNarrativeTagger:
 
         return key_moments
 
-    def classify_section_narrative(self, section_moves: List[Dict]) -> str:
+    def classify_opening_narrative(self, section_moves: List[Dict], avg_eval: float) -> str:
+        """
+        Classify opening narrative based on ECO code and eval balance.
+        Only applies when eval is near-equal (following theory).
+        """
+        eco = self.metadata.get('eco', 'A00')
+
+        # If eval has diverged significantly, players are out of theory
+        # Fall back to general classification
+        if abs(avg_eval) > 0.5:
+            return None  # Will use standard classification
+
+        # Extract ECO letter and number
+        try:
+            eco_letter = eco[0].upper()
+            eco_number = int(eco[1:])
+        except (IndexError, ValueError):
+            return None  # Invalid ECO, use standard classification
+
+        # ECO-based opening character classification
+
+        # Sharp gambits and attacks
+        if eco_letter == 'C':
+            # King's Gambit, Evans Gambit, etc. (C30-C39)
+            if 30 <= eco_number <= 39:
+                return "SHARP_THEORY"
+            # Evans Gambit, Italian Gambit (C51-C52)
+            elif 51 <= eco_number <= 52:
+                return "SHARP_THEORY"
+            # Marshall Attack (C89)
+            elif eco_number == 89:
+                return "SHARP_THEORY"
+            # French Defense (C00-C19) = positional
+            elif 0 <= eco_number <= 19:
+                return "POSITIONAL_THEORY"
+            # Ruy Lopez Closed (C84-C99) = positional
+            elif 84 <= eco_number <= 99:
+                return "POSITIONAL_THEORY"
+            # Italian Game (C50-C59 except gambits)
+            elif 50 <= eco_number <= 59:
+                return "POSITIONAL_THEORY"
+
+        # Sicilian Defense = sharp (B20-B99)
+        elif eco_letter == 'B' and 20 <= eco_number <= 99:
+            return "SHARP_THEORY"
+
+        # Queen's Gambit systems
+        elif eco_letter == 'D':
+            # Slav Defense (D10-D19) = solid
+            if 10 <= eco_number <= 19:
+                return "SOLID_THEORY"
+            # Queen's Gambit Declined (D30-D69) = solid
+            elif 30 <= eco_number <= 69:
+                return "SOLID_THEORY"
+            # Other D codes tend to be solid as well
+            else:
+                return "SOLID_THEORY"
+
+        # English Opening (A10-A39) = positional
+        elif eco_letter == 'A' and 10 <= eco_number <= 39:
+            return "POSITIONAL_THEORY"
+
+        # Reti/King's Indian Attack (A04-A09) = positional
+        elif eco_letter == 'A' and 4 <= eco_number <= 9:
+            return "POSITIONAL_THEORY"
+
+        # Indian Defenses (E00-E99) = varies, default to positional
+        elif eco_letter == 'E':
+            return "POSITIONAL_THEORY"
+
+        # Default: didn't match specific opening type
+        # Return None to fall back to standard classification
+        return None
+
+    def classify_section_narrative(self, section_name: str, section_moves: List[Dict]) -> str:
         """Determine the narrative character of a game section"""
         if not section_moves:
             return "UNKNOWN"
@@ -375,6 +449,16 @@ class ChessNarrativeTagger:
 
         if not evals_cp:
             return "COMPLEX_POSITION"
+
+        # Average evaluation (in pawns)
+        avg_eval = sum(evals_cp) / len(evals_cp) / 100.0
+
+        # Check for opening-specific narratives FIRST
+        if section_name == 'OPENING':
+            opening_narrative = self.classify_opening_narrative(section_moves, avg_eval)
+            if opening_narrative:
+                return opening_narrative
+            # If None returned, fall through to standard classification
 
         # Evaluation trend (in pawns)
         eval_trend = (evals_cp[-1] - evals_cp[0]) / 100.0 if len(evals_cp) > 1 else 0
@@ -538,7 +622,7 @@ class ChessNarrativeTagger:
                 start_ply=start,
                 end_ply=end,
                 duration=f"{start-1:02d}:{end:02d}",
-                narrative=self.classify_section_narrative(section_moves),
+                narrative=self.classify_section_narrative(section_name, section_moves),
                 tension=base_tension,
                 key_moments=key_moments
             ))
