@@ -140,8 +140,6 @@ synth_narrative.py (199 lines) - Narrative processes
     └── QuietPrecisionProcess - Equilibrium-seeking
 ```
 
-**Total: ~1,900 lines** (down from 1,627 in a single file)
-
 ## Three-Layer Synthesis System
 
 The music generation uses three simultaneous layers:
