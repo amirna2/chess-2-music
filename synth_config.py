@@ -545,8 +545,8 @@ class SynthConfig:
 
     # === LAYER MIXING ===
     LAYER_MIXING: Dict[str, float] = field(default_factory=lambda: {
-        'drone_in_supersaw': 0.6,
-        'pattern_in_supersaw': 0.4,
+        'drone_in_supersaw': 0.3,
+        'pattern_in_supersaw': 0.7,
         'pattern_note_level': 0.2,
         'sequencer_note_level': 0.4,
         'lfo_modulation_depth': 0.1,

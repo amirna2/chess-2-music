@@ -729,6 +729,89 @@ class ChessSynthComposer:
 
         return section_pattern
 
+    def generate_flawless_conversion_pattern(self, section_duration, scale, tension,
+                                             final_filter, filter_env_amount, final_resonance,
+                                             note_duration, modulation, total_samples):
+        """
+        FLAWLESS_CONVERSION: Methodical endgame technique converting advantage to victory
+        - Relentless, patient forward motion (like advancing pawns)
+        - Gradual ascending patterns with occasional plateaus
+        - Lower velocity to prevent clipping (controlled, not aggressive)
+        - Steady, predictable rhythm (inevitability)
+        - Slow filter opening (building pressure gradually)
+        """
+        section_pattern = np.zeros(total_samples)
+        base_note_dur = note_duration * 1.3  # Slower, patient
+        current_sample = 0
+        current_note_idx = 0  # Start low
+        direction = 1  # Ascending (advancing)
+
+        # Track position to create "plateau" phases (regrouping between advances)
+        plateau_counter = 0
+        plateau_length = 0
+
+        while current_sample < total_samples:
+            progress = current_sample / total_samples
+
+            # Get note
+            note_freq = scale[current_note_idx]
+
+            # Duration: very consistent for inevitability
+            duration = base_note_dur * np.random.uniform(0.96, 1.04)
+
+            # Generate note
+            note_samples = int(duration * self.sample_rate)
+            note_samples = min(note_samples, total_samples - current_sample)
+
+            if note_samples > 0:
+                note_duration_sec = note_samples / self.sample_rate
+
+                # Filter: gradually opens as pressure builds
+                filter_mult = 0.7 + progress * 0.6  # Slow rise
+
+                # Velocity: LOWER than other patterns to avoid clipping
+                # Controlled and steady, not aggressive
+                velocity = 0.55 + progress * 0.15  # 0.55 -> 0.70 (conservative)
+
+                pattern_note = self.synth.create_synth_note(
+                    freq=note_freq,
+                    duration=note_duration_sec,
+                    waveform='pulse',  # Warm, controlled
+                    filter_base=final_filter * filter_mult,
+                    filter_env_amount=filter_env_amount * 0.7,
+                    resonance=final_resonance * 0.6,  # Moderate resonance
+                    amp_env=get_envelope('soft', self.config),
+                    filter_env=get_filter_envelope('gentle', self.config)
+                )
+
+                # Add to pattern with conservative level
+                end_sample = min(current_sample + len(pattern_note), total_samples)
+                section_pattern[current_sample:end_sample] += pattern_note[:end_sample - current_sample] * self.config.LAYER_MIXING['pattern_note_level'] * velocity * 0.85  # Extra reduction
+
+            # Consistent pause
+            pause_samples = int(base_note_dur * 0.18 * self.sample_rate)
+            current_sample += note_samples + pause_samples
+
+            # Movement: mostly ascending with occasional plateaus
+            if plateau_counter > 0:
+                # In plateau - hold position
+                plateau_counter -= 1
+                # Check if plateau just ended
+                if plateau_counter == 0:
+                    # Reset to middle of scale and start ascending again
+                    current_note_idx = int(len(scale) / 2)
+            else:
+                # Advance upward
+                current_note_idx += 1
+
+                # Reached top of scale - create a plateau before cycling
+                if current_note_idx >= len(scale):
+                    current_note_idx = len(scale) - 1  # Stay at top
+                    plateau_length = int(4 + progress * 6)  # Longer plateaus as we approach end
+                    plateau_counter = plateau_length
+
+        return section_pattern
+
     def create_evolving_drone(self, drone_freq, section_duration, waveform, current_base,
                               progress, total_sections, total_samples):
         """
@@ -1084,6 +1167,14 @@ class ChessSynthComposer:
         waveform = current_base['waveform']
         scale = current_base['scale']
 
+        # Override base parameters for specific section narratives
+        if narrative == 'FLAWLESS_CONVERSION':
+            # Use warmer, calmer drone for technical endgames
+            waveform = 'triangle'  # Warmer than saw
+            # Create a modified current_base with lower detune
+            current_base = current_base.copy()
+            current_base['detune'] = min(current_base['detune'], 3)  # Cap at 3 cents (gentle)
+
         # Calculate note duration
         base_note_duration = self.config.BASE_NOTE_DURATION
         note_duration = base_note_duration * current_base['tempo'] * modulation['tempo_mult']
@@ -1181,12 +1272,19 @@ class ChessSynthComposer:
                     final_filter, filter_env_amount, final_resonance,
                     note_duration, modulation, total_samples
                 )
+            elif narrative == 'FLAWLESS_CONVERSION':
+                print(f"  → Layer 2: Generative patterns (Endgame: Relentless advance)")
+                section_pattern = self.generate_flawless_conversion_pattern(
+                    section_duration, scale, tension,
+                    final_filter, filter_env_amount, final_resonance,
+                    note_duration, modulation, total_samples
+                )
             else:
                 print(f"  → Layer 2: Fixed patterns (fallback)")
         else:
             print(f"  → Layer 2: (muted)")
 
-        if self.config.LAYER_ENABLE['patterns'] and narrative not in ['COMPLEX_STRUGGLE', 'KING_HUNT', 'CRUSHING_ATTACK', 'SHARP_THEORY', 'POSITIONAL_THEORY', 'SOLID_THEORY']:
+        if self.config.LAYER_ENABLE['patterns'] and narrative not in ['COMPLEX_STRUGGLE', 'KING_HUNT', 'CRUSHING_ATTACK', 'SHARP_THEORY', 'POSITIONAL_THEORY', 'SOLID_THEORY', 'FLAWLESS_CONVERSION']:
                 # DEFAULT FALLBACK (keep old logic for now)
                 samples_per_note = int(note_duration * self.sample_rate)
                 for i in range(num_notes):
@@ -1220,17 +1318,9 @@ class ChessSynthComposer:
                             actual_samples = min(len(pattern_note), end_sample - start_sample)
                             section_pattern[start_sample:start_sample + actual_samples] += pattern_note[:actual_samples] * self.config.LAYER_MIXING['pattern_note_level']
 
-        # MIX LAYERS 1 AND 2 (with auto-gain compensation for soloing)
-        active_layers = sum([
-            self.config.LAYER_ENABLE['drone'],
-            self.config.LAYER_ENABLE['patterns'],
-            self.config.LAYER_ENABLE['sequencer']
-        ])
-        # If only 1 or 2 layers active, boost volume so they're audible
-        solo_boost = 2.5 if active_layers == 1 else (1.5 if active_layers == 2 else 1.0)
-
-        drone_contribution = base_drone * self.config.LAYER_MIXING['drone_in_supersaw'] * solo_boost
-        pattern_contribution = section_pattern * self.config.LAYER_MIXING['pattern_in_supersaw'] * solo_boost
+        # MIX LAYERS 1 AND 2
+        drone_contribution = base_drone * self.config.LAYER_MIXING['drone_in_supersaw']
+        pattern_contribution = section_pattern * self.config.LAYER_MIXING['pattern_in_supersaw']
         mixed_signal = drone_contribution + pattern_contribution
 
         # Apply section envelope
@@ -1495,8 +1585,6 @@ def main():
 
     parser = argparse.ArgumentParser(description='Synthesize chess game music')
     parser.add_argument('tags_file', help='JSON file with narrative tags')
-    parser.add_argument('--only-layer', nargs='+', type=int, choices=[1, 2, 3],
-                        help='Only enable specific layers (1=drone, 2=patterns, 3=sequencer). Example: --only-layer 1 3')
     parser.add_argument('--only-section', nargs='+',
                         help='Only render specific sections by name. Example: --only-section OPENING MIDDLEGAME_1')
     parser.add_argument('-o', '--output', default='chess_synth.wav', help='Output filename')
@@ -1506,24 +1594,8 @@ def main():
     with open(args.tags_file, 'r') as f:
         tags = json.load(f)
 
-    # Create config with layer muting
     from synth_config import SynthConfig
     config = SynthConfig()
-
-    # Handle layer filtering
-    if args.only_layer:
-        # Disable all layers first
-        config.LAYER_ENABLE['drone'] = False
-        config.LAYER_ENABLE['patterns'] = False
-        config.LAYER_ENABLE['sequencer'] = False
-
-        # Enable only requested layers
-        if 1 in args.only_layer:
-            config.LAYER_ENABLE['drone'] = True
-        if 2 in args.only_layer:
-            config.LAYER_ENABLE['patterns'] = True
-        if 3 in args.only_layer:
-            config.LAYER_ENABLE['sequencer'] = True
 
     # Handle section filtering
     if args.only_section:

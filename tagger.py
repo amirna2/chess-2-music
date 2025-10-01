@@ -496,7 +496,29 @@ class ChessNarrativeTagger:
             'CHECK', 'CAPTURE', 'PROMOTION', 'CHECKMATE'
         ])
 
+        # Check for endgame phase (queens traded)
+        queens_off = any(m.get('is_capture') and m.get('piece') == 'Q' for m in section_moves)
+
         # Classification rules
+
+        # FLAWLESS_CONVERSION: Technical endgame with stable advantage being converted
+        # Check this BEFORE king hunt to avoid misclassification
+        if section_name == 'ENDGAME' and abs(avg_eval) >= 2.0 and capture_density < 0.15:
+            # Determine winning side based on eval
+            winning_side = 'white' if avg_eval > 0 else 'black'
+            game_result = self.metadata.get('result', '?')
+
+            # Verify the advantage was converted to victory
+            result_matches = (winning_side == 'white' and game_result == '1-0') or \
+                           (winning_side == 'black' and game_result == '0-1')
+
+            # Additional check: eval should be trending in the right direction (not swinging wildly)
+            # If eval_trend has same sign as avg_eval, it's converting the advantage
+            eval_trend_matches = (avg_eval > 0 and eval_trend >= 0) or (avg_eval < 0 and eval_trend <= 0)
+
+            if result_matches and eval_trend_matches:
+                return "FLAWLESS_CONVERSION"
+
         if eval_volatility > 2.0 and capture_density > 0.3:
             return "TACTICAL_CHAOS"
         elif checks >= 3 and vulnerable_checks >= 2:
