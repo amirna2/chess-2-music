@@ -533,10 +533,13 @@ class ChessSynthComposer:
 
             # Note selection by state
             if current_state == STATE_ATTACK:
-                # Rapid upward motion
-                current_note_idx = min(len(scale) - 1, current_note_idx + np.random.randint(1, 3))
+                # Aggressive attacks - favor upper register, random leaps
+                if np.random.random() < 0.5:
+                    current_note_idx = np.random.choice([4, 5, 6, 7])  # Upper half
+                else:
+                    current_note_idx = np.random.choice([2, 3, 4])  # Middle
             elif current_state == STATE_DART:
-                # Random jumps
+                # Random tactical jumps anywhere
                 current_note_idx = np.random.randint(0, len(scale))
             elif current_state == STATE_SETTLE:
                 # Gravitate to stable notes
@@ -745,18 +748,15 @@ class ChessSynthComposer:
 
             # Note selection by state
             if current_state == STATE_ADVANCE:
-                # Gradual upward pressure
-                if np.random.random() < 0.8:
-                    current_note_idx = min(len(scale) - 1, current_note_idx + 1)
+                # Build pressure - favor dominant and upper notes, but randomly
+                weights = [0.1, 0.05, 0.15, 0.1, 0.25, 0.15, 0.1, 0.1]  # Favor 5th (index 4)
+                current_note_idx = np.random.choice(range(len(scale)), p=weights)
             elif current_state == STATE_CONSOLIDATE:
-                # Hold stable harmonic notes
-                if current_note_idx > 4:
-                    current_note_idx = 4  # Fifth - stable
-                elif current_note_idx < 2:
-                    current_note_idx = 0  # Tonic - stable
+                # Hold stable harmonic notes - tonic, third, fifth
+                current_note_idx = np.random.choice([0, 2, 4], p=[0.4, 0.3, 0.3])
             elif current_state == STATE_BREAKTHROUGH:
-                # Bold moves across the scale
-                current_note_idx = np.random.choice([0, 2, 4, 7])  # Tonic, third, fifth, seventh
+                # Decisive moves - octave relationships
+                current_note_idx = np.random.choice([0, 4, 7], p=[0.3, 0.4, 0.3])  # Tonic, fifth, seventh
 
             note_freq = scale[current_note_idx]
             duration = base_note_dur * np.random.uniform(0.96, 1.04)
@@ -769,12 +769,12 @@ class ChessSynthComposer:
                 pattern_note = self.synth.create_synth_note(
                     freq=note_freq,
                     duration=note_samples / self.sample_rate,
-                    waveform='pulse',
+                    waveform='triangle',
                     filter_base=final_filter * (0.7 + progress * 0.6),
                     filter_env_amount=filter_env_amount * 0.7,
                     resonance=final_resonance * 0.6,
-                    amp_env=get_envelope('soft', self.config),
-                    filter_env=get_filter_envelope('gentle', self.config)
+                    amp_env=get_envelope('sustained', self.config),
+                    filter_env=get_filter_envelope('closing', self.config)
                 )
                 end_sample = min(current_sample + len(pattern_note), total_samples)
                 section_pattern[current_sample:end_sample] += pattern_note[:end_sample - current_sample] * self.config.LAYER_MIXING['pattern_note_level'] * velocity * 0.85
@@ -1395,18 +1395,41 @@ class ChessSynthComposer:
                 full_sequence.append(midi_note)
                 filter_frequency += (filter_target - filter_frequency) * 0.02
 
-            # Generate audio from sequence
+            # Generate audio from sequence with portamento
+            prev_freq = None
             for i, midi_note in enumerate(full_sequence):
                 if i * samples_per_step >= len(sequencer_layer):
                     break
 
                 if midi_note is None:
+                    prev_freq = None
                     continue
 
-                freq = midi_to_freq(midi_note)
+                target_freq = midi_to_freq(midi_note)
 
+                # Add portamento (frequency glide) from previous note
+                if prev_freq is not None:
+                    # Create frequency glide from prev to target
+                    glide_time = sixteenth_duration * 0.3  # 30% of note duration for glide
+                    glide_samples = int(glide_time * self.sample_rate)
+                    freq_curve = np.linspace(prev_freq, target_freq, glide_samples)
+
+                    # Generate glide with changing frequency
+                    t = np.arange(glide_samples) / self.sample_rate
+                    phase = np.zeros(glide_samples)
+                    for s in range(1, glide_samples):
+                        phase[s] = phase[s-1] + 2 * np.pi * freq_curve[s] / self.sample_rate
+                    glide_audio = np.sin(phase) * 0.3  # Lower volume for glide
+
+                    # Add glide to start of note position
+                    start_pos = int(i * samples_per_step * self.config.TIMING['sequencer_overlap'])
+                    end_pos = min(start_pos + len(glide_audio), len(sequencer_layer))
+                    if end_pos > start_pos:
+                        sequencer_layer[start_pos:end_pos] += glide_audio[:end_pos-start_pos] * self.config.LAYER_MIXING['sequencer_note_level']
+
+                # Generate main note
                 note_audio = self.synth.supersaw(
-                    freq,
+                    target_freq,
                     sixteenth_duration,
                     detune_cents=self.config.SEQUENCER_SYNTH['detune_cents'],
                     filter_base=self.config.SEQUENCER_SYNTH['filter_base_start'] + (i * self.config.SEQUENCER_SYNTH['filter_increment_per_step']),
@@ -1421,6 +1444,8 @@ class ChessSynthComposer:
 
                 if end_pos > start_pos:
                     sequencer_layer[start_pos:end_pos] += note_audio[:end_pos-start_pos] * self.config.LAYER_MIXING['sequencer_note_level']
+
+                prev_freq = target_freq
 
             # Apply global filter sweep
             sweep_length = len(sequencer_layer)
