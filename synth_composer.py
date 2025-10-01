@@ -498,81 +498,76 @@ class ChessSynthComposer:
                                        final_filter, filter_env_amount, final_resonance,
                                        note_duration, modulation, total_samples):
         """
-        SHARP_THEORY: Fast arpeggios and energetic ascending patterns
-        - Bright, energetic character for Sicilians, gambits, tactical openings
-        - Fast ascending arpeggios with occasional descents
-        - Bright filters, short note durations
-        - Random velocity for natural feel but maintains energy
+        SHARP_THEORY: State machine for aggressive tactical openings
+        - States: ATTACK (rapid ascent), DART (quick jumps), SETTLE (brief pause)
+        - Fast, energetic, unpredictable like Sicilian tactics
         """
         section_pattern = np.zeros(total_samples)
-        base_note_dur = note_duration * 0.4  # Fast, energetic
+        base_note_dur = note_duration * 0.4
         current_sample = 0
-        current_note_idx = 0  # Start on tonic
-        direction = 1  # 1 = ascending, -1 = descending
+
+        # State machine
+        STATE_ATTACK = 0
+        STATE_DART = 1
+        STATE_SETTLE = 2
+        current_state = STATE_ATTACK
+        current_note_idx = 0
 
         while current_sample < total_samples:
             progress = current_sample / total_samples
 
-            # Get current note with possible octave shift
-            octave_shift = 0
-            if current_note_idx >= len(scale):
-                octave_shift = 1
-                display_idx = current_note_idx - len(scale)
-            else:
-                display_idx = current_note_idx
+            # State transitions
+            if current_state == STATE_ATTACK:
+                if np.random.random() < 0.2:
+                    current_state = STATE_DART
+                elif np.random.random() < 0.1:
+                    current_state = STATE_SETTLE
+            elif current_state == STATE_DART:
+                if np.random.random() < 0.6:
+                    current_state = STATE_ATTACK
+                elif np.random.random() < 0.2:
+                    current_state = STATE_SETTLE
+            elif current_state == STATE_SETTLE:
+                if np.random.random() < 0.8:
+                    current_state = STATE_ATTACK
 
-            note_freq = scale[display_idx] * (2 ** octave_shift)
+            # Note selection by state
+            if current_state == STATE_ATTACK:
+                # Rapid upward motion
+                current_note_idx = min(len(scale) - 1, current_note_idx + np.random.randint(1, 3))
+            elif current_state == STATE_DART:
+                # Random jumps
+                current_note_idx = np.random.randint(0, len(scale))
+            elif current_state == STATE_SETTLE:
+                # Gravitate to stable notes
+                if np.random.random() < 0.6:
+                    current_note_idx = 0  # Tonic
+                else:
+                    current_note_idx = 4  # Dominant
 
-            # Duration: fast and consistent with slight variation
-            duration = base_note_dur * np.random.uniform(0.8, 1.2)
+            note_freq = scale[current_note_idx]
+            duration = base_note_dur * np.random.uniform(0.6, 1.0)
+            velocity = np.random.uniform(0.75, 1.0)
 
-            # Generate note
             note_samples = int(duration * self.sample_rate)
             note_samples = min(note_samples, total_samples - current_sample)
 
             if note_samples > 0:
-                note_duration_sec = note_samples / self.sample_rate
-
-                # Bright, energetic filter settings
-                filter_mult = 1.5 + tension * 0.5  # Bright and gets brighter
-
-                # Velocity: mostly high with variation for natural feel
-                velocity = np.random.uniform(0.75, 1.0)
-
                 pattern_note = self.synth.create_synth_note(
                     freq=note_freq,
-                    duration=note_duration_sec,
-                    waveform='saw',  # Bright, sharp
-                    filter_base=final_filter * filter_mult,
-                    filter_env_amount=filter_env_amount * np.random.uniform(0.9, 1.1),
-                    resonance=final_resonance * 0.8,  # Moderate resonance
+                    duration=note_samples / self.sample_rate,
+                    waveform='saw',
+                    filter_base=final_filter * (1.5 + tension * 0.5),
+                    filter_env_amount=filter_env_amount,
+                    resonance=final_resonance * 0.8,
                     amp_env=get_envelope('pluck', self.config),
                     filter_env=get_filter_envelope('sweep', self.config)
                 )
-
-                # Add to pattern
                 end_sample = min(current_sample + len(pattern_note), total_samples)
                 section_pattern[current_sample:end_sample] += pattern_note[:end_sample - current_sample] * self.config.LAYER_MIXING['pattern_note_level'] * velocity
 
-            # Minimal pause for energetic feel
             pause_samples = int(base_note_dur * 0.05 * self.sample_rate)
             current_sample += note_samples + pause_samples
-
-            # Move to next note (ascending arpeggios with occasional direction changes)
-            current_note_idx += direction
-
-            # Change direction or reset
-            if direction == 1 and current_note_idx >= len(scale) + 4:  # Go up to octave + 4th
-                # 70% chance to descend, 30% to jump back down
-                if np.random.random() < 0.7:
-                    direction = -1
-                else:
-                    current_note_idx = 0
-                    direction = 1
-            elif direction == -1 and current_note_idx <= 0:
-                # Back to ascending from tonic
-                current_note_idx = 0
-                direction = 1
 
         return section_pattern
 
@@ -580,87 +575,66 @@ class ChessSynthComposer:
                                            final_filter, filter_env_amount, final_resonance,
                                            note_duration, modulation, total_samples):
         """
-        POSITIONAL_THEORY: Methodical build with structured patterns
-        - Strategic, patient character for French, English, closed systems
-        - Slower tempo than sharp theory
-        - Structured patterns (ascending, then descending, then both)
-        - Smooth, controlled dynamics
+        POSITIONAL_THEORY: Markov chain for strategic maneuvering
+        - Weighted toward stable harmonic intervals (tonic, third, fifth)
+        - Deliberate, controlled transitions
+        - Patient, strategic like French/English openings
         """
         section_pattern = np.zeros(total_samples)
-        base_note_dur = note_duration * 1.0  # Moderate tempo
+        base_note_dur = note_duration * 1.0
         current_sample = 0
 
-        # Phase structure: ascending → descending → alternating
-        phase_duration = section_duration / 3.0
-        phase_1_samples = int(phase_duration * self.sample_rate)
-        phase_2_samples = int(phase_duration * 2 * self.sample_rate)
+        # Markov chain: favor stable harmonic intervals
+        transition_matrix = np.array([
+            [0.3, 0.1, 0.3, 0.1, 0.2, 0.0, 0.0, 0.0],  # From tonic: to tonic/third/fifth
+            [0.3, 0.2, 0.2, 0.1, 0.1, 0.1, 0.0, 0.0],  # From 1
+            [0.4, 0.1, 0.2, 0.1, 0.2, 0.0, 0.0, 0.0],  # From 2 (third): to tonic/fifth
+            [0.2, 0.1, 0.2, 0.2, 0.2, 0.1, 0.0, 0.0],  # From 3
+            [0.3, 0.0, 0.2, 0.1, 0.2, 0.1, 0.1, 0.0],  # From 4 (fifth): to tonic/third
+            [0.1, 0.0, 0.1, 0.2, 0.3, 0.2, 0.1, 0.0],  # From 5
+            [0.1, 0.0, 0.1, 0.1, 0.2, 0.2, 0.2, 0.1],  # From 6
+            [0.2, 0.0, 0.1, 0.0, 0.2, 0.2, 0.2, 0.1],  # From 7: return toward tonic/fifth
+        ])
 
-        current_note_idx = 0
-        direction = 1
+        # Normalize
+        for i in range(len(transition_matrix)):
+            row_sum = np.sum(transition_matrix[i])
+            if row_sum > 0:
+                transition_matrix[i] /= row_sum
+
+        current_note_idx = 0  # Start on tonic
 
         while current_sample < total_samples:
-            progress = current_sample / total_samples
-
-            # Determine phase
-            if current_sample < phase_1_samples:
-                # Phase 1: Ascending only
-                phase = 'ascending'
-            elif current_sample < phase_2_samples:
-                # Phase 2: Descending only
-                phase = 'descending'
-            else:
-                # Phase 3: Alternating
-                phase = 'alternating'
-
-            # Get note
             note_freq = scale[current_note_idx]
-
-            # Duration: controlled and consistent
             duration = base_note_dur * np.random.uniform(0.9, 1.1)
+            velocity = 0.7 + np.random.uniform(-0.1, 0.1)
 
-            # Generate note
             note_samples = int(duration * self.sample_rate)
             note_samples = min(note_samples, total_samples - current_sample)
 
             if note_samples > 0:
-                note_duration_sec = note_samples / self.sample_rate
-
-                # Filter: moderate brightness, evolving slowly
-                filter_mult = 0.9 + progress * 0.4
-
-                # Velocity: smooth and controlled
-                velocity = 0.7 + np.random.uniform(-0.1, 0.1)
-
                 pattern_note = self.synth.create_synth_note(
                     freq=note_freq,
-                    duration=note_duration_sec,
-                    waveform='pulse',  # Warmer than saw
-                    filter_base=final_filter * filter_mult,
+                    duration=note_samples / self.sample_rate,
+                    waveform='pulse',
+                    filter_base=final_filter * 0.9,
                     filter_env_amount=filter_env_amount * 0.8,
                     resonance=final_resonance * 0.7,
                     amp_env=get_envelope('soft', self.config),
                     filter_env=get_filter_envelope('gentle', self.config)
                 )
-
-                # Add to pattern
                 end_sample = min(current_sample + len(pattern_note), total_samples)
                 section_pattern[current_sample:end_sample] += pattern_note[:end_sample - current_sample] * self.config.LAYER_MIXING['pattern_note_level'] * velocity
 
-            # Moderate pause
             pause_samples = int(base_note_dur * 0.15 * self.sample_rate)
             current_sample += note_samples + pause_samples
 
-            # Move according to phase
-            if phase == 'ascending':
-                current_note_idx = (current_note_idx + 1) % len(scale)
-            elif phase == 'descending':
-                current_note_idx = (current_note_idx - 1) % len(scale)
-            else:  # alternating
-                current_note_idx += direction
-                if current_note_idx >= len(scale) - 1:
-                    direction = -1
-                elif current_note_idx <= 0:
-                    direction = 1
+            # Markov transition
+            if current_note_idx < len(transition_matrix):
+                probabilities = transition_matrix[current_note_idx]
+                current_note_idx = np.random.choice(len(probabilities), p=probabilities)
+            else:
+                current_note_idx = 0
 
         return section_pattern
 
@@ -733,82 +707,80 @@ class ChessSynthComposer:
                                              final_filter, filter_env_amount, final_resonance,
                                              note_duration, modulation, total_samples):
         """
-        FLAWLESS_CONVERSION: Methodical endgame technique converting advantage to victory
-        - Relentless, patient forward motion (like advancing pawns)
-        - Gradual ascending patterns with occasional plateaus
-        - Lower velocity to prevent clipping (controlled, not aggressive)
-        - Steady, predictable rhythm (inevitability)
-        - Slow filter opening (building pressure gradually)
+        FLAWLESS_CONVERSION: State machine for precise endgame technique
+        - States: ADVANCE (build pressure), CONSOLIDATE (hold position), BREAKTHROUGH (push advantage)
+        - Methodical, controlled, inevitable like Fischer's technique
         """
         section_pattern = np.zeros(total_samples)
-        base_note_dur = note_duration * 1.3  # Slower, patient
+        base_note_dur = note_duration * 1.3
         current_sample = 0
-        current_note_idx = 0  # Start low
-        direction = 1  # Ascending (advancing)
 
-        # Track position to create "plateau" phases (regrouping between advances)
-        plateau_counter = 0
-        plateau_length = 0
+        # State machine
+        STATE_ADVANCE = 0
+        STATE_CONSOLIDATE = 1
+        STATE_BREAKTHROUGH = 2
+        current_state = STATE_ADVANCE
+        current_note_idx = 0
+        advance_progress = 0  # Track how far we've advanced
 
         while current_sample < total_samples:
             progress = current_sample / total_samples
 
-            # Get note
+            # State transitions
+            if current_state == STATE_ADVANCE:
+                advance_progress += 1
+                if advance_progress > 5 and np.random.random() < 0.3:
+                    current_state = STATE_CONSOLIDATE
+                    advance_progress = 0
+                elif progress > 0.7 and np.random.random() < 0.2:
+                    current_state = STATE_BREAKTHROUGH
+            elif current_state == STATE_CONSOLIDATE:
+                if np.random.random() < 0.5:
+                    current_state = STATE_ADVANCE
+                elif progress > 0.7 and np.random.random() < 0.3:
+                    current_state = STATE_BREAKTHROUGH
+            elif current_state == STATE_BREAKTHROUGH:
+                if np.random.random() < 0.1:
+                    current_state = STATE_ADVANCE
+
+            # Note selection by state
+            if current_state == STATE_ADVANCE:
+                # Gradual upward pressure
+                if np.random.random() < 0.8:
+                    current_note_idx = min(len(scale) - 1, current_note_idx + 1)
+            elif current_state == STATE_CONSOLIDATE:
+                # Hold stable harmonic notes
+                if current_note_idx > 4:
+                    current_note_idx = 4  # Fifth - stable
+                elif current_note_idx < 2:
+                    current_note_idx = 0  # Tonic - stable
+            elif current_state == STATE_BREAKTHROUGH:
+                # Bold moves across the scale
+                current_note_idx = np.random.choice([0, 2, 4, 7])  # Tonic, third, fifth, seventh
+
             note_freq = scale[current_note_idx]
-
-            # Duration: very consistent for inevitability
             duration = base_note_dur * np.random.uniform(0.96, 1.04)
+            velocity = 0.55 + progress * 0.15
 
-            # Generate note
             note_samples = int(duration * self.sample_rate)
             note_samples = min(note_samples, total_samples - current_sample)
 
             if note_samples > 0:
-                note_duration_sec = note_samples / self.sample_rate
-
-                # Filter: gradually opens as pressure builds
-                filter_mult = 0.7 + progress * 0.6  # Slow rise
-
-                # Velocity: LOWER than other patterns to avoid clipping
-                # Controlled and steady, not aggressive
-                velocity = 0.55 + progress * 0.15  # 0.55 -> 0.70 (conservative)
-
                 pattern_note = self.synth.create_synth_note(
                     freq=note_freq,
-                    duration=note_duration_sec,
-                    waveform='pulse',  # Warm, controlled
-                    filter_base=final_filter * filter_mult,
+                    duration=note_samples / self.sample_rate,
+                    waveform='pulse',
+                    filter_base=final_filter * (0.7 + progress * 0.6),
                     filter_env_amount=filter_env_amount * 0.7,
-                    resonance=final_resonance * 0.6,  # Moderate resonance
+                    resonance=final_resonance * 0.6,
                     amp_env=get_envelope('soft', self.config),
                     filter_env=get_filter_envelope('gentle', self.config)
                 )
-
-                # Add to pattern with conservative level
                 end_sample = min(current_sample + len(pattern_note), total_samples)
-                section_pattern[current_sample:end_sample] += pattern_note[:end_sample - current_sample] * self.config.LAYER_MIXING['pattern_note_level'] * velocity * 0.85  # Extra reduction
+                section_pattern[current_sample:end_sample] += pattern_note[:end_sample - current_sample] * self.config.LAYER_MIXING['pattern_note_level'] * velocity * 0.85
 
-            # Consistent pause
             pause_samples = int(base_note_dur * 0.18 * self.sample_rate)
             current_sample += note_samples + pause_samples
-
-            # Movement: mostly ascending with occasional plateaus
-            if plateau_counter > 0:
-                # In plateau - hold position
-                plateau_counter -= 1
-                # Check if plateau just ended
-                if plateau_counter == 0:
-                    # Reset to middle of scale and start ascending again
-                    current_note_idx = int(len(scale) / 2)
-            else:
-                # Advance upward
-                current_note_idx += 1
-
-                # Reached top of scale - create a plateau before cycling
-                if current_note_idx >= len(scale):
-                    current_note_idx = len(scale) - 1  # Stay at top
-                    plateau_length = int(4 + progress * 6)  # Longer plateaus as we approach end
-                    plateau_counter = plateau_length
 
         return section_pattern
 
