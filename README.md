@@ -1,19 +1,22 @@
 # Chess-to-Music: Algorithmic Composition from Chess Games
 
-A Python toolkit that transforms chess games into electronic music compositions using subtractive synthesis. Inspired by Laurie Spiegel's work on algorithmic composition, this project analyzes chess game narratives and translates them into evolving soundscapes through a three-layer synthesis architecture.
+A Python toolkit that transforms chess games into electronic music compositions using subtractive synthesis. Inspired by **Laurie Spiegel's work on algorithmic composition and information theory**, this project analyzes chess game narratives and translates them into evolving soundscapes through a three-layer synthesis architecture with **entropy-driven continuous evolution**.
 
 ## Overview
 
 This system converts chess games (PGN format) into audio (WAV) through a multi-stage pipeline:
 
-1. **Analysis**: Extract game features, narratives, and key moments
-2. **Synthesis**: Generate music using subtractive synthesis with Moog-style filters
-3. **Output**: Direct-to-WAV audio file
+1. **Feature Extraction**: Parse PGN and extract move-by-move data with evaluations
+2. **Narrative Analysis**: Identify game structure, narratives, and key moments
+3. **Entropy Calculation**: Measure position complexity using information theory
+4. **Synthesis**: Generate music using subtractive synthesis with entropy-driven evolution
+5. **Output**: Direct-to-WAV audio file
 
 The music reflects the drama of the game through:
 - **Overall narrative arcs** (defeat, masterpiece, precision)
 - **Section-level tension** (tactical chaos, king hunts, quiet positions)
 - **Key moments** (brilliant moves, blunders, sacrifices)
+- **Continuous entropy curves** (position complexity drives predictability)
 
 ## Quick Start
 
@@ -45,19 +48,25 @@ pip install -r requirements.txt
 ### Individual Pipeline Steps
 
 ```bash
-# Step 1: Add timing data to PGN
+# Step 1: Add timing data to PGN (if PGN has clock data)
 python3 thinking_time.py data/game.pgn
+# → Converts [%clk] annotations to [%emt] elapsed move times
+# → This feeds into entropy calculation (thinking time = decision complexity)
 
-# Step 2: Extract features
-python3 feature_extractor.py data/game.pgn
+# Step 2: Extract features (includes eval data for entropy)
+python3 feature_extractor.py data/game.pgn --json > feat-game.json
+# → Extracts eval_cp, is_capture, is_check, emt_seconds, etc.
 
-# Step 3: Generate narrative tags
-python3 tagger.py data/game-feat.json
+# Step 3: Generate narrative tags (preserves moves for entropy calculation)
+python3 tagger.py feat-game.json --output tags-game.json
+# → Creates narrative structure + preserves move data automatically
 
-# Step 4: Synthesize music
-python3 synth_composer.py data/game-tags.json
-# → Creates: chess_synth.wav
+# Step 4: Synthesize music with entropy-driven Layer 3
+python3 synth_composer.py tags-game.json -o output.wav
+# → Entropy curve controls note selection, rhythm, filters, harmonies
 ```
+
+**Note**: `tagger.py` now automatically preserves move data from feature extraction, enabling entropy calculation during synthesis. No manual merge needed!
 
 ## Architecture
 
@@ -66,24 +75,35 @@ python3 synth_composer.py data/game-tags.json
 ```
 thinking_time.py
     ├── Adds EMT (Elapsed Move Time) annotations to PGN
+    ├── Converts [%clk] to [%emt] (thinking time per move)
     └── Preserves all game data and comments
 
 feature_extractor.py
     ├── Parses annotated PGN with python-chess
     ├── Extracts tactical features (checks, captures, sacrifices)
-    ├── Analyzes position evaluation changes
-    └── Outputs: *-feat.json
+    ├── Analyzes position evaluation changes (eval_cp, eval_mate)
+    ├── Parses timing data (emt_seconds, clock_after_seconds)
+    └── Outputs: *-feat.json (141 moves with full data)
 
 tagger.py
     ├── Reads feature JSON
-    ├── Identifies narrative patterns
-    ├── Segments game into dramatic sections
+    ├── Identifies narrative patterns (DEATH_SPIRAL, ATTACKING_MASTERPIECE, etc.)
+    ├── Segments game into dramatic sections (OPENING, MIDDLEGAME, ENDGAME)
     ├── Tags key moments (brilliant, blunder, development)
-    └── Outputs: *-tags.json
+    ├── **Preserves move data for entropy calculation** (NEW!)
+    └── Outputs: *-tags.json (narrative + moves)
 
-synth_composer.py (REFACTORED)
+entropy_calculator.py (NEW!)
+    ├── Calculates informational entropy from position complexity
+    ├── Eval volatility: Rolling std dev of eval_cp
+    ├── Tactical density: Captures + checks frequency
+    ├── Time pressure: Thinking time patterns
+    └── Returns: entropy curve (0-1 per ply)
+
+synth_composer.py (REFACTORED + ENTROPY)
     ├── Three-layer synthesis architecture
-    ├── Uses narrative tags to drive synthesis
+    ├── Calculates entropy curves per section
+    ├── Uses narrative tags + entropy to drive synthesis
     └── Outputs: chess_synth.wav
 ```
 
@@ -139,13 +159,75 @@ Modulates the base sound for each game phase:
 - **Quiet Positional**: Slow, clean, sparse patterns
 - **Desperate Defense**: Dark, slow, minimal filter movement
 
-### Layer 3: Key Moments (Punctuation)
-Adds musical accents for specific events:
+### Layer 3: Key Moments + Entropy (Punctuation & Evolution)
+Adds musical accents for specific events **PLUS continuous entropy-driven evolution**:
+
+**Key Moments (Discrete Events):**
 - **Brilliant moves**: Rising filter sweeps, triumphant tones
 - **Blunders**: Descending crashes, dissonant harmonies
 - **Development**: Rising melodic phrases
 - **First Exchange**: Question-answer call-and-response
 - **Mate Sequence**: Dramatic finality (victory fanfare or death knell)
+
+**Entropy Modulation (Continuous, Laurie Spiegel-inspired):**
+- **Note Selection**: Entropy controls available note pool
+  - Low entropy (< 0.3): Root-fifth only → predictable, stable
+  - Medium (0.3-0.7): Diatonic scale → developing
+  - High (> 0.7): Full chromatic → tense, unpredictable
+- **Rhythm Variation**: High entropy adds ±50% timing irregularity
+- **Portamento Control**: Low entropy = smooth glides, high = jumpy
+- **Filter Modulation**: Entropy controls sweep speed
+- **Harmonic Density**: High entropy adds random harmony notes
+
+**Result**: Layer 3 now **breathes with position complexity** instead of just switching patterns at discrete events.
+
+## Entropy-Driven Composition (Laurie Spiegel Approach)
+
+> "The moment to moment variation of level of predictability that is embodied in an entropy curve arouses in the listener feelings of expectation, anticipation, satisfaction, disappointment, surprise, tension, frustration and other emotions." — Laurie Spiegel
+
+### What is Entropy in This Context?
+
+**Informational entropy** measures the **uncertainty/complexity** of a chess position:
+- **High entropy**: Position is unclear, many possibilities, eval swinging wildly
+- **Low entropy**: Position is simple, forced moves, eval stable
+
+### How Entropy is Calculated
+
+```python
+# Three components, weighted combination:
+entropy = eval_volatility * 0.5 +      # Rolling std dev of eval_cp
+          tactical_density * 0.4 +     # Captures + checks frequency
+          thinking_time * 0.1           # Long thinks = difficult position
+```
+
+### Musical Mapping
+
+Entropy **directly controls predictability** in Layer 3:
+
+| Position Type | Entropy | Musical Result |
+|--------------|---------|----------------|
+| **Theory moves** | 0.05-0.15 | Simple root-fifth drone, regular rhythm |
+| **Quiet maneuvering** | 0.2-0.4 | Diatonic melody, slight variation |
+| **Complex struggle** | 0.5-0.7 | Active patterns, moderate chromaticism |
+| **Tactical chaos** | 0.8-1.0 | Full chromatic, irregular rhythm, dense harmonies |
+
+### Example: Fischer-Taimanov Game 4
+
+```
+Opening (plies 1-20):   entropy = 0.168
+  → Starts 0.08 (theory) → rises to 0.27 (exchanges) → drops to 0.08 (settled)
+  → Music: Simple → Active → Simple
+
+Middlegame (plies 29-45): entropy = 0.269
+  → King hunt tactics, position unclear
+  → Music: Chromatic, dense, tense
+
+Endgame (plies 46-141):   entropy = 0.207
+  → Technical conversion, some complexity remains
+  → Music: Moderate activity, gradually simplifying
+```
+
+The eval volatility literally measures "how hard is this to understand" = perfect mapping to **musical uncertainty**!
 
 ## Configuration & Tweaking
 
@@ -195,17 +277,18 @@ python3 simple_synth_test.py
 
 ```
 ├── c2m                      # Main pipeline script
-├── thinking_time.py         # EMT annotation
+├── thinking_time.py         # EMT annotation (clock → thinking time)
 ├── feature_extractor.py     # Game feature extraction
-├── tagger.py                # Narrative tagging
-├── synth_composer.py        # Main composition (REFACTORED)
-├── synth_config.py          # Configuration hub (NEW)
-├── synth_engine.py          # Synthesis engine (NEW)
-├── synth_narrative.py       # Narrative processes (NEW)
+├── tagger.py                # Narrative tagging (preserves moves)
+├── entropy_calculator.py    # Entropy calculation (NEW!)
+├── synth_composer.py        # Main composition (REFACTORED + ENTROPY)
+├── synth_config.py          # Configuration hub (includes ENTROPY_CONFIG)
+├── synth_engine.py          # Synthesis engine
+├── synth_narrative.py       # Narrative processes (Spiegel-inspired)
 ├── simple_synth_test.py     # Synth testing tool
-├── data/                    # PGN files and generated output
+├── pgn-examples/            # PGN files and generated output
 ├── openings/                # ECO opening database
-├── REFACTORING_PLAN.md      # Refactoring documentation
+├── ENTROPY_INTEGRATION.md   # Entropy system documentation (NEW!)
 └── composer_architecture.md # Technical architecture docs
 ```
 
@@ -221,21 +304,23 @@ Base Waveform: saw | Detune: 5→18 cents
 Synthesizing 3 sections with 2.0s crossfades...
 
 SECTION 1/3: OPENING (20s)
-  Narrative: COMPLEX_STRUGGLE | Tension: 0.55
-  Filter: 1620Hz | Resonance: 1.77
+  Narrative: POSITIONAL_THEORY | Tension: 0.44
+  Filter: 1980Hz | Resonance: 1.37
   Key Moments: 3
   → Layer 1: Evolving drone (55.0Hz base)
-  → Layer 2: Generative patterns (Markov chain)
-  → Layer 3: Sequencer (3 key moments)
+  → Layer 2: Generative patterns (Positional opening: Methodical build)
+  Entropy: mean=0.163, range=[0.063, 0.237]
+  → Layer 3: Sequencer (3 key moments, entropy-driven)
   ↓ Crossfading to MIDDLEGAME...
 
 SECTION 2/3: MIDDLEGAME (36s)
-  Narrative: CRUSHING_ATTACK | Tension: 0.53
-  Filter: 770Hz | Resonance: 3.04
+  Narrative: CRUSHING_ATTACK | Tension: 0.42
+  Filter: 770Hz | Resonance: 2.88
   Key Moments: 4
   → Layer 1: Evolving drone (55.0Hz base)
   → Layer 2: Generative patterns (State machine: ADVANCE/STRIKE/OVERWHELM)
-  → Layer 3: Sequencer (4 key moments)
+  Entropy: mean=0.130, range=[0.062, 0.268]
+  → Layer 3: Sequencer (4 key moments, entropy-driven)
   ↓ Crossfading to ENDGAME...
 
 SECTION 3/3: ENDGAME (21s)
@@ -244,7 +329,8 @@ SECTION 3/3: ENDGAME (21s)
   Key Moments: 4
   → Layer 1: Evolving drone (55.0Hz base)
   → Layer 2: Generative patterns (State machine: ADVANCE/STRIKE/OVERWHELM)
-  → Layer 3: Sequencer (4 key moments)
+  Entropy: mean=0.327, range=[0.201, 0.704]
+  → Layer 3: Sequencer (4 key moments, entropy-driven)
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ✓ Synthesis complete: 73.0 seconds
