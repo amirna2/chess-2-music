@@ -11,11 +11,13 @@ import struct
 import sys
 import numpy as np
 from scipy import signal
+from scipy.ndimage import gaussian_filter1d
 
 # Import our refactored modules
 from synth_config import SynthConfig, get_envelope, get_filter_envelope, get_narrative_params, get_section_modulation
 from synth_engine import SubtractiveSynth
 from synth_narrative import create_narrative_process
+from entropy_calculator import ChessEntropyCalculator
 
 
 class ChessSynthComposer:
@@ -49,6 +51,11 @@ class ChessSynthComposer:
             self.total_duration,
             self.total_plies
         )
+
+        # Initialize entropy calculator (Laurie Spiegel-inspired)
+        # This requires move data with eval information
+        moves = chess_tags.get('moves', [])
+        self.entropy_calculator = ChessEntropyCalculator(moves) if moves else None
 
     def _seed_from_eco(self, eco_code):
         """Convert ECO code to integer seed for reproducible randomness"""
@@ -1303,12 +1310,41 @@ class ChessSynthComposer:
 
         samples = mixed_signal * section_envelope * self.config.MIXING['section_level'] * volume_multiplier
 
+        # ENTROPY CURVE CALCULATION (Laurie Spiegel-inspired)
+        # Calculate position complexity to drive Layer 3 predictability
+        entropy_curve = None
+        if self.entropy_calculator is not None:
+            start_ply = section.get('start_ply', 1)
+            end_ply = section.get('end_ply', start_ply + 20)
+
+            try:
+                # Calculate raw entropy
+                raw_entropy = self.entropy_calculator.calculate_combined_entropy(
+                    start_ply,
+                    end_ply,
+                    weights=self.config.ENTROPY_CONFIG['weights']
+                )
+
+                # Apply smoothing to avoid sudden jumps
+                if len(raw_entropy) > 3:
+                    sigma = self.config.ENTROPY_CONFIG['smoothing_sigma']
+                    entropy_curve = gaussian_filter1d(raw_entropy, sigma=sigma)
+                else:
+                    entropy_curve = raw_entropy
+
+                avg_entropy = np.mean(entropy_curve)
+                print(f"  Entropy: mean={avg_entropy:.3f}, range=[{np.min(entropy_curve):.3f}, {np.max(entropy_curve):.3f}]")
+
+            except Exception as e:
+                print(f"  Entropy: (calculation failed: {e})")
+                entropy_curve = None
+
         # LAYER 3: CONTINUOUS SEQUENCER
         sequencer_layer = np.zeros_like(samples)
         filtered_sequence = np.zeros_like(samples)
 
         if self.config.LAYER_ENABLE['sequencer']:
-            print(f"  → Layer 3: Sequencer ({key_moments_count} key moments)")
+            print(f"  → Layer 3: Sequencer ({key_moments_count} key moments, entropy-driven)")
         else:
             print(f"  → Layer 3: (muted)")
 
@@ -1357,6 +1393,16 @@ class ChessSynthComposer:
                 current_time = i * sixteenth_duration
                 current_sample = int(current_time * self.sample_rate)
 
+                # ENTROPY-DRIVEN NOTE SELECTION (Laurie Spiegel approach)
+                # Get entropy value for current position
+                current_ply = start_ply + int(current_time)
+                entropy_value = 0.5  # Default medium entropy
+
+                if entropy_curve is not None and len(entropy_curve) > 0:
+                    ply_offset = current_ply - start_ply
+                    if 0 <= ply_offset < len(entropy_curve):
+                        entropy_value = entropy_curve[ply_offset]
+
                 # Check for pattern evolution
                 if next_evolution_idx < len(evolution_points):
                     if current_sample >= evolution_points[next_evolution_idx]['sample_pos']:
@@ -1387,13 +1433,41 @@ class ChessSynthComposer:
 
                         next_evolution_idx += 1
 
+                # ENTROPY-DRIVEN NOTE MODIFICATION
+                # Modify note interval based on position complexity
+                if note_interval is not None:
+                    # Get entropy-appropriate note pool
+                    ec = self.config.ENTROPY_CONFIG
+                    low_thresh = ec['low_threshold']
+                    high_thresh = ec['high_threshold']
+
+                    if entropy_value < low_thresh:
+                        # Low entropy: simple, predictable (root-fifth only)
+                        available_intervals = ec['note_pools']['low']
+                    elif entropy_value < high_thresh:
+                        # Medium entropy: moderate complexity
+                        available_intervals = ec['note_pools']['medium']
+                    else:
+                        # High entropy: full chromatic complexity
+                        available_intervals = ec['note_pools']['high']
+
+                    # If pattern note is None or outside available pool, pick random from pool
+                    # Otherwise use pattern note if it's in the available pool
+                    if note_interval not in available_intervals:
+                        # Replace with random note from entropy-appropriate pool
+                        note_interval = np.random.choice(available_intervals)
+
                 if note_interval is None:
                     midi_note = None
                 else:
                     midi_note = current_root + note_interval
 
                 full_sequence.append(midi_note)
-                filter_frequency += (filter_target - filter_frequency) * 0.02
+
+                # ENTROPY-DRIVEN FILTER MODULATION
+                # High entropy = faster filter changes
+                filter_rate = 0.02 + entropy_value * 0.05  # 0.02-0.07
+                filter_frequency += (filter_target - filter_frequency) * filter_rate
 
             # Generate audio from sequence with portamento
             prev_freq = None
@@ -1407,10 +1481,25 @@ class ChessSynthComposer:
 
                 target_freq = midi_to_freq(midi_note)
 
+                # Get entropy for this note position
+                note_time = i * sixteenth_duration
+                note_ply = start_ply + int(note_time)
+                note_entropy = 0.5
+
+                if entropy_curve is not None and len(entropy_curve) > 0:
+                    ply_offset = note_ply - start_ply
+                    if 0 <= ply_offset < len(entropy_curve):
+                        note_entropy = entropy_curve[ply_offset]
+
+                # ENTROPY-DRIVEN PORTAMENTO
+                # Low entropy = smooth long glides (flowing)
+                # High entropy = short jumpy glides (nervous)
                 # Add portamento (frequency glide) from previous note
                 if prev_freq is not None:
                     # Create frequency glide from prev to target
-                    glide_time = sixteenth_duration * 0.3  # 30% of note duration for glide
+                    ec = self.config.ENTROPY_CONFIG
+                    glide_reduction = note_entropy * ec['glide_reduction_max']  # 0 to 0.5
+                    glide_time = sixteenth_duration * 0.3 * (1.0 - glide_reduction)  # Reduce glide at high entropy
                     glide_samples = int(glide_time * self.sample_rate)
                     freq_curve = np.linspace(prev_freq, target_freq, glide_samples)
 
@@ -1427,10 +1516,17 @@ class ChessSynthComposer:
                     if end_pos > start_pos:
                         sequencer_layer[start_pos:end_pos] += glide_audio[:end_pos-start_pos] * self.config.LAYER_MIXING['sequencer_note_level']
 
+                # ENTROPY-DRIVEN RHYTHM VARIATION
+                # High entropy = more timing variation (less predictable)
+                ec = self.config.ENTROPY_CONFIG
+                rhythm_var = note_entropy * ec['rhythm_variation_max']  # 0 to 0.5
+                duration_multiplier = 1.0 + np.random.uniform(-rhythm_var, rhythm_var)
+                actual_duration = sixteenth_duration * duration_multiplier
+
                 # Generate main note
                 note_audio = self.synth.supersaw(
                     target_freq,
-                    sixteenth_duration,
+                    actual_duration,
                     detune_cents=self.config.SEQUENCER_SYNTH['detune_cents'],
                     filter_base=self.config.SEQUENCER_SYNTH['filter_base_start'] + (i * self.config.SEQUENCER_SYNTH['filter_increment_per_step']),
                     filter_env_amount=self.config.SEQUENCER_SYNTH['filter_env_amount'],
@@ -1444,6 +1540,30 @@ class ChessSynthComposer:
 
                 if end_pos > start_pos:
                     sequencer_layer[start_pos:end_pos] += note_audio[:end_pos-start_pos] * self.config.LAYER_MIXING['sequencer_note_level']
+
+                # ENTROPY-DRIVEN HARMONIC DENSITY
+                # High entropy = add random harmony notes (cluster effect)
+                harmony_threshold = ec['harmony_probability_threshold']
+                if note_entropy > harmony_threshold and np.random.random() < (note_entropy - harmony_threshold):
+                    # Add a harmony note (third, fourth, or fifth)
+                    harmony_intervals = [3, 4, 7]  # Musical intervals in semitones
+                    harmony_interval = np.random.choice(harmony_intervals)
+                    harmony_freq = target_freq * (2 ** (harmony_interval / 12.0))
+
+                    harmony_audio = self.synth.supersaw(
+                        harmony_freq,
+                        actual_duration * 0.8,  # Slightly shorter
+                        detune_cents=self.config.SEQUENCER_SYNTH['detune_cents'],
+                        filter_base=self.config.SEQUENCER_SYNTH['filter_base_start'] + (i * self.config.SEQUENCER_SYNTH['filter_increment_per_step']),
+                        filter_env_amount=self.config.SEQUENCER_SYNTH['filter_env_amount'],
+                        resonance=self.config.SEQUENCER_SYNTH['resonance'],
+                        amp_env=self.config.SEQUENCER_SYNTH['amp_env'],
+                        filter_env=self.config.SEQUENCER_SYNTH['filter_env']
+                    )
+
+                    harmony_end = min(start_pos + len(harmony_audio), len(sequencer_layer))
+                    if harmony_end > start_pos:
+                        sequencer_layer[start_pos:harmony_end] += harmony_audio[:harmony_end-start_pos] * self.config.LAYER_MIXING['sequencer_note_level'] * 0.5
 
                 prev_freq = target_freq
 

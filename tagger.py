@@ -1007,16 +1007,25 @@ def main():
     tagger = ChessNarrativeTagger(game_features, debug=debug_mode)
     structure = tagger.generate_structure()
 
+    # Convert to dict and preserve moves data for entropy calculation
+    output_data = structure.to_dict()
+
+    # Add moves from input (needed for entropy calculator in synthesis)
+    if isinstance(game_features, dict) and 'moves' in game_features:
+        output_data['moves'] = game_features['moves']
+        if debug_mode:
+            print(f"Preserved {len(game_features['moves'])} moves in output")
+
     # Output
     if '--output' in sys.argv:
         idx = sys.argv.index('--output')
         output_file = sys.argv[idx + 1]
         with open(output_file, 'w') as f:
-            json.dump(structure.to_dict(), f, indent=2)
+            json.dump(output_data, f, indent=2)
         print(f"Narrative structure written to {output_file}")
     else:
         # Pretty print to console
-        print(json.dumps(structure.to_dict(), indent=2))
+        print(json.dumps(output_data, indent=2))
 
 
 if __name__ == "__main__":

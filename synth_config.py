@@ -660,6 +660,40 @@ class SynthConfig:
         'normalization_threshold': 0.9,
     })
 
+    # === ENTROPY CONFIGURATION (Laurie Spiegel-inspired) ===
+    ENTROPY_CONFIG: Dict = field(default_factory=lambda: {
+        # Calculation weights
+        'weights': {
+            'eval': 0.5,      # Evaluation volatility (primary)
+            'tactical': 0.4,  # Tactical density
+            'time': 0.1,      # Thinking time (if available)
+        },
+
+        # Window sizes for local calculations
+        'eval_window': 5,      # Plies for eval volatility
+        'tactical_window': 5,  # Plies for tactical density
+
+        # Smoothing
+        'smoothing_sigma': 2.0,  # Gaussian filter sigma
+
+        # Musical thresholds
+        'low_threshold': 0.3,   # Below = simple
+        'high_threshold': 0.7,  # Above = complex
+
+        # Parameter ranges for note pools
+        'note_pools': {
+            'low': [0, 4],                    # Simple: root-fifth
+            'medium': [0, 2, 4, 5, 7],        # Moderate: diatonic
+            'high': [0, 1, 2, 3, 4, 5, 6, 7], # Complex: chromatic
+        },
+
+        # Musical parameter modulation ranges
+        'rhythm_variation_max': 0.5,  # Max ±50% timing variation at high entropy
+        'filter_lfo_range': (0.02, 0.12),  # Hz (slow to fast)
+        'glide_reduction_max': 0.5,  # Max 50% reduction of portamento at high entropy
+        'harmony_probability_threshold': 0.7,  # Start adding harmonies above this entropy
+    })
+
 
 # Global default config instance
 DEFAULT_CONFIG = SynthConfig()
