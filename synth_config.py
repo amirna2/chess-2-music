@@ -653,11 +653,21 @@ class SynthConfig:
     # === WAV OUTPUT PARAMETERS ===
     WAV_OUTPUT: Dict = field(default_factory=lambda: {
         'sample_width': 2,
-        'channels': 1,
+        'channels': 2,  # Stereo output
         'amplitude_multiplier': 30000,
         'clamp_min': -32000,
         'clamp_max': 32000,
         'normalization_threshold': 0.9,
+    })
+
+    # === STEREO PANNING ===
+    STEREO_CONFIG: Dict = field(default_factory=lambda: {
+        'white_pan': -0.7,  # White pieces pan left (-1.0 = full left)
+        'black_pan': 0.7,   # Black pieces pan right (1.0 = full right)
+        'drone_pan': 0.0,   # Drone centered
+        'min_width': 0.0,   # Low tension = narrow stereo
+        'max_width': 0.8,   # High tension = wide stereo
+        'entropy_pan_amount': 0.6,  # Max pan deviation for entropy
     })
 
     # === ENTROPY CONFIGURATION (Laurie Spiegel-inspired) ===

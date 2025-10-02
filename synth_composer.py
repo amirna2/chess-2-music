@@ -20,6 +20,88 @@ from synth_narrative import create_narrative_process
 from entropy_calculator import ChessEntropyCalculator
 
 
+# === STEREO UTILITIES ===
+
+def pan_mono_to_stereo(mono_signal, pan_position):
+    """
+    Convert mono signal to stereo with panning.
+
+    Args:
+        mono_signal: 1D numpy array (mono)
+        pan_position: -1.0 (full left) to 1.0 (full right), 0.0 = center
+
+    Returns:
+        (N, 2) numpy array with [left, right] channels
+    """
+    # Equal power panning law (constant energy)
+    pan_angle = (pan_position + 1.0) * np.pi / 4  # Map -1..1 to 0..π/2
+    left_gain = np.cos(pan_angle)
+    right_gain = np.sin(pan_angle)
+
+    stereo = np.zeros((len(mono_signal), 2))
+    stereo[:, 0] = mono_signal * left_gain   # Left channel
+    stereo[:, 1] = mono_signal * right_gain  # Right channel
+    return stereo
+
+
+def stereo_width(mono_signal, width, center_pan=0.0):
+    """
+    Create stereo from mono using Haas effect + panning.
+
+    Args:
+        mono_signal: 1D numpy array (mono)
+        width: 0.0 (mono) to 1.0 (wide stereo)
+        center_pan: -1.0 (left) to 1.0 (right)
+
+    Returns:
+        (N, 2) numpy array with [left, right] channels
+    """
+    stereo = np.zeros((len(mono_signal), 2))
+
+    # Haas effect: delay one channel slightly for width
+    delay_samples = int(width * 20)  # Up to 20 samples delay (~0.45ms at 44.1kHz)
+
+    if delay_samples == 0:
+        stereo[:, 0] = mono_signal
+        stereo[:, 1] = mono_signal
+    else:
+        stereo[:, 0] = mono_signal
+        stereo[delay_samples:, 1] = mono_signal[:-delay_samples]
+
+    # Apply panning on top for L/R positioning
+    # Constant power pan law
+    pan_angle = (center_pan + 1.0) * np.pi / 4  # Map -1..1 to 0..π/2
+    left_gain = np.cos(pan_angle)
+    right_gain = np.sin(pan_angle)
+
+    stereo[:, 0] *= left_gain
+    stereo[:, 1] *= right_gain
+
+    return stereo
+
+
+def mix_stereo(layers):
+    """
+    Mix multiple stereo layers.
+
+    Args:
+        layers: List of (N, 2) numpy arrays
+
+    Returns:
+        (N, 2) mixed stereo array
+    """
+    if not layers:
+        return np.zeros((0, 2))
+
+    max_len = max(len(layer) for layer in layers)
+    mixed = np.zeros((max_len, 2))
+
+    for layer in layers:
+        mixed[:len(layer)] += layer
+
+    return mixed
+
+
 class ChessSynthComposer:
     def __init__(self, chess_tags, config=None):
         """
@@ -1705,12 +1787,36 @@ class ChessSynthComposer:
         print(f"  Crest factor: {crest_factor_db:.1f} dB")
         print(f"  Clipped samples: {clipped_samples} ({clipped_pct:.4f}%)")
 
+        # Convert to stereo if configured
+        if self.config.WAV_OUTPUT['channels'] == 2:
+            print(f"\n{'━' * 50}")
+            print("STEREO CONVERSION")
+            print(f"  Converting mono to stereo with spatial mapping...")
+
+            # Apply stereo width based on overall tension/narrative
+            avg_tension = np.mean([s.get('tension', 0.5) for s in sections])
+            width_amount = self.config.STEREO_CONFIG['min_width'] + (avg_tension * (self.config.STEREO_CONFIG['max_width'] - self.config.STEREO_CONFIG['min_width']))
+
+            # Pan based on overall narrative for spatial interest
+            # Death spirals pan slightly left (ominous)
+            # Masterpieces pan slightly right (triumphant)
+            if 'DEATH' in self.overall_narrative or 'DEFEAT' in self.overall_narrative:
+                center_pan = -0.3  # Slightly left
+            elif 'MASTERPIECE' in self.overall_narrative or 'BRILLIANCY' in self.overall_narrative:
+                center_pan = 0.3   # Slightly right
+            else:
+                center_pan = 0.0   # Centered
+
+            composition = stereo_width(composition, width=width_amount, center_pan=center_pan)
+            print(f"  Stereo width: {width_amount:.2f} (tension: {avg_tension:.2f})")
+            print(f"  Center pan: {center_pan:.2f} ({self.overall_narrative})")
+
         print(f"\n{'━' * 50}")
         print(f"✓ Synthesis complete: {len(composition)/self.sample_rate:.1f} seconds")
         return composition
 
     def save(self, filename='chess_synth.wav'):
-        """Save the composition"""
+        """Save the composition (stereo or mono based on config)"""
         composition = self.compose()
 
         with wave.open(filename, 'w') as wav:
@@ -1718,18 +1824,33 @@ class ChessSynthComposer:
             wav.setsampwidth(self.config.WAV_OUTPUT['sample_width'])
             wav.setframerate(self.sample_rate)
 
-            for sample in composition:
-                int_sample = int(sample * self.config.WAV_OUTPUT['amplitude_multiplier'])
-                int_sample = max(self.config.WAV_OUTPUT['clamp_min'],
-                                min(self.config.WAV_OUTPUT['clamp_max'], int_sample))
-                wav.writeframes(struct.pack('<h', int_sample))
+            if self.config.WAV_OUTPUT['channels'] == 2:
+                # Stereo: composition is (N, 2) array, interleave L/R
+                for frame in composition:
+                    left_sample = int(frame[0] * self.config.WAV_OUTPUT['amplitude_multiplier'])
+                    right_sample = int(frame[1] * self.config.WAV_OUTPUT['amplitude_multiplier'])
+
+                    left_sample = max(self.config.WAV_OUTPUT['clamp_min'],
+                                    min(self.config.WAV_OUTPUT['clamp_max'], left_sample))
+                    right_sample = max(self.config.WAV_OUTPUT['clamp_min'],
+                                     min(self.config.WAV_OUTPUT['clamp_max'], right_sample))
+
+                    # Interleave: L, R, L, R, ...
+                    wav.writeframes(struct.pack('<hh', left_sample, right_sample))
+            else:
+                # Mono: legacy support
+                for sample in composition:
+                    int_sample = int(sample * self.config.WAV_OUTPUT['amplitude_multiplier'])
+                    int_sample = max(self.config.WAV_OUTPUT['clamp_min'],
+                                    min(self.config.WAV_OUTPUT['clamp_max'], int_sample))
+                    wav.writeframes(struct.pack('<h', int_sample))
 
         # Get file size
         import os
         file_size = os.path.getsize(filename)
         size_mb = file_size / (1024 * 1024)
 
-        print(f"  Output: {filename} ({size_mb:.1f} MB)")
+        print(f"  Output: {filename} ({size_mb:.1f} MB, {self.config.WAV_OUTPUT['channels']} ch)")
 
 
 def main():
