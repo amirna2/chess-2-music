@@ -600,9 +600,10 @@ class ChessSynthComposer:
         - Weighted toward stable harmonic intervals (tonic, third, fifth)
         - Deliberate, controlled transitions
         - Patient, strategic like French/English openings
+        - Calm, contemplative, with ample breathing room
         """
         section_pattern = np.zeros(total_samples)
-        base_note_dur = note_duration * 1.0
+        base_note_dur = note_duration * 1.2  # Slower notes for calm, patient play
         current_sample = 0
 
         # Markov chain: favor stable harmonic intervals
@@ -627,8 +628,8 @@ class ChessSynthComposer:
 
         while current_sample < total_samples:
             note_freq = scale[current_note_idx]
-            duration = base_note_dur * np.random.uniform(0.9, 1.1)
-            velocity = 0.7 + np.random.uniform(-0.1, 0.1)
+            duration = base_note_dur * np.random.uniform(0.8, 1.0)  # Shorter notes, more space
+            velocity = 0.35 + np.random.uniform(-0.1, 0.15)  # Much quieter (25-50% vs 60-80%)
 
             note_samples = int(duration * self.sample_rate)
             note_samples = min(note_samples, total_samples - current_sample)
@@ -638,16 +639,17 @@ class ChessSynthComposer:
                     freq=note_freq,
                     duration=note_samples / self.sample_rate,
                     waveform='pulse',
-                    filter_base=final_filter * 0.9,
-                    filter_env_amount=filter_env_amount * 0.8,
-                    resonance=final_resonance * 0.7,
+                    filter_base=final_filter * 0.7,  # Darker, less bright
+                    filter_env_amount=filter_env_amount * 0.5,  # Less filter movement
+                    resonance=final_resonance * 0.5,  # Softer resonance
                     amp_env=get_envelope('soft', self.config),
                     filter_env=get_filter_envelope('gentle', self.config)
                 )
                 end_sample = min(current_sample + len(pattern_note), total_samples)
                 section_pattern[current_sample:end_sample] += pattern_note[:end_sample - current_sample] * self.config.LAYER_MIXING['pattern_note_level'] * velocity
 
-            pause_samples = int(base_note_dur * 0.15 * self.sample_rate)
+            # Much longer pause for contemplative, strategic feel
+            pause_samples = int(base_note_dur * 0.6 * self.sample_rate)  # 60% pause vs 15%
             current_sample += note_samples + pause_samples
 
             # Markov transition
