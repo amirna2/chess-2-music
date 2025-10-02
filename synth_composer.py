@@ -22,6 +22,33 @@ from entropy_calculator import ChessEntropyCalculator
 
 # === STEREO UTILITIES ===
 
+def apply_dynamic_pan(mono_signal, pan_curve, width=0.8):
+    """
+    Apply time-varying panning to mono signal.
+
+    Args:
+        mono_signal: 1D numpy array (mono)
+        pan_curve: 1D numpy array same length as signal, values -1.0 to 1.0
+        width: Stereo width amount
+
+    Returns:
+        (N, 2) stereo array with dynamic panning
+    """
+    stereo = np.zeros((len(mono_signal), 2))
+
+    for i in range(len(mono_signal)):
+        pan = pan_curve[i]
+        # Constant power panning
+        pan_angle = (pan + 1.0) * np.pi / 4
+        left_gain = np.cos(pan_angle)
+        right_gain = np.sin(pan_angle)
+
+        stereo[i, 0] = mono_signal[i] * left_gain
+        stereo[i, 1] = mono_signal[i] * right_gain
+
+    return stereo
+
+
 def pan_mono_to_stereo(mono_signal, pan_position):
     """
     Convert mono signal to stereo with panning.
@@ -1696,11 +1723,19 @@ class ChessSynthComposer:
             ducking = 1.0 - (sequencer_envelope * self.config.MIXING['ducking_amount'])
             samples = samples * ducking
 
-        # Add Layer 3 (sequencer) if enabled
-        if self.config.LAYER_ENABLE['sequencer']:
-            samples = samples + filtered_sequence * self.config.MIXING['filtered_sequence_level']
+        # Return layers separately for stereo processing
+        # Store layer 3 separately for dynamic panning
+        layer_3 = filtered_sequence * self.config.MIXING['filtered_sequence_level'] if self.config.LAYER_ENABLE['sequencer'] else np.zeros_like(samples)
 
-        return np.array(samples)
+        # Layers 1+2 combined (will be centered/static stereo)
+        layers_1_2 = samples
+
+        # Return as dict for stereo processing
+        return {
+            'layers_1_2': np.array(layers_1_2),
+            'layer_3': np.array(layer_3),
+            'entropy_curve': entropy_curve if entropy_curve is not None else np.zeros(1)
+        }
 
     def compose(self):
         """Create the full composition"""
@@ -1716,40 +1751,55 @@ class ChessSynthComposer:
 
         print(f"\nSynthesizing {total_sections} sections with {self.config.TIMING['section_crossfade_sec']}s crossfades...")
         for i, section in enumerate(sections):
-            section_music = self.compose_section(section, i, total_sections)
-            section_audios.append(np.array(section_music))
+            section_data = self.compose_section(section, i, total_sections)
+            section_audios.append(section_data)
 
             # Show crossfade indicator for next section
             if i < total_sections - 1:
                 next_section_name = sections[i + 1]['name']
                 print(f"  ↓ Crossfading to {next_section_name}...")
 
-        # Crossfade sections together
+        # Crossfade sections together (mono mix for now)
         crossfade_samples = int(self.sample_rate * self.config.TIMING['section_crossfade_sec'])
 
-        composition = section_audios[0]
+        # Combine layers_1_2
+        layers_1_2 = section_audios[0]['layers_1_2']
         for i in range(1, len(section_audios)):
-            next_section = section_audios[i]
+            next_section = section_audios[i]['layers_1_2']
 
-            # Create crossfade if sections are long enough
-            if len(composition) > crossfade_samples and len(next_section) > crossfade_samples:
-                # Fade out end of current composition
+            if len(layers_1_2) > crossfade_samples and len(next_section) > crossfade_samples:
                 fade_out = np.linspace(1.0, 0.0, crossfade_samples)
-                composition[-crossfade_samples:] *= fade_out
-
-                # Fade in start of next section
+                layers_1_2[-crossfade_samples:] *= fade_out
                 fade_in = np.linspace(0.0, 1.0, crossfade_samples)
                 next_section[:crossfade_samples] *= fade_in
-
-                # Overlap: remove crossfade length from composition, add full next section
-                composition = np.concatenate([
-                    composition[:-crossfade_samples],
-                    composition[-crossfade_samples:] + next_section[:crossfade_samples],
+                layers_1_2 = np.concatenate([
+                    layers_1_2[:-crossfade_samples],
+                    layers_1_2[-crossfade_samples:] + next_section[:crossfade_samples],
                     next_section[crossfade_samples:]
                 ])
             else:
-                # Sections too short for crossfade, just concatenate
-                composition = np.concatenate([composition, next_section])
+                layers_1_2 = np.concatenate([layers_1_2, next_section])
+
+        # Combine layer_3
+        layer_3 = section_audios[0]['layer_3']
+        for i in range(1, len(section_audios)):
+            next_section = section_audios[i]['layer_3']
+
+            if len(layer_3) > crossfade_samples and len(next_section) > crossfade_samples:
+                fade_out = np.linspace(1.0, 0.0, crossfade_samples)
+                layer_3[-crossfade_samples:] *= fade_out
+                fade_in = np.linspace(0.0, 1.0, crossfade_samples)
+                next_section[:crossfade_samples] *= fade_in
+                layer_3 = np.concatenate([
+                    layer_3[:-crossfade_samples],
+                    layer_3[-crossfade_samples:] + next_section[:crossfade_samples],
+                    next_section[crossfade_samples:]
+                ])
+            else:
+                layer_3 = np.concatenate([layer_3, next_section])
+
+        # Combine mono for now (will convert to stereo next)
+        composition = layers_1_2 + layer_3
 
         # Master bus processing
         print(f"\n{'━' * 50}")
@@ -1791,25 +1841,42 @@ class ChessSynthComposer:
         if self.config.WAV_OUTPUT['channels'] == 2:
             print(f"\n{'━' * 50}")
             print("STEREO CONVERSION")
-            print(f"  Converting mono to stereo with spatial mapping...")
 
-            # Apply stereo width based on overall tension/narrative
+            # Layer 1+2: Centered with moderate width
             avg_tension = np.mean([s.get('tension', 0.5) for s in sections])
-            width_amount = self.config.STEREO_CONFIG['min_width'] + (avg_tension * (self.config.STEREO_CONFIG['max_width'] - self.config.STEREO_CONFIG['min_width']))
+            width_12 = self.config.STEREO_CONFIG['min_width'] + (avg_tension * 0.3)
+            stereo_12 = stereo_width(layers_1_2, width=width_12, center_pan=0.0)
+            print(f"  Layer 1+2: Centered, width={width_12:.2f}")
 
-            # Pan based on overall narrative for spatial interest
-            # Death spirals pan slightly left (ominous)
-            # Masterpieces pan slightly right (triumphant)
-            if 'DEATH' in self.overall_narrative or 'DEFEAT' in self.overall_narrative:
-                center_pan = -0.3  # Slightly left
-            elif 'MASTERPIECE' in self.overall_narrative or 'BRILLIANCY' in self.overall_narrative:
-                center_pan = 0.3   # Slightly right
+            # Layer 3: ENTROPY-DRIVEN dynamic panning (Spiegel principle)
+            # Combine entropy curves from all sections
+            entropy_combined = np.concatenate([s['entropy_curve'] for s in section_audios])
+
+            # Resample entropy to match layer_3 length
+            if len(entropy_combined) > 1:
+                entropy_resampled = np.interp(
+                    np.linspace(0, len(entropy_combined)-1, len(layer_3)),
+                    np.arange(len(entropy_combined)),
+                    entropy_combined
+                )
             else:
-                center_pan = 0.0   # Centered
+                entropy_resampled = np.ones(len(layer_3)) * 0.5
 
-            composition = stereo_width(composition, width=width_amount, center_pan=center_pan)
-            print(f"  Stereo width: {width_amount:.2f} (tension: {avg_tension:.2f})")
-            print(f"  Center pan: {center_pan:.2f} ({self.overall_narrative})")
+            # Map entropy to pan: low=centered, high=wide movement
+            # Use absolute deviation from center for pan amount
+            # Add slow oscillation for direction
+            pan_amount = np.abs(entropy_resampled - 0.5) * 2.0 * self.config.STEREO_CONFIG['entropy_pan_amount']
+            pan_direction = np.sin(np.linspace(0, 3*np.pi, len(layer_3)))  # Slow L/R oscillation
+            pan_curve = pan_amount * pan_direction
+            pan_curve = np.clip(pan_curve, -1.0, 1.0)
+
+            stereo_3 = apply_dynamic_pan(layer_3, pan_curve)
+            avg_entropy = np.mean(entropy_resampled)
+            print(f"  Layer 3: Entropy-driven panning (avg={avg_entropy:.3f}, complexity→position)")
+
+            # Mix stereo layers
+            composition = mix_stereo([stereo_12, stereo_3])
+            print(f"  Result: Layer 3 travels across stereo field dynamically!")
 
         print(f"\n{'━' * 50}")
         print(f"✓ Synthesis complete: {len(composition)/self.sample_rate:.1f} seconds")
