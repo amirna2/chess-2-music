@@ -414,6 +414,11 @@ class SynthConfig:
             'resonance': 0.5,
             'amp_env': 'gentle',
         },
+        'FINAL_RESOLUTION': {
+            # Uses Layer 3 sequencer settings - will inherit from last section
+            # This is a placeholder that tells the system to use sequencer envelope
+            'use_sequencer_envelope': True,
+        },
     })
 
     # === DEVELOPMENT MOMENT PARAMETERS ===

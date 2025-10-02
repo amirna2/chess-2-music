@@ -652,9 +652,42 @@ class ChessNarrativeTagger:
         # Determine overall narrative
         overall = self.classify_game_narrative(sections)
 
+        # Add OUTRO section for musical closure
+        game_result = self.metadata.get('result', '')
+        outro_duration = 6  # 6 second outro
+        outro_start_ply = sections[-1].end_ply if sections else self.total_plies
+        outro_end_ply = outro_start_ply + 1  # Virtual ply for outro
+
+        # Determine outro narrative based on game result
+        if game_result in ['1-0', '0-1']:
+            outro_narrative = 'DECISIVE_ENDING'
+        else:  # 1/2-1/2 or other
+            outro_narrative = 'DRAWN_ENDING'
+
+        # Create a synthetic final resolution key moment for outro
+        final_moment = KeyMoment(
+            ply=outro_start_ply,
+            second=self.total_plies,
+            score=5,  # High importance - final resolution
+            type='FINAL_RESOLUTION',
+            side='white' if game_result == '1-0' else 'black' if game_result == '0-1' else 'white'
+        )
+
+        outro_section = NarrativeSection(
+            name='OUTRO',
+            start_ply=outro_start_ply,
+            end_ply=outro_end_ply,
+            duration=f"{self.total_plies}:{self.total_plies + outro_duration}",
+            narrative=outro_narrative,
+            tension=0.0,  # Resolution, low tension
+            key_moments=[final_moment]  # One synthetic moment for final resolution
+        )
+
+        sections.append(outro_section)
+
         return NarrativeStructure(
             total_plies=self.total_plies,
-            duration_seconds=self.total_plies,
+            duration_seconds=self.total_plies + outro_duration,  # Include outro in total
             game_result=self.metadata.get('result', ''),
             overall_narrative=overall,
             eco=self.metadata.get('eco', 'A00'),

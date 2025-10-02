@@ -1,36 +1,59 @@
 #!/bin/bash
 
 # Chess to Music Processing Pipeline
-# Usage: ./chess2music-pipeline.sh <input_pgn_file>
+# Usage: ./c2m <input_pgn_file> [-o output.wav]
 #
 # This script processes a chess PGN file through the complete pipeline:
 # 1. Add EMT (Elapsed Move Time) annotations
 # 2. Extract game features
 # 3. Generate narrative tags
+# 4. Synthesize music
 #
 # Input:  game_eval.pgn (PGN with evaluations)
-# Output: game_eval_emt.pgn, feat-game.json, tags-game.json
+# Output: game_eval_emt.pgn, feat-game.json, tags-game.json, audio.wav
 
 set -e  # Exit on any error
 
 # Get the directory where this script is located
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
+# Parse arguments
+OUTPUT_WAV=""
+INPUT_PGN=""
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -o|--output)
+            OUTPUT_WAV="$2"
+            shift 2
+            ;;
+        *)
+            if [ -z "$INPUT_PGN" ]; then
+                INPUT_PGN="$1"
+            else
+                echo "Error: Unexpected argument '$1'"
+                exit 1
+            fi
+            shift
+            ;;
+    esac
+done
+
 # Check if input file provided
-if [ $# -eq 0 ]; then
-    echo "Usage: $0 <input_pgn_file>"
+if [ -z "$INPUT_PGN" ]; then
+    echo "Usage: $0 <input_pgn_file> [-o output.wav]"
     echo ""
     echo "Example: $0 Ding_vs_Gukesh_game13_eval.pgn"
+    echo "Example: $0 Ding_vs_Gukesh_game13_eval.pgn -o game13.wav"
     echo ""
     echo "Expected input format: *_eval.pgn (PGN with evaluations)"
     echo "Will generate:"
     echo "  - *_eval_emt.pgn (with elapsed move times)"
     echo "  - feat-*.json (extracted features)"
     echo "  - tags-*.json (narrative structure)"
+    echo "  - output.wav (synthesized audio)"
     exit 1
 fi
-
-INPUT_PGN="$1"
 
 # Validate input file exists
 if [ ! -f "$INPUT_PGN" ]; then
@@ -56,11 +79,17 @@ EMT_PGN="${BASE_NAME}_eval_emt.pgn"
 FEATURES_JSON="feat-${BASE_NAME##*_}.json"  # Extract game number/identifier
 TAGS_JSON="tags-${BASE_NAME##*_}.json"
 
+# Set default audio output if not specified
+if [ -z "$OUTPUT_WAV" ]; then
+    OUTPUT_WAV="${BASE_NAME}.wav"
+fi
+
 echo "=== Chess to Music Pipeline ==="
 echo "Input:     $INPUT_PGN"
 echo "EMT PGN:   $EMT_PGN"
 echo "Features:  $FEATURES_JSON"
 echo "Tags:      $TAGS_JSON"
+echo "Audio:     $OUTPUT_WAV"
 echo ""
 
 # Step 1: Add EMT annotations
@@ -111,10 +140,9 @@ fi
 # Step 4: Synthesize music
 echo ""
 echo "Step 4: Synthesizing music..."
-AUDIO_WAV="chess_synth.wav"
-python3 "${SCRIPT_DIR}/synth_composer.py" "$TAGS_JSON"
+python3 "${SCRIPT_DIR}/synth_composer.py" "$TAGS_JSON" -o "$OUTPUT_WAV"
 if [ $? -eq 0 ]; then
-    echo "✓ Audio synthesis completed: $AUDIO_WAV"
+    echo "✓ Audio synthesis completed: $OUTPUT_WAV"
 else
     echo "✗ Audio synthesis failed"
     exit 1
@@ -126,7 +154,7 @@ echo "Generated files:"
 echo "  - $EMT_PGN (PGN with thinking times)"
 echo "  - $FEATURES_JSON (structured game features)"
 echo "  - $TAGS_JSON (narrative structure)"
-echo "  - $AUDIO_WAV (synthesized audio)"
+echo "  - $OUTPUT_WAV (synthesized audio)"
 echo ""
 
 # Show brief summary of results

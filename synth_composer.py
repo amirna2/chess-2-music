@@ -145,6 +145,10 @@ class ChessSynthComposer:
 
         self.total_duration = chess_tags.get('duration_seconds', 60)
         self.total_plies = chess_tags.get('total_plies', 40)
+
+        # Store last section's Layer 3 envelope for outro continuity
+        self.last_layer3_amp_env = self.config.SEQUENCER_SYNTH['amp_env']
+        self.last_layer3_filter_env = self.config.SEQUENCER_SYNTH['filter_env']
         self.overall_narrative = chess_tags.get('overall_narrative', 'COMPLEX_GAME')
         self.eco = chess_tags.get('eco', 'A00')
 
@@ -913,6 +917,119 @@ class ChessSynthComposer:
 
         return section_pattern
 
+    def generate_decisive_outro_pattern(self, section_duration, scale, tension,
+                                        final_filter, filter_env_amount, final_resonance,
+                                        note_duration, modulation, total_samples):
+        """
+        DECISIVE_ENDING: Strong resolution for decisive games (1-0 or 0-1)
+        - Clear, definitive phrases
+        - Resolves to tonic with authority
+        - Descending/ascending gesture based on overall narrative
+        """
+        section_pattern = np.zeros(total_samples)
+
+        # Determine direction based on overall narrative
+        is_defeat = 'DEFEAT' in self.overall_narrative
+
+        # Create final resolving phrase
+        phrase_notes = []
+        if is_defeat:
+            # Descending resolution - somber but resolved
+            phrase_notes = [7, 5, 4, 2, 0]  # 7th -> 5th -> 4th -> 2nd -> tonic
+        else:
+            # Ascending resolution - triumphant
+            phrase_notes = [0, 2, 4, 5, 7, 0]  # tonic -> ... -> tonic (octave)
+
+        # Play the phrase
+        current_sample = 0
+        note_dur = section_duration / (len(phrase_notes) + 1)  # Leave space at end
+
+        for i, note_idx in enumerate(phrase_notes):
+            if note_idx >= len(scale):
+                note_idx = 0
+            note_freq = scale[note_idx]
+
+            # Fade out over the phrase
+            progress = i / len(phrase_notes)
+            velocity = 0.7 * (1.0 - progress * 0.5)  # Gentle fadeout
+
+            note_samples = int(note_dur * self.sample_rate)
+            note_samples = min(note_samples, total_samples - current_sample)
+
+            if note_samples > 0:
+                pattern_note = self.synth.create_synth_note(
+                    freq=note_freq,
+                    duration=note_samples / self.sample_rate,
+                    waveform='triangle',
+                    filter_base=final_filter * (1.0 - progress * 0.3),  # Close filter
+                    filter_env_amount=filter_env_amount * 0.5,
+                    resonance=final_resonance * 0.7,
+                    amp_env=get_envelope('sustained', self.config),
+                    filter_env=get_filter_envelope('closing', self.config)
+                )
+                end_sample = min(current_sample + len(pattern_note), total_samples)
+                section_pattern[current_sample:end_sample] += pattern_note[:end_sample - current_sample] * velocity
+
+            current_sample += note_samples
+
+        # Apply exponential decay to entire pattern
+        decay_curve = np.exp(np.linspace(0, -2.5, len(section_pattern)))
+        section_pattern *= decay_curve
+
+        return section_pattern
+
+    def generate_draw_outro_pattern(self, section_duration, scale, tension,
+                                     final_filter, filter_env_amount, final_resonance,
+                                     note_duration, modulation, total_samples):
+        """
+        DRAWN_ENDING: Balanced, unresolved ending for drawn games (1/2-1/2)
+        - Circular motion
+        - Returns to tonic but without strong resolution
+        - Peaceful but incomplete feeling
+        """
+        section_pattern = np.zeros(total_samples)
+
+        # Create circular phrase - goes around and returns without strong cadence
+        # Use perfect fourth intervals for stability without finality
+        phrase_notes = [0, 3, 0, 3, 0]  # Tonic <-> fourth (peaceful rocking)
+
+        current_sample = 0
+        note_dur = section_duration / (len(phrase_notes) + 2)  # Extra space
+
+        for i, note_idx in enumerate(phrase_notes):
+            if note_idx >= len(scale):
+                note_idx = 0
+            note_freq = scale[note_idx]
+
+            # Gradual fadeout
+            progress = i / len(phrase_notes)
+            velocity = 0.6 * (1.0 - progress * 0.6)  # Faster fadeout
+
+            note_samples = int(note_dur * self.sample_rate)
+            note_samples = min(note_samples, total_samples - current_sample)
+
+            if note_samples > 0:
+                pattern_note = self.synth.create_synth_note(
+                    freq=note_freq,
+                    duration=note_samples / self.sample_rate,
+                    waveform='sine',  # Pure, simple tone for neutrality
+                    filter_base=final_filter * (1.0 - progress * 0.4),
+                    filter_env_amount=filter_env_amount * 0.3,
+                    resonance=final_resonance * 0.5,
+                    amp_env=get_envelope('pad', self.config),
+                    filter_env=get_filter_envelope('slow', self.config)
+                )
+                end_sample = min(current_sample + len(pattern_note), total_samples)
+                section_pattern[current_sample:end_sample] += pattern_note[:end_sample - current_sample] * velocity
+
+            current_sample += note_samples
+
+        # Apply exponential decay
+        decay_curve = np.exp(np.linspace(0, -3.0, len(section_pattern)))
+        section_pattern *= decay_curve
+
+        return section_pattern
+
     def create_evolving_drone(self, drone_freq, section_duration, waveform, current_base,
                               progress, total_sections, total_samples):
         """
@@ -1380,12 +1497,26 @@ class ChessSynthComposer:
                     final_filter, filter_env_amount, final_resonance,
                     note_duration, modulation, total_samples
                 )
+            elif narrative == 'DECISIVE_ENDING':
+                print(f"  → Layer 2: Outro (Decisive resolution)")
+                section_pattern = self.generate_decisive_outro_pattern(
+                    section_duration, scale, tension,
+                    final_filter, filter_env_amount, final_resonance,
+                    note_duration, modulation, total_samples
+                )
+            elif narrative == 'DRAWN_ENDING':
+                print(f"  → Layer 2: Outro (Peaceful resolution)")
+                section_pattern = self.generate_draw_outro_pattern(
+                    section_duration, scale, tension,
+                    final_filter, filter_env_amount, final_resonance,
+                    note_duration, modulation, total_samples
+                )
             else:
                 print(f"  → Layer 2: Fixed patterns (fallback)")
         else:
             print(f"  → Layer 2: (muted)")
 
-        if self.config.LAYER_ENABLE['patterns'] and narrative not in ['COMPLEX_STRUGGLE', 'KING_HUNT', 'CRUSHING_ATTACK', 'SHARP_THEORY', 'POSITIONAL_THEORY', 'SOLID_THEORY', 'FLAWLESS_CONVERSION']:
+        if self.config.LAYER_ENABLE['patterns'] and narrative not in ['COMPLEX_STRUGGLE', 'KING_HUNT', 'CRUSHING_ATTACK', 'SHARP_THEORY', 'POSITIONAL_THEORY', 'SOLID_THEORY', 'FLAWLESS_CONVERSION', 'DECISIVE_ENDING', 'DRAWN_ENDING']:
                 # DEFAULT FALLBACK (keep old logic for now)
                 samples_per_note = int(note_duration * self.sample_rate)
                 for i in range(num_notes):
@@ -1434,10 +1565,10 @@ class ChessSynthComposer:
 
         # ENTROPY CURVE CALCULATION (Laurie Spiegel-inspired)
         # Calculate position complexity to drive Layer 3 predictability
+        start_ply = section.get('start_ply', 1)
+        end_ply = section.get('end_ply', start_ply + 20)
         entropy_curve = None
         if self.entropy_calculator is not None:
-            start_ply = section.get('start_ply', 1)
-            end_ply = section.get('end_ply', start_ply + 20)
 
             try:
                 # Calculate raw entropy
@@ -1484,6 +1615,35 @@ class ChessSynthComposer:
             filter_frequency = 1000
             filter_target = 3000
             development_count = 0
+
+            # OUTRO: Seeded variation based on total plies
+            if section.get('name') == 'OUTRO':
+                # Use total plies as seed for variation
+                variation_seed = self.total_plies % 8  # 8 different variations
+
+                # Choose ending arpeggio pattern based on game length
+                if self.total_plies < 40:  # Short game
+                    # Simple descending pattern
+                    current_pattern = [0, None, -2, None, -4, None, -5, None, -7, None, None, None, None, None, None, None]
+                elif self.total_plies < 80:  # Normal game
+                    # Classic resolution arpeggio (varies by seed)
+                    if variation_seed % 2 == 0:
+                        current_pattern = [0, 4, 7, 12, 7, 4, 0, None, None, None, None, None, None, None, None, None]
+                    else:
+                        current_pattern = [0, -5, -3, 0, None, None, None, None, None, None, None, None, None, None, None, None]
+                else:  # Long game
+                    # Extended elaborate phrase (varies by seed)
+                    patterns = [
+                        [0, 2, 4, 5, 7, 9, 7, 5, 4, 2, 0, None, None, None, None, None],  # Ascending-descending
+                        [0, 7, 0, 5, 0, 4, 0, None, None, None, None, None, None, None, None, None],  # Pedal tone
+                        [0, -2, -4, -5, -7, -9, -12, None, None, None, None, None, None, None, None, None],  # Pure descent
+                    ]
+                    current_pattern = patterns[variation_seed % 3]
+
+                # Slow down the outro (half tempo)
+                sixteenth_duration *= 2.0
+
+                print(f"  → Layer 3: Outro arpeggio (variation {variation_seed}, game length: {self.total_plies} plies)")
 
             # Process evolution points
             evolution_points = []
@@ -1645,6 +1805,17 @@ class ChessSynthComposer:
                 duration_multiplier = 1.0 + np.random.uniform(-rhythm_var, rhythm_var)
                 actual_duration = sixteenth_duration * duration_multiplier
 
+                # OUTRO: Use last section's envelope for continuity
+                if section.get('name') == 'OUTRO':
+                    amp_env_to_use = self.last_layer3_amp_env
+                    filter_env_to_use = self.last_layer3_filter_env
+                else:
+                    amp_env_to_use = self.config.SEQUENCER_SYNTH['amp_env']
+                    filter_env_to_use = self.config.SEQUENCER_SYNTH['filter_env']
+                    # Store for potential outro use
+                    self.last_layer3_amp_env = amp_env_to_use
+                    self.last_layer3_filter_env = filter_env_to_use
+
                 # Generate main note
                 note_audio = self.synth.supersaw(
                     target_freq,
@@ -1653,8 +1824,8 @@ class ChessSynthComposer:
                     filter_base=self.config.SEQUENCER_SYNTH['filter_base_start'] + (i * self.config.SEQUENCER_SYNTH['filter_increment_per_step']),
                     filter_env_amount=self.config.SEQUENCER_SYNTH['filter_env_amount'],
                     resonance=self.config.SEQUENCER_SYNTH['resonance'],
-                    amp_env=self.config.SEQUENCER_SYNTH['amp_env'],
-                    filter_env=self.config.SEQUENCER_SYNTH['filter_env']
+                    amp_env=amp_env_to_use,
+                    filter_env=filter_env_to_use
                 )
 
                 start_pos = int(i * samples_per_step * self.config.TIMING['sequencer_overlap'])
@@ -1727,8 +1898,22 @@ class ChessSynthComposer:
         # Store layer 3 separately for dynamic panning
         layer_3 = filtered_sequence * self.config.MIXING['filtered_sequence_level'] if self.config.LAYER_ENABLE['sequencer'] else np.zeros_like(samples)
 
+        # OUTRO: Apply decay to Layer 3 so it fades with Layers 1+2
+        if section.get('name') == 'OUTRO' and len(layer_3) > 0:
+            # Match the decay curve of Layers 1+2 for coherent fadeout
+            decay_curve = np.exp(np.linspace(0, -3.5, len(layer_3)))
+            layer_3 *= decay_curve
+            print(f"  → Layer 3: Applied matching decay for coherent outro")
+
         # Layers 1+2 combined (will be centered/static stereo)
         layers_1_2 = samples
+
+        # OUTRO: Apply gentle exponential decay to drone/patterns
+        if section.get('name') == 'OUTRO' and len(layers_1_2) > 0:
+            # Gentler decay (-3.5 over 6 seconds) so it doesn't end too abruptly
+            decay_curve = np.exp(np.linspace(0, -3.5, len(layers_1_2)))
+            layers_1_2 *= decay_curve
+            print(f"  → Layer 1+2: Applied gentle exponential decay")
 
         # Return as dict for stereo processing
         return {
@@ -1801,43 +1986,7 @@ class ChessSynthComposer:
         # Combine mono for now (will convert to stereo next)
         composition = layers_1_2 + layer_3
 
-        # Master bus processing
-        print(f"\n{'━' * 50}")
-        print("MASTER BUS")
-
-        # Measure pre-normalized levels
-        pre_peak = np.max(np.abs(composition))
-        pre_peak_db = 20 * np.log10(pre_peak) if pre_peak > 0 else -100
-        pre_rms = np.sqrt(np.mean(composition**2))
-        pre_rms_db = 20 * np.log10(pre_rms) if pre_rms > 0 else -100
-
-        # Calculate how much gain needed to reach -3dBFS target
-        target_db = -3.0
-        target_linear = 10 ** (target_db / 20.0)
-
-        if pre_peak > 0:
-            normalization_gain = target_linear / pre_peak
-            composition = composition * normalization_gain
-        else:
-            normalization_gain = 1.0
-
-        # Final measurements
-        final_peak = np.max(np.abs(composition))
-        final_peak_db = 20 * np.log10(final_peak) if final_peak > 0 else -100
-        final_rms = np.sqrt(np.mean(composition**2))
-        final_rms_db = 20 * np.log10(final_rms) if final_rms > 0 else -100
-        crest_factor_db = final_peak_db - final_rms_db
-        clipped_samples = np.sum(np.abs(composition) > 0.99)
-        clipped_pct = (clipped_samples / len(composition)) * 100
-
-        print(f"  Pre-normalization peak: {pre_peak_db:.1f} dBFS")
-        print(f"  Normalization gain: {20*np.log10(normalization_gain):.1f} dB")
-        print(f"  Final peak: {final_peak_db:.1f} dBFS (target: {target_db:.1f} dBFS)")
-        print(f"  Final RMS: {final_rms_db:.1f} dBFS")
-        print(f"  Crest factor: {crest_factor_db:.1f} dB")
-        print(f"  Clipped samples: {clipped_samples} ({clipped_pct:.4f}%)")
-
-        # Convert to stereo if configured
+        # Convert to stereo if configured (BEFORE normalization)
         if self.config.WAV_OUTPUT['channels'] == 2:
             print(f"\n{'━' * 50}")
             print("STEREO CONVERSION")
@@ -1877,6 +2026,42 @@ class ChessSynthComposer:
             # Mix stereo layers
             composition = mix_stereo([stereo_12, stereo_3])
             print(f"  Result: Layer 3 travels across stereo field dynamically!")
+
+        # Master bus processing - AFTER stereo conversion
+        print(f"\n{'━' * 50}")
+        print("MASTER BUS")
+
+        # Measure pre-normalized levels
+        pre_peak = np.max(np.abs(composition))
+        pre_peak_db = 20 * np.log10(pre_peak) if pre_peak > 0 else -100
+        pre_rms = np.sqrt(np.mean(composition**2))
+        pre_rms_db = 20 * np.log10(pre_rms) if pre_rms > 0 else -100
+
+        # Calculate how much gain needed to reach -3dBFS target
+        target_db = -3.0
+        target_linear = 10 ** (target_db / 20.0)
+
+        if pre_peak > 0:
+            normalization_gain = target_linear / pre_peak
+            composition = composition * normalization_gain
+        else:
+            normalization_gain = 1.0
+
+        # Final measurements
+        final_peak = np.max(np.abs(composition))
+        final_peak_db = 20 * np.log10(final_peak) if final_peak > 0 else -100
+        final_rms = np.sqrt(np.mean(composition**2))
+        final_rms_db = 20 * np.log10(final_rms) if final_rms > 0 else -100
+        crest_factor_db = final_peak_db - final_rms_db
+        clipped_samples = np.sum(np.abs(composition) > 0.99)
+        clipped_pct = (clipped_samples / len(composition)) * 100
+
+        print(f"  Pre-normalization peak: {pre_peak_db:.1f} dBFS")
+        print(f"  Normalization gain: {20*np.log10(normalization_gain):.1f} dB")
+        print(f"  Final peak: {final_peak_db:.1f} dBFS (target: {target_db:.1f} dBFS)")
+        print(f"  Final RMS: {final_rms_db:.1f} dBFS")
+        print(f"  Crest factor: {crest_factor_db:.1f} dB")
+        print(f"  Clipped samples: {clipped_samples} ({clipped_pct:.4f}%)")
 
         print(f"\n{'━' * 50}")
         print(f"✓ Synthesis complete: {len(composition)/self.sample_rate:.1f} seconds")

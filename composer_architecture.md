@@ -279,13 +279,13 @@ def create_narrative_process(narrative, duration, plies):
 
 4. OUTPUT
    save()
-   └── Write WAV file (16-bit PCM, 44.1kHz, mono)
+   └── Write WAV file (16-bit PCM, 44.1kHz, stereo/mono)
 ```
 
 ### Output: WAV Audio File
 - 44.1 kHz sample rate
 - 16-bit depth
-- Mono channel
+- Stereo channels (configurable)
 - Direct PCM (no compression)
 
 ---
@@ -356,34 +356,43 @@ def create_narrative_process(narrative, duration, plies):
 - Same game produces identical output (ECO seeding)
 - Different openings produce different patterns
 
-### Layer 3: Key Moments (Sequencer)
-**Jarre-esque arpeggiated sequences for key events**
+### Layer 3: Key Moments (Entropy-Driven Sequencer)
+**Jarre-esque arpeggiated sequences with Spiegel-inspired continuous evolution**
 
 **Implementation:**
-- 16-step MIDI-style sequencer patterns
-- Triggered by key moments (blunders, brilliant moves, tactical sequences)
+- 16-step MIDI-style sequencer patterns as templates
+- **Continuously modulated by evaluation volatility entropy**
 - Supersaw synthesis with global filter sweeps
-- Classic electronic music aesthetic
+- Classic electronic music aesthetic with organic evolution
+
+**Entropy-Driven Parameters:**
+- **Note selection**: Low entropy = root-fifth, high = chromatic
+- **Rhythm variation**: Low entropy = metronomic, high = irregular
+- **Filter modulation**: Low entropy = slow sweeps, high = fast restless
+- **Portamento**: Low entropy = smooth glides, high = jumpy nervous
+- **Harmonic density**: High entropy = add cluster harmonies
 
 ```python
-# Example: BRILLIANT move in MASTERPIECE context
-{
-    'freq': 220 * (1 + progress),   # Higher as game progresses
-    'duration': 0.5,
-    'waveform': 'pulse',
-    'filter_base': 500,
-    'filter_env_amount': 4000 * (1 + progress),  # Bigger sweeps later
-    'resonance': 2.0,
-    'amp_env': 'stab',
-    'filter_env': 'sweep'
-}
+# Example: Entropy-driven note selection
+current_ply = start_ply + int(current_time)
+entropy = entropy_curve[current_ply - start_ply]
+
+if entropy < 0.3:
+    available_notes = [0, 4]  # Simple: root-fifth
+elif entropy < 0.7:
+    available_notes = [0, 2, 4, 5, 7]  # Moderate: diatonic
+else:
+    available_notes = [0, 1, 2, 3, 4, 5, 6, 7]  # Complex: chromatic
+
+note = random.choice(available_notes)
 ```
 
 **Audio Result:**
-- Context-aware moment voices
-- Same event sounds different in different narratives
-- Dramatic punctuation of key moments
-- Repetitive arpeggios (intentional - classic electronic style)
+- **Anticipatory tension**: Music evolves *before* critical moments
+- **Continuous evolution**: Not just event-triggered switches
+- **Context-aware**: Same pattern sounds different based on position complexity
+- **Organic arpeggios**: Repetitive base pattern with constantly varying execution
+- **Emotional arcs**: Rising/falling entropy creates anticipation/resolution
 
 ---
 
@@ -458,6 +467,230 @@ composition = np.concatenate([
 
 ---
 
+## Entropy-Driven Layer 3: Continuous Musical Evolution
+
+### The Problem
+Traditional event-driven sequencers switch patterns only at discrete key moments (captures, blunders), creating static repetition between events and missing gradual complexity changes.
+
+### The Solution: Evaluation Volatility as Compositional Parameter
+Following Laurie Spiegel's principle of using information entropy to drive musical evolution, Layer 3 uses **computer evaluation volatility** to continuously control musical parameters.
+
+> "The moment to moment variation of level of predictability that is embodied in an entropy curve arouses in the listener feelings of expectation, anticipation, satisfaction, disappointment, surprise, tension, frustration and other emotions."
+> — Laurie Spiegel
+
+### Entropy Calculation
+```python
+from entropy_calculator import ChessEntropyCalculator
+
+# Initialize with move data including eval_cp (centipawn evaluation)
+entropy_calculator = ChessEntropyCalculator(moves)
+
+# Calculate volatility-based entropy for section
+raw_entropy = entropy_calculator.calculate_combined_entropy(
+    start_ply, end_ply,
+    weights={'eval': 0.5, 'tactical': 0.4, 'time': 0.1}
+)
+
+# Smooth to avoid sudden jumps
+entropy_curve = gaussian_filter1d(raw_entropy, sigma=2)
+```
+
+**Entropy Sources:**
+1. **Evaluation volatility** (50%): Rolling std dev of centipawn evaluation
+   - High volatility = unclear position = high entropy
+   - Low volatility = clear position = low entropy
+2. **Tactical density** (40%): Frequency of captures/checks/promotions
+3. **Thinking time** (10%): Time spent on move (if available)
+
+### Musical Parameter Mappings
+
+**1. Note Selection Pool (Harmonic Complexity)**
+```python
+# Low entropy (0.0-0.3): Simple, predictable
+if entropy < 0.3:
+    available_intervals = [0, 4]  # Root-fifth only (C, G)
+
+# Medium entropy (0.3-0.7): Moderate
+elif entropy < 0.7:
+    available_intervals = [0, 2, 4, 5, 7]  # Diatonic scale
+
+# High entropy (0.7-1.0): Complex, chromatic
+else:
+    available_intervals = [0, 1, 2, 3, 4, 5, 6, 7]  # Full chromatic
+```
+
+**2. Rhythmic Variation (Temporal Predictability)**
+```python
+# High entropy = irregular timing (±50% variation)
+rhythm_var = entropy * 0.5
+duration_multiplier = 1.0 + random.uniform(-rhythm_var, rhythm_var)
+actual_duration = base_duration * duration_multiplier
+```
+
+**3. Filter Modulation Speed (Spectral Activity)**
+```python
+# Low entropy = slow filter sweep (0.02 Hz = 50s cycle)
+# High entropy = fast filter sweep (0.07 Hz = 14s cycle)
+filter_lfo_speed = 0.02 + entropy * 0.05
+```
+
+**4. Portamento/Glide Amount (Note Connectivity)**
+```python
+# Low entropy = long smooth glides (flowing, connected)
+# High entropy = short/no glides (jumpy, nervous)
+glide_reduction = entropy * 0.5  # Up to 50% reduction
+glide_time = base_glide_time * (1.0 - glide_reduction)
+```
+
+**5. Harmonic Density (Vertical Complexity)**
+```python
+# High entropy: Add random harmony notes (cluster effect)
+if entropy > 0.7 and random.random() < (entropy - 0.7):
+    harmony_interval = random.choice([3, 4, 7])  # Third, fourth, fifth
+    add_harmony_note(harmony_interval)
+```
+
+### Configuration
+```python
+ENTROPY_CONFIG = {
+    # Calculation weights
+    'weights': {
+        'eval': 0.5,      # Evaluation volatility (primary)
+        'tactical': 0.4,  # Tactical density
+        'time': 0.1,      # Thinking time
+    },
+
+    # Smoothing
+    'smoothing_sigma': 2,  # Gaussian filter sigma
+
+    # Musical thresholds
+    'low_threshold': 0.3,   # Below = simple
+    'high_threshold': 0.7,  # Above = complex
+
+    # Note pools
+    'note_pools': {
+        'low': [0, 4],                    # Simple: root-fifth
+        'medium': [0, 2, 4, 5, 7],        # Moderate: diatonic
+        'high': [0, 1, 2, 3, 4, 5, 6, 7], # Complex: chromatic
+    },
+
+    # Parameter ranges
+    'rhythm_variation_max': 0.5,        # Max ±50% timing variation
+    'filter_lfo_range': (0.02, 0.07),   # 50s to 14s cycles
+    'glide_reduction_max': 0.5,         # Max 50% portamento reduction
+    'harmony_probability_threshold': 0.7,  # Start harmonies above this
+}
+```
+
+### Musical Benefits
+✓ **Organic evolution**: Music continuously adapts to position complexity
+✓ **Anticipatory**: Tension builds *before* critical moments (not just reacting)
+✓ **Emotional arcs**: Rising entropy = anticipation, falling = resolution
+✓ **Non-repetitive**: Same pattern sounds different based on position
+✓ **Chess-meaningful**: Eval volatility directly correlates to position uncertainty
+
+### Example: Opening Section
+```
+Plies 1-3:   Entropy 0.06 (book theory - very predictable)
+             → Notes: C-G-C-G (root-fifth only)
+             → Rhythm: Regular quarter notes
+             → Filter: Stable, slow sweep
+             → Glides: Long, smooth
+
+Plies 4-9:   Entropy rising 0.19→0.27 (exchanges opening position)
+             → Notes: Adding C-D-E-G-A (diatonic)
+             → Rhythm: Starting to vary
+             → Filter: Opening up faster
+             → Glides: Getting shorter
+
+Plies 13-18: Entropy 0.73 (tactical complexity)
+             → Notes: Chromatic C-Db-Eb-E-G-Ab
+             → Rhythm: Irregular triplets
+             → Filter: Fast sweeping
+             → Glides: Jumpy, nervous
+             → Harmony: Added cluster notes
+```
+
+**Result**: You *hear* the position getting more complex before the blunder happens, creating anticipation rather than just reaction.
+
+---
+
+## Stereo Output: Entropy-Driven Spatial Dynamics
+
+### The Problem
+Mono output lacks spatial depth and doesn't leverage the full stereo field to express the dynamic complexity of chess positions.
+
+### The Solution: Layer-Specific Stereo Treatment
+```python
+# Layer 1+2 (Drone + Generative Patterns): Static stereo width
+# Width varies with section tension (0.0 = mono, 0.8 = wide)
+width_12 = min_width + (avg_tension * 0.3)
+stereo_12 = stereo_width(layers_1_2, width=width_12, center_pan=0.0)
+
+# Layer 3 (Sequencer): Dynamic entropy-driven panning
+# Position entropy controls left/right panning
+entropy_resampled = resample(section['position_entropy'], len(layer_3))
+pan_curve = (entropy_resampled - 0.5) * 2.0 * entropy_pan_amount
+stereo_3 = apply_dynamic_pan(layer_3, pan_curve)
+
+# Mix stereo layers
+composition = mix_stereo([stereo_12, stereo_3])
+```
+
+### Implementation Details
+
+**Stereo Width (Layers 1+2):**
+- Uses Haas effect (slight delay) plus equal-power panning
+- Width controlled by section tension
+- Remains relatively static/centered
+- Creates ambient spatial foundation
+
+**Entropy-Driven Panning (Layer 3):**
+- **Evaluation volatility entropy** from computer analysis (standard deviation of eval in centipawns)
+- High entropy (volatile/unclear position) → pans to extremes
+- Low entropy (stable/clear position) → stays center
+- Sample-accurate interpolation for smooth movement
+- Constant-power panning law maintains perceived loudness
+- **Combines with slow L/R oscillation** for directional movement
+
+**Equal-Power Panning Law:**
+```python
+# Ensures constant perceived energy across stereo field
+left_gain = np.cos(pan_angle)
+right_gain = np.sin(pan_angle)
+# Where pan_angle ranges from 0 (left) to π/2 (right)
+```
+
+### Configuration
+```python
+STEREO_CONFIG = {
+    'enabled': True,                # Enable stereo output
+    'entropy_pan_amount': 1.5,      # How much entropy affects panning
+    'min_width': 0.0,               # Narrow stereo at low tension
+    'max_width': 0.8,               # Wide stereo at high tension
+}
+
+MIXING = {
+    'channels': 2,  # Stereo output
+}
+```
+
+### Musical Benefits
+✓ **Spatial depth**: Music occupies full stereo field
+✓ **Position complexity visualization**: Hear position entropy as spatial movement
+✓ **Layered spatial treatment**: Static foundation, dynamic foreground
+✓ **Laurie Spiegel principle**: Data-driven spatial movement (entropy → position)
+✓ **Smooth transitions**: Constant-power panning prevents loudness jumps
+✓ **Tension-responsive width**: Tactical sections expand stereo field
+
+### Technical Benefits
+✓ **Configurable**: Enable/disable stereo, adjust panning amounts
+✓ **Backward compatible**: Falls back to mono if disabled
+✓ **Sample-accurate**: Entropy data resampled to match audio length
+✓ **Phase-coherent**: Haas effect maintains mono compatibility
+
+---
+
 ## Configuration Examples
 
 ### Tweaking Overall Narratives
@@ -491,6 +724,41 @@ config.LAYER_MIXING['sequencer_note_level'] = 0.3  # Was 0.4
 
 # Overall louder
 config.MIXING['section_level'] = 0.4  # Was 0.3
+```
+
+### Stereo Configuration
+```python
+# Disable stereo (mono output)
+config.STEREO_CONFIG['enabled'] = False
+
+# More dramatic panning
+config.STEREO_CONFIG['entropy_pan_amount'] = 2.5  # Was 1.5 (wider movement)
+
+# Wider stereo field for layers 1+2
+config.STEREO_CONFIG['max_width'] = 1.0  # Was 0.8 (maximum width)
+
+# Keep layers 1+2 more centered
+config.STEREO_CONFIG['min_width'] = 0.2  # Was 0.0 (never fully mono)
+```
+
+### Entropy Configuration
+```python
+# Adjust entropy weights
+config.ENTROPY_CONFIG['weights']['eval'] = 0.7      # Was 0.5 (more eval influence)
+config.ENTROPY_CONFIG['weights']['tactical'] = 0.2  # Was 0.4 (less tactical)
+
+# More aggressive thresholds (more chromatic earlier)
+config.ENTROPY_CONFIG['low_threshold'] = 0.2   # Was 0.3
+config.ENTROPY_CONFIG['high_threshold'] = 0.6  # Was 0.7
+
+# More rhythmic chaos
+config.ENTROPY_CONFIG['rhythm_variation_max'] = 0.8  # Was 0.5 (±80% variation)
+
+# Less portamento reduction (keep glides even at high entropy)
+config.ENTROPY_CONFIG['glide_reduction_max'] = 0.3  # Was 0.5
+
+# More smoothing (less jumpy entropy curve)
+config.ENTROPY_CONFIG['smoothing_sigma'] = 3  # Was 2
 ```
 
 ---
@@ -609,9 +877,10 @@ for filter_end, cfg in configs:
 ✓ **ECO code seeding**: Reproducible randomness
 ✓ **Section crossfading**: Smooth 2-second transitions
 ✓ **DEATH_SPIRAL narrative**: Dark saw wave with increasing chaos
+✓ **Entropy-driven Layer 3**: Evaluation volatility controls note selection, rhythm, filters, portamento, harmony
+✓ **Stereo output with entropy panning**: Layer 3 spatial position driven by evaluation entropy
 
 ### Possible Enhancements
-- **Stereo output**: Separate left/right synthesis
 - **Multi-band processing**: Frequency-specific effects
 - **Granular synthesis**: Micro-sound textures
 - **Spectral processing**: FFT-based effects
