@@ -433,12 +433,13 @@ class ChessSynthComposer:
                 duration = base_note_dur * np.random.uniform(0.2, 0.4) * (1.0 - progress * 0.2)
 
             # Velocity increases with progress and state
+            # Capped to prevent clipping when multiple notes overlap
             if current_state == STATE_ADVANCE:
                 velocity = np.random.uniform(0.7, 0.9) * (1.0 + progress * 0.3)
             elif current_state == STATE_STRIKE:
-                velocity = 1.0  # Maximum power
+                velocity = 1.0
             else:  # OVERWHELM
-                velocity = np.random.uniform(0.9, 1.0) * (1.0 + progress * 0.5)
+                velocity = np.random.uniform(0.9, 1.0)  # No progress multiplier - prevents clipping
 
             # Generate main note
             note_samples = int(duration * self.sample_rate)
@@ -452,12 +453,12 @@ class ChessSynthComposer:
                 if current_state == STATE_STRIKE or current_state == STATE_OVERWHELM:
                     filter_mult *= 1.5  # Extra brightness on strikes
 
-                resonance_mult = 1.0 + progress * 1.2
+                resonance_mult = 1.0 + progress * 0.5  # Reduced to prevent filter self-oscillation
 
                 pattern_note = self.synth.create_synth_note(
                     freq=note_freq,
                     duration=note_duration_sec,
-                    waveform='saw',  # Aggressive, bright
+                    waveform='saw',
                     filter_base=final_filter * filter_mult,
                     filter_env_amount=filter_env_amount * np.random.uniform(1.0, 1.5),
                     resonance=final_resonance * resonance_mult,
@@ -465,12 +466,22 @@ class ChessSynthComposer:
                     filter_env=get_filter_envelope('sweep', self.config)
                 )
 
-                level = self.config.LAYER_MIXING['pattern_note_level'] * velocity
+                # Reduce level for this pattern to prevent clipping when overlapping
+                # CRUSHING_ATTACK can have 3+ simultaneous note+chord pairs
+                base_level = self.config.LAYER_MIXING['pattern_note_level'] * 0.3
+                level = base_level * velocity
                 end_sample = min(current_sample + len(pattern_note), total_samples)
-                section_pattern[current_sample:end_sample] += pattern_note[:end_sample - current_sample] * level
 
                 # CHORD STABS: Add harmonic notes on strikes and overwhelm
-                if (current_state == STATE_STRIKE or current_state == STATE_OVERWHELM) and np.random.random() < 0.6:
+                has_chord = (current_state == STATE_STRIKE or current_state == STATE_OVERWHELM) and np.random.random() < 0.6
+
+                # Voice normalization: scale down when multiple voices present
+                num_voices = 2 if has_chord else 1
+                voice_scale = 1.0 / np.sqrt(num_voices)
+
+                section_pattern[current_sample:end_sample] += pattern_note[:end_sample - current_sample] * level * voice_scale
+
+                if has_chord:
                     # Add fifth or octave
                     chord_interval = np.random.choice([4, 7])  # Perfect fourth or fifth
                     chord_idx = min(7, current_note_idx + chord_interval)
@@ -487,7 +498,7 @@ class ChessSynthComposer:
                         filter_env=get_filter_envelope('sweep', self.config)
                     )
 
-                    section_pattern[current_sample:end_sample] += chord_note[:end_sample - current_sample] * level * 0.6
+                    section_pattern[current_sample:end_sample] += chord_note[:end_sample - current_sample] * level * voice_scale
 
             # Pause between notes (decreases as attack intensifies)
             if current_state == STATE_ADVANCE:
@@ -1297,7 +1308,7 @@ class ChessSynthComposer:
                             actual_samples = min(len(pattern_note), end_sample - start_sample)
                             section_pattern[start_sample:start_sample + actual_samples] += pattern_note[:actual_samples] * self.config.LAYER_MIXING['pattern_note_level']
 
-        # MIX LAYERS 1 AND 2
+        # Mix layers 1 and 2
         drone_contribution = base_drone * self.config.LAYER_MIXING['drone_in_supersaw']
         pattern_contribution = section_pattern * self.config.LAYER_MIXING['pattern_in_supersaw']
         mixed_signal = drone_contribution + pattern_contribution
@@ -1605,9 +1616,6 @@ class ChessSynthComposer:
         if self.config.LAYER_ENABLE['sequencer']:
             samples = samples + filtered_sequence * self.config.MIXING['filtered_sequence_level']
 
-        # Soft clipping
-        samples = np.tanh(samples * self.config.MIXING['soft_clip_pre']) * self.config.MIXING['soft_clip_post']
-
         return np.array(samples)
 
     def compose(self):
@@ -1659,19 +1667,44 @@ class ChessSynthComposer:
                 # Sections too short for crossfade, just concatenate
                 composition = np.concatenate([composition, next_section])
 
-        # Final normalization
-        max_val = np.max(np.abs(composition))
-        peak_db = 20 * np.log10(max_val) if max_val > 0 else -100
+        # Master bus processing
+        print(f"\n{'━' * 50}")
+        print("MASTER BUS")
 
-        # Clipping detected if normalization was needed
-        clipping = max_val > self.config.WAV_OUTPUT['normalization_threshold']
+        # Measure pre-normalized levels
+        pre_peak = np.max(np.abs(composition))
+        pre_peak_db = 20 * np.log10(pre_peak) if pre_peak > 0 else -100
+        pre_rms = np.sqrt(np.mean(composition**2))
+        pre_rms_db = 20 * np.log10(pre_rms) if pre_rms > 0 else -100
 
-        if clipping:
-            composition = composition * (self.config.WAV_OUTPUT['normalization_threshold'] / max_val)
+        # Calculate how much gain needed to reach -3dBFS target
+        target_db = -3.0
+        target_linear = 10 ** (target_db / 20.0)
+
+        if pre_peak > 0:
+            normalization_gain = target_linear / pre_peak
+            composition = composition * normalization_gain
+        else:
+            normalization_gain = 1.0
+
+        # Final measurements
+        final_peak = np.max(np.abs(composition))
+        final_peak_db = 20 * np.log10(final_peak) if final_peak > 0 else -100
+        final_rms = np.sqrt(np.mean(composition**2))
+        final_rms_db = 20 * np.log10(final_rms) if final_rms > 0 else -100
+        crest_factor_db = final_peak_db - final_rms_db
+        clipped_samples = np.sum(np.abs(composition) > 0.99)
+        clipped_pct = (clipped_samples / len(composition)) * 100
+
+        print(f"  Pre-normalization peak: {pre_peak_db:.1f} dBFS")
+        print(f"  Normalization gain: {20*np.log10(normalization_gain):.1f} dB")
+        print(f"  Final peak: {final_peak_db:.1f} dBFS (target: {target_db:.1f} dBFS)")
+        print(f"  Final RMS: {final_rms_db:.1f} dBFS")
+        print(f"  Crest factor: {crest_factor_db:.1f} dB")
+        print(f"  Clipped samples: {clipped_samples} ({clipped_pct:.4f}%)")
 
         print(f"\n{'━' * 50}")
         print(f"✓ Synthesis complete: {len(composition)/self.sample_rate:.1f} seconds")
-        print(f"  Audio Stats: Peak {peak_db:.1f}dB | {'⚠ Normalized (was clipping)' if clipping else 'No clipping'}")
         return composition
 
     def save(self, filename='chess_synth.wav'):

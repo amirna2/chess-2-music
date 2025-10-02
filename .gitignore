@@ -3,6 +3,7 @@ data/
 logs/
 CLAUDE.md
 .DS_Store
+.claude/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -211,3 +212,9 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# Project
+
+*.json
+*.wav
+*.pgn
