@@ -115,14 +115,21 @@ class SubtractiveSynth:
         # Save final phase for next retrigger
         self.phase = phase
 
+        # Denormal protection - prevent CPU spikes from tiny values
+        signal[np.abs(signal) < 1e-20] = 0.0
+
         # Micro cross-fade on retrigger to eliminate click
+        # Uses equal-power curve to prevent volume dip: √(1-x) and √x
+        # maintain constant perceived power (a² + b² = 1) vs linear (0.5² + 0.5² = 0.5)
         if self.last_signal_tail is not None and self.last_env_value >= 1e-3:
             xfade_len = min(self.crossfade_samples, len(signal), len(self.last_signal_tail))
             if xfade_len > 0:
                 x = np.linspace(0, 1, xfade_len)
+                a = np.sqrt(1 - x)  # Equal-power old
+                b = np.sqrt(x)      # Equal-power new
                 signal[:xfade_len] = (
-                    self.last_signal_tail[:xfade_len] * (1 - x) +
-                    signal[:xfade_len] * x
+                    self.last_signal_tail[:xfade_len] * a +
+                    signal[:xfade_len] * b
                 )
 
         # Store tail for next potential crossfade
@@ -237,6 +244,27 @@ class SubtractiveSynth:
         # Soft limiting to prevent clipping from multiple layers
         result = np.tanh(result * 0.8) * 1.25  # Gentle compression
 
+        # Denormal protection - prevent CPU spikes from tiny values
+        result[np.abs(result) < 1e-20] = 0.0
+
+        # Crossfade post-VCA output for click-free retriggering
+        # Uses equal-power curve to prevent volume dip
+        if self.last_signal_tail is not None and self.last_env_value >= 1e-3:
+            xfade_len = min(self.crossfade_samples, len(result), len(self.last_signal_tail))
+            if xfade_len > 0:
+                x = np.linspace(0, 1, xfade_len)
+                a = np.sqrt(1 - x)  # Equal-power old
+                b = np.sqrt(x)      # Equal-power new
+                result[:xfade_len] = (
+                    self.last_signal_tail[:xfade_len] * a +
+                    result[:xfade_len] * b
+                )
+
+        # Store post-VCA tail and envelope value for next retrigger
+        if len(result) >= self.crossfade_samples:
+            self.last_signal_tail = result[-self.crossfade_samples:].copy()
+        self.last_env_value = amp_env_signal[-1] if len(amp_env_signal) > 0 else 0.0
+
         return result
 
     def adsr_envelope(self, num_samples, attack=0.01, decay=0.1, sustain=0.7, release=0.2, curve=0.3):
@@ -245,6 +273,11 @@ class SubtractiveSynth:
         Times in seconds, sustain is level (0-1)
         curve: exponential curve factor (0.1 = gentle, 1.0 = aggressive)
         """
+        # Guard against ultra-short attacks that cause clicks
+        attack = max(attack, 0.001)  # Minimum 1ms attack
+        decay = max(decay, 0.001)
+        release = max(release, 0.001)
+
         envelope = np.zeros(num_samples)
 
         # Convert times to samples
@@ -348,14 +381,21 @@ class SubtractiveSynth:
         # Save phase (convert back to normalized)
         self.phase = (phase / (2 * np.pi)) % 1.0
 
+        # Denormal protection - prevent CPU spikes from tiny values
+        signal[np.abs(signal) < 1e-20] = 0.0
+
         # Micro cross-fade on retrigger
+        # Uses equal-power curve to prevent volume dip: √(1-x) and √x
+        # maintain constant perceived power (a² + b² = 1) vs linear (0.5² + 0.5² = 0.5)
         if self.last_signal_tail is not None and self.last_env_value >= 1e-3:
             xfade_len = min(self.crossfade_samples, len(signal), len(self.last_signal_tail))
             if xfade_len > 0:
                 x = np.linspace(0, 1, xfade_len)
+                a = np.sqrt(1 - x)  # Equal-power old
+                b = np.sqrt(x)      # Equal-power new
                 signal[:xfade_len] = (
-                    self.last_signal_tail[:xfade_len] * (1 - x) +
-                    signal[:xfade_len] * x
+                    self.last_signal_tail[:xfade_len] * a +
+                    signal[:xfade_len] * b
                 )
 
         # Apply simple filter (no envelope needed for R2D2 style)
@@ -409,7 +449,28 @@ class SubtractiveSynth:
             filtered[i:end] = filtered_chunk
 
         # Apply amplitude envelope
-        amp_env = self.adsr_envelope(len(filtered), *amp_env)
-        output = filtered * amp_env
+        amp_env_signal = self.adsr_envelope(len(filtered), *amp_env)
+        output = filtered * amp_env_signal
+
+        # Denormal protection - prevent CPU spikes from tiny values
+        output[np.abs(output) < 1e-20] = 0.0
+
+        # Crossfade post-VCA output for click-free retriggering
+        # Uses equal-power curve to prevent volume dip
+        if self.last_signal_tail is not None and self.last_env_value >= 1e-3:
+            xfade_len = min(self.crossfade_samples, len(output), len(self.last_signal_tail))
+            if xfade_len > 0:
+                x = np.linspace(0, 1, xfade_len)
+                a = np.sqrt(1 - x)  # Equal-power old
+                b = np.sqrt(x)      # Equal-power new
+                output[:xfade_len] = (
+                    self.last_signal_tail[:xfade_len] * a +
+                    output[:xfade_len] * b
+                )
+
+        # Store post-VCA tail and envelope value for next retrigger
+        if len(output) >= self.crossfade_samples:
+            self.last_signal_tail = output[-self.crossfade_samples:].copy()
+        self.last_env_value = amp_env_signal[-1] if len(amp_env_signal) > 0 else 0.0
 
         return output
