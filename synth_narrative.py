@@ -3,8 +3,8 @@ SYNTH_NARRATIVE - Narrative Process Classes
 Laurie Spiegel-inspired process transformations for chess music
 """
 
-import random
 import math
+import numpy as np
 from abc import ABC, abstractmethod
 
 
@@ -14,10 +14,11 @@ class NarrativeProcess(ABC):
     Each process maintains state and evolves over the duration of the piece
     """
 
-    def __init__(self, total_duration: float, total_plies: int):
+    def __init__(self, total_duration: float, total_plies: int, rng=None):
         self.total_duration = total_duration
         self.total_plies = total_plies
         self.current_time = 0.0
+        self.rng = rng if rng is not None else np.random.default_rng()
 
     @abstractmethod
     def update(self, current_time: float, key_moment=None) -> dict:
@@ -52,8 +53,8 @@ class TumblingDefeatProcess(NarrativeProcess):
     Inspired by Spiegel's concept of decay and entropy
     """
 
-    def __init__(self, total_duration: float, total_plies: int):
-        super().__init__(total_duration, total_plies)
+    def __init__(self, total_duration: float, total_plies: int, rng=None):
+        super().__init__(total_duration, total_plies, rng)
         self.stability = 1.0  # Starts coherent
         self.error_accumulation = 0.0
         self.tempo_drift = 0.0
@@ -81,11 +82,11 @@ class TumblingDefeatProcess(NarrativeProcess):
 
         # Tempo becomes increasingly erratic
         chaos_factor = (1 - self.stability) * 0.02
-        self.tempo_drift += random.uniform(-chaos_factor, chaos_factor)
+        self.tempo_drift += self.rng.uniform(-chaos_factor, chaos_factor)
         self.tempo_drift = max(-0.3, min(0.3, self.tempo_drift))  # Clamp
 
         # Pitch drift increases over time
-        self.pitch_drift += random.uniform(-0.5, 0.5) * (1 - self.stability)
+        self.pitch_drift += self.rng.uniform(-0.5, 0.5) * (1 - self.stability)
 
         return {
             'pitch_drift_cents': self.pitch_drift * 20,  # Up to 20 cents drift
@@ -103,8 +104,8 @@ class AttackingMasterpieceProcess(NarrativeProcess):
     Based on positive feedback loops and crescendo
     """
 
-    def __init__(self, total_duration: float, total_plies: int):
-        super().__init__(total_duration, total_plies)
+    def __init__(self, total_duration: float, total_plies: int, rng=None):
+        super().__init__(total_duration, total_plies, rng)
         self.momentum = 0.0
         self.brilliance_factor = 0.0
 
@@ -142,8 +143,8 @@ class QuietPrecisionProcess(NarrativeProcess):
     Based on homeostasis and natural oscillation
     """
 
-    def __init__(self, total_duration: float, total_plies: int):
-        super().__init__(total_duration, total_plies)
+    def __init__(self, total_duration: float, total_plies: int, rng=None):
+        super().__init__(total_duration, total_plies, rng)
         self.balance = 0.0
         self.breathing_phase = 0.0
 
@@ -174,7 +175,7 @@ class QuietPrecisionProcess(NarrativeProcess):
         }
 
 
-def create_narrative_process(narrative: str, duration: float, plies: int) -> NarrativeProcess:
+def create_narrative_process(narrative: str, duration: float, plies: int, rng=None) -> NarrativeProcess:
     """
     Factory function to create appropriate process based on overall narrative
 
@@ -182,6 +183,7 @@ def create_narrative_process(narrative: str, duration: float, plies: int) -> Nar
         narrative: Overall narrative type (e.g., 'TUMBLING_DEFEAT')
         duration: Total duration in seconds
         plies: Total number of plies
+        rng: Optional numpy RNG for reproducibility
 
     Returns:
         NarrativeProcess instance
@@ -197,4 +199,4 @@ def create_narrative_process(narrative: str, duration: float, plies: int) -> Nar
     }
 
     ProcessClass = process_map.get(narrative, DefaultProcess)
-    return ProcessClass(duration, plies)
+    return ProcessClass(duration, plies, rng)

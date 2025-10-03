@@ -12,7 +12,7 @@ class SubtractiveSynth:
     No hard-coded musical parameters - all values passed as arguments.
     """
 
-    def __init__(self, sample_rate=44100):
+    def __init__(self, sample_rate=44100, rng=None):
         self.sample_rate = sample_rate
         self.nyquist = sample_rate / 2.0
 
@@ -27,6 +27,9 @@ class SubtractiveSynth:
         self.last_env_value = 0.0
         self.last_signal_tail = None  # For crossfading
         self.crossfade_samples = 64  # ~1.45ms at 44.1kHz
+
+        # Dedicated RNG for reproducible randomness
+        self.rng = rng if rng is not None else np.random.default_rng()
 
     def poly_blep(self, dt, phase):
         """
@@ -207,7 +210,7 @@ class SubtractiveSynth:
         for f in freqs:
             layer = self.oscillator(f, duration, 'saw')
             # Randomize phase for natural analog drift
-            shift = np.random.randint(0, 100)  # Small phase shift
+            shift = self.rng.integers(0, 100)  # Small phase shift
             layers.append(np.roll(layer, shift))
 
         # Mix all layers equally

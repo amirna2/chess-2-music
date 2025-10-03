@@ -142,11 +142,15 @@ class ChessSynthComposer:
         self.config = config or SynthConfig()
         self.sample_rate = self.config.SAMPLE_RATE
 
+        # Create dedicated RNG seeded with ECO code for reproducibility
+        self.rng = self._create_rng_from_eco(chess_tags.get('eco', 'A00'))
+
         # Separate synth instances per layer for state isolation
         # Prevents phase/crossfade state pollution between layers
-        self.synth_layer1 = SubtractiveSynth(self.sample_rate)  # Drone layer
-        self.synth_layer2 = SubtractiveSynth(self.sample_rate)  # Pattern layer
-        self.synth_layer3 = SubtractiveSynth(self.sample_rate)  # Sequencer layer
+        # Pass shared RNG for reproducibility
+        self.synth_layer1 = SubtractiveSynth(self.sample_rate, self.rng)  # Drone layer
+        self.synth_layer2 = SubtractiveSynth(self.sample_rate, self.rng)  # Pattern layer
+        self.synth_layer3 = SubtractiveSynth(self.sample_rate, self.rng)  # Sequencer layer
 
         self.total_duration = chess_tags.get('duration_seconds', 60)
         self.total_plies = chess_tags.get('total_plies', 40)
@@ -157,9 +161,6 @@ class ChessSynthComposer:
         self.overall_narrative = chess_tags.get('overall_narrative', 'COMPLEX_GAME')
         self.eco = chess_tags.get('eco', 'A00')
 
-        # Seed randomness with ECO code for reproducibility
-        self._seed_from_eco(self.eco)
-
         # LAYER 1: Overall narrative defines the BASE PATCH
         self.base_params = self._get_narrative_base_params()
 
@@ -167,7 +168,8 @@ class ChessSynthComposer:
         self.narrative_process = create_narrative_process(
             self.overall_narrative,
             self.total_duration,
-            self.total_plies
+            self.total_plies,
+            self.rng
         )
 
         # Initialize entropy calculator (Laurie Spiegel-inspired)
@@ -175,17 +177,26 @@ class ChessSynthComposer:
         moves = chess_tags.get('moves', [])
         self.entropy_calculator = ChessEntropyCalculator(moves) if moves else None
 
-    def _seed_from_eco(self, eco_code):
-        """Convert ECO code to integer seed for reproducible randomness"""
-        # ECO format: Letter (A-E) + two digits (00-99)
-        # Convert to integer: A00=0, A01=1, ..., E99=599
+    def _create_rng_from_eco(self, eco_code):
+        """
+        Create dedicated numpy RNG seeded from ECO code for reproducible randomness.
+
+        Uses modern numpy.random.Generator (not legacy global seed) for:
+        - Isolation: Won't interfere with other code using np.random
+        - Reproducibility: Same ECO code always produces same music
+        - Thread-safety: Each composer has its own RNG state
+
+        ECO format: Letter (A-E) + two digits (00-99)
+        Converts to seed: A00=0, A01=1, ..., E99=599
+        """
         if len(eco_code) >= 3:
             letter_value = ord(eco_code[0].upper()) - ord('A')  # 0-4
             number_value = int(eco_code[1:3])  # 0-99
             seed = letter_value * 100 + number_value
         else:
             seed = 0  # Fallback
-        np.random.seed(seed)
+
+        return np.random.default_rng(seed)
 
     def _get_narrative_base_params(self):
         """LAYER 1: Overall narrative sets the fundamental synth character"""
@@ -272,9 +283,9 @@ class ChessSynthComposer:
 
             # Random duration (longer when on tonic = thinking)
             if current_note_idx == 0:
-                duration = base_note_dur * np.random.uniform(1.2, 2.5 + tension)
+                duration = base_note_dur * self.rng.uniform(1.2, 2.5 + tension)
             else:
-                duration = base_note_dur * np.random.uniform(0.6, 1.2)
+                duration = base_note_dur * self.rng.uniform(0.6, 1.2)
 
             # Generate note
             note_samples = int(duration * self.sample_rate)
@@ -287,15 +298,15 @@ class ChessSynthComposer:
                 filter_mult = 0.7 + (current_note_idx / len(scale)) * 0.8
 
                 # Random velocity variation
-                velocity = np.random.uniform(0.6, 1.0)
+                velocity = self.rng.uniform(0.6, 1.0)
 
                 pattern_note = self.synth_layer2.create_synth_note(
                     freq=note_freq,
                     duration=note_duration_sec,
                     waveform='pulse',
                     filter_base=final_filter * filter_mult,
-                    filter_env_amount=filter_env_amount * np.random.uniform(0.4, 0.8),
-                    resonance=final_resonance * np.random.uniform(0.7, 0.9),
+                    filter_env_amount=filter_env_amount * self.rng.uniform(0.4, 0.8),
+                    resonance=final_resonance * self.rng.uniform(0.7, 0.9),
                     amp_env=get_envelope('soft', self.config),
                     filter_env=get_filter_envelope('gentle', self.config)
                 )
@@ -305,14 +316,14 @@ class ChessSynthComposer:
                 section_pattern[current_sample:end_sample] += pattern_note[:end_sample - current_sample] * self.config.LAYER_MIXING['pattern_note_level'] * velocity
 
             # Random pause (more hesitation as time goes on)
-            pause_duration = base_note_dur * np.random.uniform(0.2, 0.8 + progress * tension)
+            pause_duration = base_note_dur * self.rng.uniform(0.2, 0.8 + progress * tension)
             pause_samples = int(pause_duration * self.sample_rate)
             current_sample += note_samples + pause_samples
 
             # Choose next note using Markov chain
             if current_note_idx < len(transition_matrix):
                 probabilities = transition_matrix[current_note_idx]
-                current_note_idx = np.random.choice(len(probabilities), p=probabilities)
+                current_note_idx = self.rng.choice(len(probabilities), p=probabilities)
             else:
                 current_note_idx = 0  # Fallback to tonic
 
@@ -349,10 +360,10 @@ class ChessSynthComposer:
             # State transitions (probabilistic)
             if current_state == STATE_ATTACK:
                 # Stay in attack mode with increasing probability
-                if np.random.random() < 0.15 - progress * 0.1:  # Less retreat as hunt intensifies
+                if self.rng.random() < 0.15 - progress * 0.1:  # Less retreat as hunt intensifies
                     current_state = STATE_RETREAT
                     attack_run_length = 0
-                elif np.random.random() < 0.05:
+                elif self.rng.random() < 0.05:
                     current_state = STATE_PAUSE
                     attack_run_length = 0
                 else:
@@ -360,26 +371,26 @@ class ChessSynthComposer:
 
             elif current_state == STATE_RETREAT:
                 # Quick retreat, return to attack
-                if np.random.random() < 0.6 + progress * 0.3:  # Return faster as hunt intensifies
+                if self.rng.random() < 0.6 + progress * 0.3:  # Return faster as hunt intensifies
                     current_state = STATE_ATTACK
 
             elif current_state == STATE_PAUSE:
                 # Brief pause, then attack
-                if np.random.random() < 0.8:
+                if self.rng.random() < 0.8:
                     current_state = STATE_ATTACK
 
             # Note selection based on state
             if current_state == STATE_ATTACK:
                 # Upward bias (70% up, 20% repeat, 10% down)
-                rand = np.random.random()
+                rand = self.rng.random()
                 if rand < 0.7:
                     # Move up
-                    current_note_idx = min(7, current_note_idx + np.random.randint(1, 3))
+                    current_note_idx = min(7, current_note_idx + self.rng.integers(1, 3))
 
                     # Octave jumps (increasing probability with progress and attack length)
-                    if np.random.random() < 0.1 + progress * 0.2 + attack_run_length * 0.05:
+                    if self.rng.random() < 0.1 + progress * 0.2 + attack_run_length * 0.05:
                         current_octave = min(2, current_octave + 1)
-                        current_note_idx = np.random.randint(0, 4)  # Reset to lower note after jump
+                        current_note_idx = self.rng.integers(0, 4)  # Reset to lower note after jump
 
                 elif rand < 0.9:
                     # Repeat (stabbing same note)
@@ -390,13 +401,13 @@ class ChessSynthComposer:
 
             elif current_state == STATE_RETREAT:
                 # Downward motion
-                current_note_idx = max(0, current_note_idx - np.random.randint(1, 3))
+                current_note_idx = max(0, current_note_idx - self.rng.integers(1, 3))
                 if current_note_idx == 0 and current_octave > 0:
                     current_octave -= 1
 
             elif current_state == STATE_PAUSE:
                 # Hold on dominant or tonic
-                if np.random.random() < 0.5:
+                if self.rng.random() < 0.5:
                     current_note_idx = 0  # Tonic
                 else:
                     current_note_idx = 4  # Dominant
@@ -407,19 +418,19 @@ class ChessSynthComposer:
             # Duration varies by state and progress
             if current_state == STATE_ATTACK:
                 # Faster as hunt intensifies
-                duration = base_note_dur * np.random.uniform(0.4, 0.8) * (1.0 - progress * 0.3)
+                duration = base_note_dur * self.rng.uniform(0.4, 0.8) * (1.0 - progress * 0.3)
             elif current_state == STATE_RETREAT:
-                duration = base_note_dur * np.random.uniform(0.5, 1.0)
+                duration = base_note_dur * self.rng.uniform(0.5, 1.0)
             else:  # PAUSE
-                duration = base_note_dur * np.random.uniform(1.5, 2.5)
+                duration = base_note_dur * self.rng.uniform(1.5, 2.5)
 
             # Velocity varies by state
             if current_state == STATE_ATTACK:
-                velocity = np.random.uniform(0.8, 1.0) * (1.0 + progress * 0.3)  # Louder as hunt intensifies
+                velocity = self.rng.uniform(0.8, 1.0) * (1.0 + progress * 0.3)  # Louder as hunt intensifies
             elif current_state == STATE_RETREAT:
-                velocity = np.random.uniform(0.6, 0.8)
+                velocity = self.rng.uniform(0.6, 0.8)
             else:  # PAUSE
-                velocity = np.random.uniform(0.5, 0.7)
+                velocity = self.rng.uniform(0.5, 0.7)
 
             # Generate note
             note_samples = int(duration * self.sample_rate)
@@ -431,7 +442,7 @@ class ChessSynthComposer:
                 # Filter and resonance evolve with progress and state
                 filter_mult = 1.0 + progress * 2.0  # Much brighter as hunt intensifies
                 if current_state == STATE_ATTACK:
-                    filter_mult *= np.random.uniform(1.2, 1.5)  # Extra brightness on attack
+                    filter_mult *= self.rng.uniform(1.2, 1.5)  # Extra brightness on attack
 
                 resonance_mult = 1.0 + progress * 0.8
 
@@ -440,7 +451,7 @@ class ChessSynthComposer:
                     duration=note_duration_sec,
                     waveform='saw',  # Aggressive, bright
                     filter_base=final_filter * filter_mult,
-                    filter_env_amount=filter_env_amount * np.random.uniform(0.8, 1.2),
+                    filter_env_amount=filter_env_amount * self.rng.uniform(0.8, 1.2),
                     resonance=final_resonance * resonance_mult,
                     amp_env=get_envelope('stab', self.config),
                     filter_env=get_filter_envelope('sweep', self.config)
@@ -493,14 +504,14 @@ class ChessSynthComposer:
             # State transitions
             if current_state == STATE_ADVANCE:
                 # Build pressure, then strike
-                if np.random.random() < 0.3 + progress * 0.2:  # More strikes as attack intensifies
+                if self.rng.random() < 0.3 + progress * 0.2:  # More strikes as attack intensifies
                     current_state = STATE_STRIKE
-                    strike_count = np.random.randint(2, 5)  # Multiple hammer blows
+                    strike_count = self.rng.integers(2, 5)  # Multiple hammer blows
 
             elif current_state == STATE_STRIKE:
                 strike_count -= 1
                 if strike_count <= 0:
-                    if progress > 0.6 and np.random.random() < 0.3:
+                    if progress > 0.6 and self.rng.random() < 0.3:
                         current_state = STATE_OVERWHELM  # Climax
                     else:
                         current_state = STATE_ADVANCE
@@ -512,18 +523,18 @@ class ChessSynthComposer:
             # Note selection based on state
             if current_state == STATE_ADVANCE:
                 # Downward movement (pressure building)
-                if np.random.random() < 0.7:
-                    current_note_idx = max(0, current_note_idx - np.random.randint(1, 3))
+                if self.rng.random() < 0.7:
+                    current_note_idx = max(0, current_note_idx - self.rng.integers(1, 3))
                 else:
                     current_note_idx = min(7, current_note_idx + 1)  # Occasional upward jab
 
             elif current_state == STATE_STRIKE:
                 # Hammer on low notes (powerful blows)
-                current_note_idx = np.random.choice([0, 1, 2])  # Low register only
+                current_note_idx = self.rng.choice([0, 1, 2])  # Low register only
 
             elif current_state == STATE_OVERWHELM:
                 # Chaotic attacks across entire range
-                current_note_idx = np.random.randint(0, 8)
+                current_note_idx = self.rng.integers(0, 8)
 
             # Get base frequency
             note_freq = scale[current_note_idx]
@@ -532,32 +543,32 @@ class ChessSynthComposer:
             octave_shift = 0.0  # Default no shift
             if current_state == STATE_STRIKE:
                 # Strike uses lower octave (bass power)
-                if np.random.random() < 0.5:
+                if self.rng.random() < 0.5:
                     note_freq *= 0.5
                     octave_shift = -1.0
             elif current_state == STATE_OVERWHELM:
                 # Overwhelm uses wide octave range
-                octave_shift = float(np.random.choice([-1, 0, 0, 1]))  # Bias toward higher
+                octave_shift = float(self.rng.choice([-1, 0, 0, 1]))  # Bias toward higher
                 note_freq *= (2.0 ** octave_shift)
 
             # Duration varies by state and progress
             if current_state == STATE_ADVANCE:
-                duration = base_note_dur * np.random.uniform(0.8, 1.2) * (1.0 - progress * 0.3)
+                duration = base_note_dur * self.rng.uniform(0.8, 1.2) * (1.0 - progress * 0.3)
             elif current_state == STATE_STRIKE:
                 # Short, sharp attacks
-                duration = base_note_dur * np.random.uniform(0.3, 0.5)
+                duration = base_note_dur * self.rng.uniform(0.3, 0.5)
             else:  # OVERWHELM
                 # Very fast, relentless
-                duration = base_note_dur * np.random.uniform(0.2, 0.4) * (1.0 - progress * 0.2)
+                duration = base_note_dur * self.rng.uniform(0.2, 0.4) * (1.0 - progress * 0.2)
 
             # Velocity increases with progress and state
             # Capped to prevent clipping when multiple notes overlap
             if current_state == STATE_ADVANCE:
-                velocity = np.random.uniform(0.7, 0.9) * (1.0 + progress * 0.3)
+                velocity = self.rng.uniform(0.7, 0.9) * (1.0 + progress * 0.3)
             elif current_state == STATE_STRIKE:
                 velocity = 1.0
             else:  # OVERWHELM
-                velocity = np.random.uniform(0.9, 1.0)  # No progress multiplier - prevents clipping
+                velocity = self.rng.uniform(0.9, 1.0)  # No progress multiplier - prevents clipping
 
             # Generate main note
             note_samples = int(duration * self.sample_rate)
@@ -578,7 +589,7 @@ class ChessSynthComposer:
                     duration=note_duration_sec,
                     waveform='saw',
                     filter_base=final_filter * filter_mult,
-                    filter_env_amount=filter_env_amount * np.random.uniform(1.0, 1.5),
+                    filter_env_amount=filter_env_amount * self.rng.uniform(1.0, 1.5),
                     resonance=final_resonance * resonance_mult,
                     amp_env=get_envelope('stab', self.config),
                     filter_env=get_filter_envelope('sweep', self.config)
@@ -591,7 +602,7 @@ class ChessSynthComposer:
                 end_sample = min(current_sample + len(pattern_note), total_samples)
 
                 # CHORD STABS: Add harmonic notes on strikes and overwhelm
-                has_chord = (current_state == STATE_STRIKE or current_state == STATE_OVERWHELM) and np.random.random() < 0.6
+                has_chord = (current_state == STATE_STRIKE or current_state == STATE_OVERWHELM) and self.rng.random() < 0.6
 
                 # Voice normalization: scale down when multiple voices present
                 num_voices = 2 if has_chord else 1
@@ -601,7 +612,7 @@ class ChessSynthComposer:
 
                 if has_chord:
                     # Add fifth or octave
-                    chord_interval = np.random.choice([4, 7])  # Perfect fourth or fifth
+                    chord_interval = self.rng.choice([4, 7])  # Perfect fourth or fifth
                     chord_idx = min(7, current_note_idx + chord_interval)
                     chord_freq = scale[chord_idx] * (2 ** octave_shift if current_state == STATE_OVERWHELM else 1.0)
 
@@ -610,7 +621,7 @@ class ChessSynthComposer:
                         duration=note_duration_sec,
                         waveform='saw',
                         filter_base=final_filter * filter_mult,
-                        filter_env_amount=filter_env_amount * np.random.uniform(1.0, 1.5),
+                        filter_env_amount=filter_env_amount * self.rng.uniform(1.0, 1.5),
                         resonance=final_resonance * resonance_mult,
                         amp_env=get_envelope('stab', self.config),
                         filter_env=get_filter_envelope('sweep', self.config)
@@ -654,39 +665,39 @@ class ChessSynthComposer:
 
             # State transitions
             if current_state == STATE_ATTACK:
-                if np.random.random() < 0.2:
+                if self.rng.random() < 0.2:
                     current_state = STATE_DART
-                elif np.random.random() < 0.1:
+                elif self.rng.random() < 0.1:
                     current_state = STATE_SETTLE
             elif current_state == STATE_DART:
-                if np.random.random() < 0.6:
+                if self.rng.random() < 0.6:
                     current_state = STATE_ATTACK
-                elif np.random.random() < 0.2:
+                elif self.rng.random() < 0.2:
                     current_state = STATE_SETTLE
             elif current_state == STATE_SETTLE:
-                if np.random.random() < 0.8:
+                if self.rng.random() < 0.8:
                     current_state = STATE_ATTACK
 
             # Note selection by state
             if current_state == STATE_ATTACK:
                 # Aggressive attacks - favor upper register, random leaps
-                if np.random.random() < 0.5:
-                    current_note_idx = np.random.choice([4, 5, 6, 7])  # Upper half
+                if self.rng.random() < 0.5:
+                    current_note_idx = self.rng.choice([4, 5, 6, 7])  # Upper half
                 else:
-                    current_note_idx = np.random.choice([2, 3, 4])  # Middle
+                    current_note_idx = self.rng.choice([2, 3, 4])  # Middle
             elif current_state == STATE_DART:
                 # Random tactical jumps anywhere
-                current_note_idx = np.random.randint(0, len(scale))
+                current_note_idx = self.rng.integers(0, len(scale))
             elif current_state == STATE_SETTLE:
                 # Gravitate to stable notes
-                if np.random.random() < 0.6:
+                if self.rng.random() < 0.6:
                     current_note_idx = 0  # Tonic
                 else:
                     current_note_idx = 4  # Dominant
 
             note_freq = scale[current_note_idx]
-            duration = base_note_dur * np.random.uniform(0.6, 1.0)
-            velocity = np.random.uniform(0.75, 1.0)
+            duration = base_note_dur * self.rng.uniform(0.6, 1.0)
+            velocity = self.rng.uniform(0.75, 1.0)
 
             note_samples = int(duration * self.sample_rate)
             note_samples = min(note_samples, total_samples - current_sample)
@@ -746,8 +757,8 @@ class ChessSynthComposer:
 
         while current_sample < total_samples:
             note_freq = scale[current_note_idx]
-            duration = base_note_dur * np.random.uniform(0.8, 1.0)  # Shorter notes, more space
-            velocity = 0.35 + np.random.uniform(-0.1, 0.15)  # Much quieter (25-50% vs 60-80%)
+            duration = base_note_dur * self.rng.uniform(0.8, 1.0)  # Shorter notes, more space
+            velocity = 0.35 + self.rng.uniform(-0.1, 0.15)  # Much quieter (25-50% vs 60-80%)
 
             note_samples = int(duration * self.sample_rate)
             note_samples = min(note_samples, total_samples - current_sample)
@@ -773,7 +784,7 @@ class ChessSynthComposer:
             # Markov transition
             if current_note_idx < len(transition_matrix):
                 probabilities = transition_matrix[current_note_idx]
-                current_note_idx = np.random.choice(len(probabilities), p=probabilities)
+                current_note_idx = self.rng.choice(len(probabilities), p=probabilities)
             else:
                 current_note_idx = 0
 
@@ -805,7 +816,7 @@ class ChessSynthComposer:
             note_freq = scale[scale_idx] * 0.75  # Lower by perfect fourth
 
             # Duration: very consistent for stability
-            duration = base_note_dur * np.random.uniform(0.95, 1.05)
+            duration = base_note_dur * self.rng.uniform(0.95, 1.05)
 
             # Generate note
             note_samples = int(duration * self.sample_rate)
@@ -818,7 +829,7 @@ class ChessSynthComposer:
                 filter_mult = 0.6 + progress * 0.2  # Stays dark
 
                 # Velocity: very stable
-                velocity = 0.75 + np.random.uniform(-0.05, 0.05)
+                velocity = 0.75 + self.rng.uniform(-0.05, 0.05)
 
                 pattern_note = self.synth_layer2.create_synth_note(
                     freq=note_freq,
@@ -870,34 +881,34 @@ class ChessSynthComposer:
             # State transitions
             if current_state == STATE_ADVANCE:
                 advance_progress += 1
-                if advance_progress > 5 and np.random.random() < 0.3:
+                if advance_progress > 5 and self.rng.random() < 0.3:
                     current_state = STATE_CONSOLIDATE
                     advance_progress = 0
-                elif progress > 0.7 and np.random.random() < 0.2:
+                elif progress > 0.7 and self.rng.random() < 0.2:
                     current_state = STATE_BREAKTHROUGH
             elif current_state == STATE_CONSOLIDATE:
-                if np.random.random() < 0.5:
+                if self.rng.random() < 0.5:
                     current_state = STATE_ADVANCE
-                elif progress > 0.7 and np.random.random() < 0.3:
+                elif progress > 0.7 and self.rng.random() < 0.3:
                     current_state = STATE_BREAKTHROUGH
             elif current_state == STATE_BREAKTHROUGH:
-                if np.random.random() < 0.1:
+                if self.rng.random() < 0.1:
                     current_state = STATE_ADVANCE
 
             # Note selection by state
             if current_state == STATE_ADVANCE:
                 # Build pressure - favor dominant and upper notes, but randomly
                 weights = [0.1, 0.05, 0.15, 0.1, 0.25, 0.15, 0.1, 0.1]  # Favor 5th (index 4)
-                current_note_idx = np.random.choice(range(len(scale)), p=weights)
+                current_note_idx = self.rng.choice(range(len(scale)), p=weights)
             elif current_state == STATE_CONSOLIDATE:
                 # Hold stable harmonic notes - tonic, third, fifth
-                current_note_idx = np.random.choice([0, 2, 4], p=[0.4, 0.3, 0.3])
+                current_note_idx = self.rng.choice([0, 2, 4], p=[0.4, 0.3, 0.3])
             elif current_state == STATE_BREAKTHROUGH:
                 # Decisive moves - octave relationships
-                current_note_idx = np.random.choice([0, 4, 7], p=[0.3, 0.4, 0.3])  # Tonic, fifth, seventh
+                current_note_idx = self.rng.choice([0, 4, 7], p=[0.3, 0.4, 0.3])  # Tonic, fifth, seventh
 
             note_freq = scale[current_note_idx]
-            duration = base_note_dur * np.random.uniform(0.96, 1.04)
+            duration = base_note_dur * self.rng.uniform(0.96, 1.04)
             velocity = 0.55 + progress * 0.15
 
             note_samples = int(duration * self.sample_rate)
@@ -1742,7 +1753,7 @@ class ChessSynthComposer:
                     # Otherwise use pattern note if it's in the available pool
                     if note_interval not in available_intervals:
                         # Replace with random note from entropy-appropriate pool
-                        note_interval = np.random.choice(available_intervals)
+                        note_interval = self.rng.choice(available_intervals)
 
                 if note_interval is None:
                     midi_note = None
@@ -1807,7 +1818,7 @@ class ChessSynthComposer:
                 # High entropy = more timing variation (less predictable)
                 ec = self.config.ENTROPY_CONFIG
                 rhythm_var = note_entropy * ec['rhythm_variation_max']  # 0 to 0.5
-                duration_multiplier = 1.0 + np.random.uniform(-rhythm_var, rhythm_var)
+                duration_multiplier = 1.0 + self.rng.uniform(-rhythm_var, rhythm_var)
                 actual_duration = sixteenth_duration * duration_multiplier
 
                 # OUTRO: Use last section's envelope for continuity
@@ -1842,10 +1853,10 @@ class ChessSynthComposer:
                 # ENTROPY-DRIVEN HARMONIC DENSITY
                 # High entropy = add random harmony notes (cluster effect)
                 harmony_threshold = ec['harmony_probability_threshold']
-                if note_entropy > harmony_threshold and np.random.random() < (note_entropy - harmony_threshold):
+                if note_entropy > harmony_threshold and self.rng.random() < (note_entropy - harmony_threshold):
                     # Add a harmony note (third, fourth, or fifth)
                     harmony_intervals = [3, 4, 7]  # Musical intervals in semitones
-                    harmony_interval = np.random.choice(harmony_intervals)
+                    harmony_interval = self.rng.choice(harmony_intervals)
                     harmony_freq = target_freq * (2 ** (harmony_interval / 12.0))
 
                     harmony_audio = self.synth_layer3.supersaw(
