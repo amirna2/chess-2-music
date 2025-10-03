@@ -616,7 +616,11 @@ class ChessNarrativeTagger:
                 # Take top moments up to min_moments
                 significant_moments = sorted_moments[:min_moments]
 
-            # Convert to KeyMoment objects (limit to max_moments)
+            # Sort by score to prioritize high-value moments (NAGs)
+            # This ensures blunders/brilliancies aren't excluded by chronological limit
+            significant_moments = sorted(significant_moments, key=lambda x: x['score'], reverse=True)
+
+            # Convert to KeyMoment objects (limit to max_moments, taking highest scores)
             key_moments = []
             for m in significant_moments[:max_moments]:
                 key_moments.append(KeyMoment(

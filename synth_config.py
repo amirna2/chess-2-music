@@ -172,11 +172,11 @@ class SynthConfig:
     # These modulate the base parameters for specific game sections
     SECTION_MODULATIONS: Dict[str, Dict] = field(default_factory=lambda: {
         'DESPERATE_DEFENSE': {
-            'filter_mult': 0.5,
+            'filter_mult': 1.1,
             'resonance_add': 1.5,
             'tempo_mult': 0.85,
             'note_density': 0.7,
-            'filter_env_amount': 800,
+            'filter_env_amount': 2000,
         },
         'KING_HUNT': {
             'filter_mult': 1.3,
@@ -247,6 +247,20 @@ class SynthConfig:
             'tempo_mult': 1.0,
             'note_density': 1.0,
             'filter_env_amount': 1200,
+        },
+        'FLAWLESS_CONVERSION': {
+            'filter_mult': 1.0,
+            'resonance_add': 0.3,
+            'tempo_mult': 0.85,
+            'note_density': 0.9,
+            'filter_env_amount': 1800,
+        },
+        'DECISIVE_ENDING': {
+            'filter_mult': 0.6,
+            'resonance_add': 2.5,
+            'tempo_mult': 0.7,
+            'note_density': 0.5,
+            'filter_env_amount': 3000,
         },
         'DEFAULT': {
             'filter_mult': 1.0,
@@ -488,6 +502,9 @@ class SynthConfig:
             'mid': [0, 3, 7, 0, 3, 7, 12, 0, 3, 7, 12, 15, 0, 7, 12, 15],
             'full': [0, 3, 5, 7, 10, 12, 15, 17, 19, 17, 15, 12, 10, 7, 5, 3],
         },
+        'ASYMMETRY': [0, None, 2, None, 0, None, -2, None, 0, 3, None, -3, 0, None, None, None],
+        'CRITICAL_SWING': [0, 7, 12, 19, 12, 7, 0, -5, 0, 5, 12, 7, 0, -7, -12, None],
+        'GAME_CHANGING': [0, 12, 0, 12, 24, 12, 0, 12, 24, 36, 24, 12, 0, None, None, None],
         'TACTICAL_SEQUENCE': [0, 0, 0, 12, 0, 0, 0, 12, 0, 0, 0, 12, 0, 0, 0, 12],
         'KING_ATTACK': [0, 0, 0, 12, 0, 0, 0, 12, 0, 0, 0, 12, 0, 0, 0, 12],
         'BLUNDER': [24, 24, 12, 12, 0, 0, -12, -12, -24, None, None, -36, None, None, None, -48],

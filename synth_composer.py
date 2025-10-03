@@ -855,6 +855,185 @@ class ChessSynthComposer:
 
         return section_pattern
 
+    def generate_desperate_defense_pattern(self, section_duration, scale, tension,
+                                           final_filter, filter_env_amount, final_resonance,
+                                           note_duration, modulation, total_samples):
+        """
+        DESPERATE_DEFENSE: Reactive, hesitant defensive patterns
+        - Lower register, darker tone
+        - Syncopated rhythms with pauses (hesitation)
+        - Responds to pressure with tentative moves
+        - Inspired by defender struggling under attack
+        """
+        section_pattern = np.zeros(total_samples)
+        base_note_dur = note_duration * 1.4  # Slower, more deliberate
+        current_sample = 0
+
+        # Defensive states
+        STATE_RETREAT = 0      # Move pieces back
+        STATE_BLOCKADE = 1     # Hold defensive structure
+        STATE_COUNTER = 2      # Brief counter-attack attempt
+        current_state = STATE_RETREAT
+        tension_accumulator = 0
+
+        while current_sample < total_samples:
+            progress = current_sample / total_samples
+
+            # State transitions based on accumulated tension
+            tension_accumulator += self.rng.uniform(0, tension * 2)
+
+            if current_state == STATE_RETREAT:
+                if tension_accumulator > 3:
+                    current_state = STATE_BLOCKADE
+                    tension_accumulator = 0
+            elif current_state == STATE_BLOCKADE:
+                if tension_accumulator > 5 and self.rng.random() < 0.2:
+                    current_state = STATE_COUNTER  # Rare counter
+                    tension_accumulator = 0
+                elif tension_accumulator > 4:
+                    current_state = STATE_RETREAT
+                    tension_accumulator = 0
+            elif current_state == STATE_COUNTER:
+                # Counter attempts are brief
+                if self.rng.random() < 0.6:
+                    current_state = STATE_RETREAT
+                    tension_accumulator = 0
+
+            # Note selection by defensive state
+            if current_state == STATE_RETREAT:
+                # Descending patterns, lower register
+                note_idx = self.rng.choice([0, 1, 2, 3], p=[0.4, 0.3, 0.2, 0.1])
+                octave_mult = 0.5  # Drop octave
+            elif current_state == STATE_BLOCKADE:
+                # Hold root and fifth (stable but tense)
+                note_idx = self.rng.choice([0, 4], p=[0.6, 0.4])
+                octave_mult = 1.0
+            elif current_state == STATE_COUNTER:
+                # Brief ascending attempt
+                note_idx = self.rng.choice([4, 5, 6, 7], p=[0.25, 0.25, 0.25, 0.25])
+                octave_mult = 1.0
+
+            note_freq = scale[note_idx] * octave_mult
+
+            # Hesitant timing - random pauses before notes
+            if self.rng.random() < 0.4:  # 40% chance of hesitation
+                hesitation_samples = int(base_note_dur * 0.3 * self.sample_rate * self.rng.random())
+                current_sample += hesitation_samples
+
+            if current_sample >= total_samples:
+                break
+
+            duration = base_note_dur * self.rng.uniform(0.7, 1.1)
+            velocity = 0.5 - progress * 0.15  # Fade as defense crumbles
+
+            note_samples = int(duration * self.sample_rate)
+            note_samples = min(note_samples, total_samples - current_sample)
+
+            if note_samples > 0:
+                # Darker waveform, lower filter for defensive sound
+                pattern_note = self.synth_layer2.create_synth_note(
+                    freq=note_freq,
+                    duration=note_samples / self.sample_rate,
+                    waveform='saw' if current_state == STATE_RETREAT else 'pulse',
+                    filter_base=final_filter * (0.5 + progress * 0.3),  # Dark, opening slightly
+                    filter_env_amount=filter_env_amount * 0.5,
+                    resonance=final_resonance * (0.8 + tension * 0.4),
+                    amp_env=get_envelope('pluck', self.config),
+                    filter_env=get_filter_envelope('closing', self.config)
+                )
+                end_sample = min(current_sample + len(pattern_note), total_samples)
+                section_pattern[current_sample:end_sample] += pattern_note[:end_sample - current_sample] * self.config.LAYER_MIXING['pattern_note_level'] * velocity
+
+            # Variable pauses (uncertainty)
+            pause_samples = int(base_note_dur * self.rng.uniform(0.15, 0.35) * self.sample_rate)
+            current_sample += note_samples + pause_samples
+
+        return section_pattern
+
+    def generate_tactical_chaos_pattern(self, section_duration, scale, tension,
+                                        final_filter, filter_env_amount, final_resonance,
+                                        note_duration, modulation, total_samples):
+        """
+        TACTICAL_CHAOS: Rapid, unpredictable tactical exchanges
+        - Wide register jumps
+        - Dense overlapping bursts
+        - Alternating attack/defense fragments
+        - High entropy, nervous energy
+        """
+        section_pattern = np.zeros(total_samples)
+        base_note_dur = note_duration * 0.6  # Fast exchanges
+        current_sample = 0
+
+        # Chaos parameters
+        burst_mode = False
+        burst_countdown = 0
+        attack_side = 0  # 0=white, 1=black (alternating tactical blows)
+
+        while current_sample < total_samples:
+            progress = current_sample / total_samples
+
+            # Random burst mode activation
+            if not burst_mode and self.rng.random() < 0.15:
+                burst_mode = True
+                burst_countdown = self.rng.integers(3, 8)  # 3-8 rapid notes
+
+            if burst_mode:
+                burst_countdown -= 1
+                if burst_countdown <= 0:
+                    burst_mode = False
+                    attack_side = 1 - attack_side  # Switch attacker
+
+            # Note selection - chaotic jumps
+            if burst_mode:
+                # Tactical burst - wide jumps
+                note_idx = self.rng.choice(range(len(scale)))
+                # Random octave shifts
+                octave_choices = [0.5, 1.0, 2.0]
+                octave_mult = self.rng.choice(octave_choices, p=[0.2, 0.5, 0.3])
+            else:
+                # Cautious repositioning between bursts
+                note_idx = self.rng.choice([0, 2, 4, 5], p=[0.3, 0.25, 0.25, 0.2])
+                octave_mult = 1.0
+
+            note_freq = scale[note_idx] * octave_mult
+
+            # Timing - erratic in bursts, steadier between
+            if burst_mode:
+                duration = base_note_dur * self.rng.uniform(0.4, 0.7)
+                velocity = 0.7 + self.rng.random() * 0.2
+            else:
+                duration = base_note_dur * self.rng.uniform(1.0, 1.5)
+                velocity = 0.5 + self.rng.random() * 0.15
+
+            note_samples = int(duration * self.sample_rate)
+            note_samples = min(note_samples, total_samples - current_sample)
+
+            if note_samples > 0:
+                # Aggressive waveform, wide filter sweeps
+                waveform = 'square' if burst_mode else 'pulse'
+                pattern_note = self.synth_layer2.create_synth_note(
+                    freq=note_freq,
+                    duration=note_samples / self.sample_rate,
+                    waveform=waveform,
+                    filter_base=final_filter * (0.6 + progress * 0.8),
+                    filter_env_amount=filter_env_amount * (1.5 if burst_mode else 0.8),
+                    resonance=final_resonance * (1.3 if burst_mode else 0.9),
+                    amp_env=get_envelope('percussive' if burst_mode else 'stab', self.config),
+                    filter_env=get_filter_envelope('sharp' if burst_mode else 'smooth', self.config)
+                )
+                end_sample = min(current_sample + len(pattern_note), total_samples)
+                section_pattern[current_sample:end_sample] += pattern_note[:end_sample - current_sample] * self.config.LAYER_MIXING['pattern_note_level'] * velocity
+
+            # Minimal pause in bursts, longer between
+            if burst_mode:
+                pause_samples = int(base_note_dur * 0.05 * self.sample_rate)  # Almost no pause
+            else:
+                pause_samples = int(base_note_dur * self.rng.uniform(0.2, 0.5) * self.sample_rate)
+
+            current_sample += note_samples + pause_samples
+
+        return section_pattern
+
     def generate_flawless_conversion_pattern(self, section_duration, scale, tension,
                                              final_filter, filter_env_amount, final_resonance,
                                              note_duration, modulation, total_samples):
@@ -1464,7 +1643,21 @@ class ChessSynthComposer:
 
         if self.config.LAYER_ENABLE['patterns']:
             # NARRATIVE-SPECIFIC PATTERN GENERATION
-            if narrative == 'COMPLEX_STRUGGLE':
+            if narrative == 'DESPERATE_DEFENSE':
+                print(f"  → Layer 2: Generative patterns (State machine: RETREAT/BLOCKADE/COUNTER)")
+                section_pattern = self.generate_desperate_defense_pattern(
+                    section_duration, scale, tension,
+                    final_filter, filter_env_amount, final_resonance,
+                    note_duration, modulation, total_samples
+                )
+            elif narrative == 'TACTICAL_CHAOS':
+                print(f"  → Layer 2: Generative patterns (Burst mode: Chaotic tactical exchanges)")
+                section_pattern = self.generate_tactical_chaos_pattern(
+                    section_duration, scale, tension,
+                    final_filter, filter_env_amount, final_resonance,
+                    note_duration, modulation, total_samples
+                )
+            elif narrative == 'COMPLEX_STRUGGLE':
                 print(f"  → Layer 2: Generative patterns (Markov chain)")
                 section_pattern = self.generate_complex_struggle_pattern(
                     section_duration, scale, tension,
@@ -1532,7 +1725,7 @@ class ChessSynthComposer:
         else:
             print(f"  → Layer 2: (muted)")
 
-        if self.config.LAYER_ENABLE['patterns'] and narrative not in ['COMPLEX_STRUGGLE', 'KING_HUNT', 'CRUSHING_ATTACK', 'SHARP_THEORY', 'POSITIONAL_THEORY', 'SOLID_THEORY', 'FLAWLESS_CONVERSION', 'DECISIVE_ENDING', 'DRAWN_ENDING']:
+        if self.config.LAYER_ENABLE['patterns'] and narrative not in ['DESPERATE_DEFENSE', 'TACTICAL_CHAOS', 'COMPLEX_STRUGGLE', 'KING_HUNT', 'CRUSHING_ATTACK', 'SHARP_THEORY', 'POSITIONAL_THEORY', 'SOLID_THEORY', 'FLAWLESS_CONVERSION', 'DECISIVE_ENDING', 'DRAWN_ENDING']:
                 # DEFAULT FALLBACK (keep old logic for now)
                 samples_per_note = int(note_duration * self.sample_rate)
                 for i in range(num_notes):
