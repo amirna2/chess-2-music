@@ -408,11 +408,20 @@ When multiple voices/layers share a synth instance:
 **Attempt**: Detect steep cutoff changes → oversample at 2x → prevent aliasing.
 
 **Result**: Created MORE artifacts due to:
-- Naive linear interpolation upsampling
-- Missing anti-aliasing filter before downsampling
-- State continuity issues
+- **Cutoff modulation noise**: Coefficient recalculation at 2x rate introduced numerical jitter, producing crackle
+- **Incorrect coefficient scaling**: Resonance/feedback terms not properly scaled for 2x rate → doubled resonance → distortion
+- **Naive upsampling/downsampling**: Linear interpolation and truncation artifacts
+- **State continuity issues**: Transitions between 1x and 2x rates caused discontinuities
 
-**Lesson**: The "simple" version was already good. Don't optimize prematurely.
+**Root cause**: Oversampling helps when aliasing exists, but applying it to an already-stable filter can exaggerate feedback noise and quantization artifacts.
+
+**Better alternatives** (if filter aliasing is audible):
+1. **Smooth cutoff transitions**: `self.cutoff += 0.05 * (target_cutoff - self.cutoff)`
+2. **Clamp resonance**: `self.resonance = min(self.resonance, 0.9)`
+3. **Limit cutoff range**: Keep `cutoff <= Nyquist * 0.45` (already done: `0.95` in code)
+4. Only add oversampling for specific fast modulations where aliasing is proven audible
+
+**Lesson**: In the context of an experimental algorithmic composition system, the stable single-rate Moog ladder is cleaner. Don't add complexity that introduces new problems when the simpler solution works well.
 
 ### 4. Envelope Guards Are Essential
 
