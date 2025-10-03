@@ -141,7 +141,12 @@ class ChessSynthComposer:
         self.tags = chess_tags
         self.config = config or SynthConfig()
         self.sample_rate = self.config.SAMPLE_RATE
-        self.synth = SubtractiveSynth(self.sample_rate)
+
+        # Separate synth instances per layer for state isolation
+        # Prevents phase/crossfade state pollution between layers
+        self.synth_layer1 = SubtractiveSynth(self.sample_rate)  # Drone layer
+        self.synth_layer2 = SubtractiveSynth(self.sample_rate)  # Pattern layer
+        self.synth_layer3 = SubtractiveSynth(self.sample_rate)  # Sequencer layer
 
         self.total_duration = chess_tags.get('duration_seconds', 60)
         self.total_plies = chess_tags.get('total_plies', 40)
@@ -284,7 +289,7 @@ class ChessSynthComposer:
                 # Random velocity variation
                 velocity = np.random.uniform(0.6, 1.0)
 
-                pattern_note = self.synth.create_synth_note(
+                pattern_note = self.synth_layer2.create_synth_note(
                     freq=note_freq,
                     duration=note_duration_sec,
                     waveform='pulse',
@@ -430,7 +435,7 @@ class ChessSynthComposer:
 
                 resonance_mult = 1.0 + progress * 0.8
 
-                pattern_note = self.synth.create_synth_note(
+                pattern_note = self.synth_layer2.create_synth_note(
                     freq=note_freq,
                     duration=note_duration_sec,
                     waveform='saw',  # Aggressive, bright
@@ -568,7 +573,7 @@ class ChessSynthComposer:
 
                 resonance_mult = 1.0 + progress * 0.5  # Reduced to prevent filter self-oscillation
 
-                pattern_note = self.synth.create_synth_note(
+                pattern_note = self.synth_layer2.create_synth_note(
                     freq=note_freq,
                     duration=note_duration_sec,
                     waveform='saw',
@@ -600,7 +605,7 @@ class ChessSynthComposer:
                     chord_idx = min(7, current_note_idx + chord_interval)
                     chord_freq = scale[chord_idx] * (2 ** octave_shift if current_state == STATE_OVERWHELM else 1.0)
 
-                    chord_note = self.synth.create_synth_note(
+                    chord_note = self.synth_layer2.create_synth_note(
                         freq=chord_freq,
                         duration=note_duration_sec,
                         waveform='saw',
@@ -687,7 +692,7 @@ class ChessSynthComposer:
             note_samples = min(note_samples, total_samples - current_sample)
 
             if note_samples > 0:
-                pattern_note = self.synth.create_synth_note(
+                pattern_note = self.synth_layer2.create_synth_note(
                     freq=note_freq,
                     duration=note_samples / self.sample_rate,
                     waveform='saw',
@@ -748,7 +753,7 @@ class ChessSynthComposer:
             note_samples = min(note_samples, total_samples - current_sample)
 
             if note_samples > 0:
-                pattern_note = self.synth.create_synth_note(
+                pattern_note = self.synth_layer2.create_synth_note(
                     freq=note_freq,
                     duration=note_samples / self.sample_rate,
                     waveform='pulse',
@@ -815,7 +820,7 @@ class ChessSynthComposer:
                 # Velocity: very stable
                 velocity = 0.75 + np.random.uniform(-0.05, 0.05)
 
-                pattern_note = self.synth.create_synth_note(
+                pattern_note = self.synth_layer2.create_synth_note(
                     freq=note_freq,
                     duration=note_duration_sec,
                     waveform='pulse',  # Warm, solid
@@ -899,7 +904,7 @@ class ChessSynthComposer:
             note_samples = min(note_samples, total_samples - current_sample)
 
             if note_samples > 0:
-                pattern_note = self.synth.create_synth_note(
+                pattern_note = self.synth_layer2.create_synth_note(
                     freq=note_freq,
                     duration=note_samples / self.sample_rate,
                     waveform='triangle',
@@ -957,7 +962,7 @@ class ChessSynthComposer:
             note_samples = min(note_samples, total_samples - current_sample)
 
             if note_samples > 0:
-                pattern_note = self.synth.create_synth_note(
+                pattern_note = self.synth_layer2.create_synth_note(
                     freq=note_freq,
                     duration=note_samples / self.sample_rate,
                     waveform='triangle',
@@ -1009,7 +1014,7 @@ class ChessSynthComposer:
             note_samples = min(note_samples, total_samples - current_sample)
 
             if note_samples > 0:
-                pattern_note = self.synth.create_synth_note(
+                pattern_note = self.synth_layer2.create_synth_note(
                     freq=note_freq,
                     duration=note_samples / self.sample_rate,
                     waveform='sine',  # Pure, simple tone for neutrality
@@ -1048,7 +1053,7 @@ class ChessSynthComposer:
             detune_cents = (v - 3) * current_base['detune'] / 3
             detune_hz = drone_freq * (2 ** (detune_cents / 1200.0) - 1.0)
 
-            osc = self.synth.oscillator(drone_freq + detune_hz, section_duration, waveform)
+            osc = self.synth_layer1.oscillator(drone_freq + detune_hz, section_duration, waveform)
 
             # Apply time-varying amplitude modulation to create beating
             detune_lfo = np.sin(2 * np.pi * 0.03 * np.arange(len(osc)) / self.sample_rate + v * 0.5)
@@ -1095,15 +1100,15 @@ class ChessSynthComposer:
             current_cutoff = base_cutoff + meso_mod + micro_mod
             current_resonance = base_resonance + slow_lfo[i] * 0.3
 
-            current_cutoff = np.clip(current_cutoff, 20, self.synth.nyquist * 0.95)
+            current_cutoff = np.clip(current_cutoff, 20, self.synth_layer1.nyquist * 0.95)
             current_resonance = np.clip(current_resonance, 0.1, 4.0)
 
             # Apply filter
-            filtered_chunk = self.synth.moog_filter(chunk, current_cutoff, current_resonance)
+            filtered_chunk = self.synth_layer1.moog_filter(chunk, current_cutoff, current_resonance)
             base_drone[i:end] = filtered_chunk
 
         # Apply amplitude envelope
-        amp_env = self.synth.adsr_envelope(len(base_drone), *get_envelope('pad', self.config))
+        amp_env = self.synth_layer1.adsr_envelope(len(base_drone), *get_envelope('pad', self.config))
         base_drone = base_drone * amp_env
 
         return base_drone
@@ -1128,7 +1133,7 @@ class ChessSynthComposer:
             filter_env = get_filter_envelope(voice_params.get('filter_env', 'gentle'), self.config) if 'filter_env' in voice_params else None
 
             if filter_env:
-                return self.synth.create_synth_note(
+                return self.synth_layer3.create_synth_note(
                     freq=voice_params['freq'],
                     duration=voice_params['duration'],
                     waveform=voice_params['waveform'],
@@ -1139,7 +1144,7 @@ class ChessSynthComposer:
                     filter_env=filter_env
                 )
             else:
-                return self.synth.create_synth_note(
+                return self.synth_layer3.create_synth_note(
                     freq=voice_params['freq'],
                     duration=voice_params['duration'],
                     waveform=voice_params['waveform'],
@@ -1167,7 +1172,7 @@ class ChessSynthComposer:
             filter_env = get_filter_envelope(voice_params.get('filter_env', 'gentle'), self.config) if 'filter_env' in voice_params else None
 
             if filter_env:
-                return self.synth.create_synth_note(
+                return self.synth_layer3.create_synth_note(
                     freq=voice_params['freq'],
                     duration=voice_params['duration'],
                     waveform=voice_params['waveform'],
@@ -1178,7 +1183,7 @@ class ChessSynthComposer:
                     filter_env=filter_env
                 )
             else:
-                return self.synth.create_synth_note(
+                return self.synth_layer3.create_synth_note(
                     freq=voice_params['freq'],
                     duration=voice_params['duration'],
                     waveform=voice_params['waveform'],
@@ -1200,7 +1205,7 @@ class ChessSynthComposer:
 
             phrase_samples = []
             for i, freq in enumerate(melody_freqs):
-                note = self.synth.create_synth_note(
+                note = self.synth_layer3.create_synth_note(
                     freq=freq,
                     duration=dev_params['note_duration'],
                     waveform=dev_params['waveform'],
@@ -1233,7 +1238,7 @@ class ChessSynthComposer:
             question_freqs = [scale[i] for i in ex_params['question_indices'] if i < len(scale)]
             question_samples = []
             for i, freq in enumerate(question_freqs):
-                note = self.synth.create_synth_note(
+                note = self.synth_layer3.create_synth_note(
                     freq=freq,
                     duration=ex_params['note_duration'],
                     waveform=ex_params['question_waveform'],
@@ -1248,7 +1253,7 @@ class ChessSynthComposer:
             answer_freqs = [scale[i] for i in ex_params['answer_indices'] if i < len(scale)]
             answer_samples = []
             for i, freq in enumerate(answer_freqs):
-                note = self.synth.create_synth_note(
+                note = self.synth_layer3.create_synth_note(
                     freq=freq,
                     duration=ex_params['note_duration'],
                     waveform=ex_params['answer_waveform'],
@@ -1282,7 +1287,7 @@ class ChessSynthComposer:
             voice_params = self.config.MOMENT_VOICES['TACTICAL_SEQUENCE']
             combined = np.zeros(int(voice_params['total_duration'] * self.sample_rate))
             for i, freq in enumerate(voice_params['freqs']):
-                note = self.synth.create_synth_note(
+                note = self.synth_layer3.create_synth_note(
                     freq=freq,
                     duration=voice_params['note_duration'],
                     waveform=voice_params['waveform'],
@@ -1305,7 +1310,7 @@ class ChessSynthComposer:
                 voice_key = 'DEFAULT_MOMENT'
 
             voice_params = self.config.MOMENT_VOICES.get(voice_key, self.config.MOMENT_VOICES['DEFAULT_MOMENT'])
-            return self.synth.create_synth_note(
+            return self.synth_layer3.create_synth_note(
                 freq=voice_params['freq'],
                 duration=voice_params['duration'],
                 waveform=voice_params['waveform'],
@@ -1317,7 +1322,7 @@ class ChessSynthComposer:
 
         # Default
         voice_params = self.config.MOMENT_VOICES['DEFAULT_MOMENT']
-        return self.synth.create_synth_note(
+        return self.synth_layer3.create_synth_note(
             freq=voice_params['freq'],
             duration=voice_params['duration'],
             waveform=voice_params['waveform'],
@@ -1367,7 +1372,7 @@ class ChessSynthComposer:
 
         # Calculate final synthesis parameters
         final_filter = current_base['filter'] * modulation['filter_mult']
-        final_filter = np.clip(final_filter, 20, self.synth.nyquist * 0.95)
+        final_filter = np.clip(final_filter, 20, self.synth_layer3.nyquist * 0.95)
 
         final_resonance = current_base['resonance'] + modulation['resonance_add']
         final_resonance = np.clip(final_resonance, 0.1, 4.0)
@@ -1535,7 +1540,7 @@ class ChessSynthComposer:
                         note_samples = end_sample - start_sample
                         note_duration_sec = note_samples / self.sample_rate
 
-                        pattern_note = self.synth.create_synth_note(
+                        pattern_note = self.synth_layer3.create_synth_note(
                             freq=note_freq,
                             duration=note_duration_sec,
                             waveform='saw' if tension > 0.5 else 'pulse',
@@ -1817,7 +1822,7 @@ class ChessSynthComposer:
                     self.last_layer3_filter_env = filter_env_to_use
 
                 # Generate main note
-                note_audio = self.synth.supersaw(
+                note_audio = self.synth_layer3.supersaw(
                     target_freq,
                     actual_duration,
                     detune_cents=self.config.SEQUENCER_SYNTH['detune_cents'],
@@ -1843,7 +1848,7 @@ class ChessSynthComposer:
                     harmony_interval = np.random.choice(harmony_intervals)
                     harmony_freq = target_freq * (2 ** (harmony_interval / 12.0))
 
-                    harmony_audio = self.synth.supersaw(
+                    harmony_audio = self.synth_layer3.supersaw(
                         harmony_freq,
                         actual_duration * 0.8,  # Slightly shorter
                         detune_cents=self.config.SEQUENCER_SYNTH['detune_cents'],
@@ -1878,7 +1883,7 @@ class ChessSynthComposer:
                 avg_cutoff = np.mean(filter_sweep[i:chunk_end])
 
                 if len(chunk) > 0:
-                    filtered_chunk = self.synth.moog_filter(chunk, cutoff_hz=avg_cutoff, resonance=self.config.SEQUENCER_SYNTH['global_filter_resonance'])
+                    filtered_chunk = self.synth_layer3.moog_filter(chunk, cutoff_hz=avg_cutoff, resonance=self.config.SEQUENCER_SYNTH['global_filter_resonance'])
                     filtered_sequence[i:chunk_end] = filtered_chunk
 
             # Apply sidechain compression
