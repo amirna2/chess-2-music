@@ -22,6 +22,12 @@ class SubtractiveSynth:
         self.filter_z3 = 0.0
         self.filter_z4 = 0.0
 
+        # Phase continuity for click-free retriggering
+        self.phase = 0.0
+        self.last_env_value = 0.0
+        self.last_signal_tail = None  # For crossfading
+        self.crossfade_samples = 64  # ~1.45ms at 44.1kHz
+
     def poly_blep(self, dt, phase):
         """
         PolyBLEP (Polynomial Band-Limited Edge Pulse) anti-aliasing
@@ -39,14 +45,24 @@ class SubtractiveSynth:
         else:
             return 0.0
 
-    def oscillator(self, freq, duration, waveform='saw'):
-        """Generate band-limited waveforms using PolyBLEP anti-aliasing"""
+    def oscillator(self, freq, duration, waveform='saw', apply_envelope=None):
+        """
+        Generate band-limited waveforms using PolyBLEP anti-aliasing
+        with phase-safe retriggering to eliminate clicks.
+
+        apply_envelope: Optional envelope array to track decay state for phase continuity
+        """
         num_samples = int(duration * self.sample_rate)
         dt = freq / self.sample_rate  # Normalized frequency
 
+        # Phase-safe retrigger: only reset phase if previous note fully decayed
+        if self.last_env_value < 1e-3:
+            phase = 0.0  # Safe reset
+        else:
+            phase = self.phase  # Continue from last position
+
         # Generate sample by sample for proper PolyBLEP application
         signal = np.zeros(num_samples)
-        phase = 0.0
 
         for i in range(num_samples):
             if waveform == 'saw':
@@ -95,6 +111,27 @@ class SubtractiveSynth:
             phase += dt
             if phase >= 1.0:
                 phase -= 1.0
+
+        # Save final phase for next retrigger
+        self.phase = phase
+
+        # Micro cross-fade on retrigger to eliminate click
+        if self.last_signal_tail is not None and self.last_env_value >= 1e-3:
+            xfade_len = min(self.crossfade_samples, len(signal), len(self.last_signal_tail))
+            if xfade_len > 0:
+                x = np.linspace(0, 1, xfade_len)
+                signal[:xfade_len] = (
+                    self.last_signal_tail[:xfade_len] * (1 - x) +
+                    signal[:xfade_len] * x
+                )
+
+        # Store tail for next potential crossfade
+        if len(signal) >= self.crossfade_samples:
+            self.last_signal_tail = signal[-self.crossfade_samples:].copy()
+
+        # Track envelope value if provided
+        if apply_envelope is not None:
+            self.last_env_value = apply_envelope[-1] if len(apply_envelope) > 0 else 0.0
 
         return signal
 
@@ -270,20 +307,25 @@ class SubtractiveSynth:
     def pitch_sweep_note(self, freq_start, freq_end, duration,
                         waveform='sine',
                         filter_base=2000,
-                        filter_env_amount=1000,
                         resonance=0.3,
                         amp_env=(0.01, 0.05, 0.7, 0.1)):
         """
         Create R2D2-style beep with pitch sweep from freq_start to freq_end
+        with phase continuity for click-free retriggering
         """
         num_samples = int(duration * self.sample_rate)
 
         # Create frequency sweep curve
         freq_curve = np.linspace(freq_start, freq_end, num_samples)
 
+        # Phase-safe retrigger
+        if self.last_env_value < 1e-3:
+            phase = 0.0
+        else:
+            phase = self.phase * 2 * np.pi  # Convert from normalized to radians
+
         # Generate signal with sweeping frequency
         signal = np.zeros(num_samples)
-        phase = 0.0
 
         for i in range(num_samples):
             current_freq = freq_curve[i]
@@ -303,12 +345,30 @@ class SubtractiveSynth:
             else:  # Default to sine
                 signal[i] = np.sin(phase)
 
+        # Save phase (convert back to normalized)
+        self.phase = (phase / (2 * np.pi)) % 1.0
+
+        # Micro cross-fade on retrigger
+        if self.last_signal_tail is not None and self.last_env_value >= 1e-3:
+            xfade_len = min(self.crossfade_samples, len(signal), len(self.last_signal_tail))
+            if xfade_len > 0:
+                x = np.linspace(0, 1, xfade_len)
+                signal[:xfade_len] = (
+                    self.last_signal_tail[:xfade_len] * (1 - x) +
+                    signal[:xfade_len] * x
+                )
+
         # Apply simple filter (no envelope needed for R2D2 style)
         filtered = self.moog_filter(signal, filter_base, resonance)
 
         # Apply amplitude envelope
         amp_envelope = self.adsr_envelope(num_samples, *amp_env)
         output = filtered * amp_envelope
+
+        # Store tail and envelope value
+        if len(output) >= self.crossfade_samples:
+            self.last_signal_tail = output[-self.crossfade_samples:].copy()
+        self.last_env_value = amp_envelope[-1] if len(amp_envelope) > 0 else 0.0
 
         return output
 
