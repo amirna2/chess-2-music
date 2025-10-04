@@ -18,6 +18,7 @@ from synth_config import SynthConfig, get_envelope, get_filter_envelope, get_nar
 from synth_engine import SubtractiveSynth
 from synth_narrative import create_narrative_process
 from entropy_calculator import ChessEntropyCalculator
+from synth_composer import PatternCoordinator
 
 
 # === STEREO UTILITIES ===
@@ -176,6 +177,14 @@ class ChessSynthComposer:
         # This requires move data with eval information
         moves = chess_tags.get('moves', [])
         self.entropy_calculator = ChessEntropyCalculator(moves) if moves else None
+
+        # Initialize refactored pattern coordinator for Layer 2
+        self.pattern_coordinator = PatternCoordinator(
+            sample_rate=self.sample_rate,
+            config=self.config,
+            synth_engine=self.synth_layer2,
+            rng=self.rng
+        )
 
     def _create_rng_from_eco(self, eco_code):
         """
@@ -1641,126 +1650,40 @@ class ChessSynthComposer:
                 total_samples=total_samples
             )
 
-        # LAYER 2: Generate RHYTHMIC PATTERNS
+        # LAYER 2: Generate RHYTHMIC PATTERNS (using refactored PatternCoordinator)
         section_pattern = np.zeros(total_samples)
 
         if self.config.LAYER_ENABLE['patterns']:
-            # NARRATIVE-SPECIFIC PATTERN GENERATION
-            if narrative == 'DESPERATE_DEFENSE':
-                print(f"  → Layer 2: Generative patterns (State machine: RETREAT/BLOCKADE/COUNTER)")
-                section_pattern = self.generate_desperate_defense_pattern(
-                    section_duration, scale, tension,
-                    final_filter, filter_env_amount, final_resonance,
-                    note_duration, modulation, total_samples
-                )
-            elif narrative == 'TACTICAL_CHAOS':
-                print(f"  → Layer 2: Generative patterns (Burst mode: Chaotic tactical exchanges)")
-                section_pattern = self.generate_tactical_chaos_pattern(
-                    section_duration, scale, tension,
-                    final_filter, filter_env_amount, final_resonance,
-                    note_duration, modulation, total_samples
-                )
-            elif narrative == 'COMPLEX_STRUGGLE':
-                print(f"  → Layer 2: Generative patterns (Markov chain)")
-                section_pattern = self.generate_complex_struggle_pattern(
-                    section_duration, scale, tension,
-                    final_filter, filter_env_amount, final_resonance,
-                    note_duration, modulation, total_samples
-                )
-            elif narrative == 'KING_HUNT':
-                print(f"  → Layer 2: Generative patterns (State machine: ATTACK/RETREAT/PAUSE)")
-                section_pattern = self.generate_king_hunt_pattern(
-                    section_duration, scale, tension,
-                    final_filter, filter_env_amount, final_resonance,
-                    note_duration, modulation, total_samples
-                )
-            elif narrative == 'CRUSHING_ATTACK':
-                print(f"  → Layer 2: Generative patterns (State machine: ADVANCE/STRIKE/OVERWHELM)")
-                section_pattern = self.generate_crushing_attack_pattern(
-                    section_duration, scale, tension,
-                    final_filter, filter_env_amount, final_resonance,
-                    note_duration, modulation, total_samples
-                )
-            elif narrative == 'SHARP_THEORY':
-                print(f"  → Layer 2: Generative patterns (Sharp opening: Fast arpeggios)")
-                section_pattern = self.generate_sharp_theory_pattern(
-                    section_duration, scale, tension,
-                    final_filter, filter_env_amount, final_resonance,
-                    note_duration, modulation, total_samples
-                )
-            elif narrative == 'POSITIONAL_THEORY':
-                print(f"  → Layer 2: Generative patterns (Positional opening: Methodical build)")
-                section_pattern = self.generate_positional_theory_pattern(
-                    section_duration, scale, tension,
-                    final_filter, filter_env_amount, final_resonance,
-                    note_duration, modulation, total_samples
-                )
-            elif narrative == 'SOLID_THEORY':
-                print(f"  → Layer 2: Generative patterns (Solid opening: Grounded bass)")
-                section_pattern = self.generate_solid_theory_pattern(
-                    section_duration, scale, tension,
-                    final_filter, filter_env_amount, final_resonance,
-                    note_duration, modulation, total_samples
-                )
-            elif narrative == 'FLAWLESS_CONVERSION':
-                print(f"  → Layer 2: Generative patterns (Endgame: Relentless advance)")
-                section_pattern = self.generate_flawless_conversion_pattern(
-                    section_duration, scale, tension,
-                    final_filter, filter_env_amount, final_resonance,
-                    note_duration, modulation, total_samples
-                )
-            elif narrative == 'DECISIVE_ENDING':
-                print(f"  → Layer 2: Outro (Decisive resolution)")
-                section_pattern = self.generate_decisive_outro_pattern(
-                    section_duration, scale, tension,
-                    final_filter, filter_env_amount, final_resonance,
-                    note_duration, modulation, total_samples
-                )
-            elif narrative == 'DRAWN_ENDING':
-                print(f"  → Layer 2: Outro (Peaceful resolution)")
-                section_pattern = self.generate_draw_outro_pattern(
-                    section_duration, scale, tension,
-                    final_filter, filter_env_amount, final_resonance,
-                    note_duration, modulation, total_samples
-                )
-            else:
-                print(f"  → Layer 2: Fixed patterns (fallback)")
+            # Use refactored pattern coordinator
+            params = {
+                'sample_rate': self.sample_rate,
+                'section_start_time': 0.0,
+                'filter': final_filter,
+                'filter_env': filter_env_amount,
+                'resonance': final_resonance,
+                'note_duration': note_duration,
+                'tension': tension,
+                'config': self.config,
+                'mix_level': 1.0,
+                'overall_narrative': self.overall_narrative,
+            }
+
+            section_pattern = self.pattern_coordinator.generate_pattern(
+                narrative=narrative,
+                duration=section_duration,
+                scale=scale,
+                params=params
+            )
+
+            # Ensure correct length
+            if len(section_pattern) < total_samples:
+                temp = np.zeros(total_samples, dtype=np.float32)
+                temp[:len(section_pattern)] = section_pattern
+                section_pattern = temp
+            elif len(section_pattern) > total_samples:
+                section_pattern = section_pattern[:total_samples]
         else:
             print(f"  → Layer 2: (muted)")
-
-        if self.config.LAYER_ENABLE['patterns'] and narrative not in ['DESPERATE_DEFENSE', 'TACTICAL_CHAOS', 'COMPLEX_STRUGGLE', 'KING_HUNT', 'CRUSHING_ATTACK', 'SHARP_THEORY', 'POSITIONAL_THEORY', 'SOLID_THEORY', 'FLAWLESS_CONVERSION', 'DECISIVE_ENDING', 'DRAWN_ENDING']:
-                # DEFAULT FALLBACK (keep old logic for now)
-                samples_per_note = int(note_duration * self.sample_rate)
-                for i in range(num_notes):
-                    start_sample = i * samples_per_note
-                    end_sample = min(start_sample + samples_per_note, total_samples)
-
-                    if start_sample < total_samples:
-                        note_freq = pattern[i % len(pattern)]
-
-                        # Octave variations
-                        if i % pattern_config['octave_up_mod'] == 0:
-                            note_freq *= 2
-                        elif i % pattern_config['octave_down_mod'] == 0:
-                            note_freq *= 0.5
-
-                        note_samples = end_sample - start_sample
-                        note_duration_sec = note_samples / self.sample_rate
-
-                        pattern_note = self.synth_layer3.create_synth_note(
-                            freq=note_freq,
-                            duration=note_duration_sec,
-                            waveform='saw' if tension > 0.5 else 'pulse',
-                            filter_base=final_filter * 1.5,
-                            filter_env_amount=filter_env_amount,
-                            resonance=final_resonance * 0.7,
-                            amp_env=get_envelope('percussive', self.config),
-                            filter_env=get_filter_envelope('smooth', self.config)
-                        )
-
-                        if len(pattern_note) > 0:
-                            actual_samples = min(len(pattern_note), end_sample - start_sample)
-                            section_pattern[start_sample:start_sample + actual_samples] += pattern_note[:actual_samples] * self.config.LAYER_MIXING['pattern_note_level']
 
         # Mix layers 1 and 2
         drone_contribution = base_drone * self.config.LAYER_MIXING['drone_in_supersaw']
