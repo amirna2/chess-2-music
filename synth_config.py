@@ -630,6 +630,22 @@ class SynthConfig:
         'smoothing_window_sec': 0.005,
     })
 
+    # === MOMENT EVENT PARAMETERS ===
+    # Controls how key moments are rendered as events with duration and emphasis
+    MOMENT_EVENT_PARAMS: Dict = field(default_factory=lambda: {
+        'base_duration_sec': 4.0,          # Base duration for a moment (in seconds)
+        'min_duration_sec': 2.0,           # Minimum audible duration (at least one 16-step cycle)
+        'max_duration_sec': 8.0,           # Maximum duration to prevent overly long moments
+        'score_duration_mult': 0.5,        # Multiplier for score-based duration: duration = base * (1 + score/10 * mult)
+        'base_mix_amount': 0.3,            # Base mix amount for moment pattern
+        'max_mix_amount': 0.9,             # Maximum mix for highest score moments
+        'score_mix_mult': 0.06,            # Score multiplier for mix: mix = base + (score * mult)
+        'filter_mod_base': 500,            # Base filter modulation amount
+        'filter_mod_per_score': 200,       # Additional filter modulation per score point
+        'crossfade_duration_sec': 0.5,     # Duration of crossfade between patterns
+        'base_pattern_level': 0.4,         # Volume of base PULSE pattern during moments
+    })
+
     # === PROCESS TRANSFORMATION PARAMETERS ===
     PROCESS_PARAMS: Dict[str, Dict] = field(default_factory=lambda: {
         'TUMBLING_DEFEAT': {

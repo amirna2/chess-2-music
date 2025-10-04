@@ -1780,8 +1780,10 @@ class ChessSynthComposer:
 
                 print(f"  → Layer 3: Outro arpeggio (variation {variation_seed}, game length: {self.total_plies} plies)")
 
-            # Process evolution points
-            evolution_points = []
+            # Process key moments as events with duration and emphasis
+            moment_events = []
+            mep = self.config.MOMENT_EVENT_PARAMS
+
             for moment in section.get('key_moments', []):
                 moment_time = moment.get('second', moment.get('ply', 0))
                 duration_str = section.get('duration', '0:10')
@@ -1789,66 +1791,146 @@ class ChessSynthComposer:
                 relative_time = moment_time - section_start
 
                 if 0 <= relative_time <= section_duration:
-                    evolution_points.append({
-                        'time': relative_time,
-                        'type': moment.get('type', 'UNKNOWN'),
-                        'sample_pos': int(relative_time * self.sample_rate)
+                    score = moment.get('score', 5)
+                    moment_type = moment.get('type', 'UNKNOWN')
+
+                    # Calculate duration based on score
+                    duration_mult = 1.0 + (score / 10.0) * mep['score_duration_mult']
+                    duration = mep['base_duration_sec'] * duration_mult
+                    duration = max(mep['min_duration_sec'], min(duration, mep['max_duration_sec']))
+
+                    # Calculate mix amount based on score
+                    mix_amount = mep['base_mix_amount'] + (score * mep['score_mix_mult'])
+                    mix_amount = min(mix_amount, mep['max_mix_amount'])
+
+                    # Calculate filter modulation based on score
+                    filter_mod = mep['filter_mod_base'] + (score * mep['filter_mod_per_score'])
+
+                    moment_events.append({
+                        'start_time': relative_time,
+                        'end_time': relative_time + duration,
+                        'type': moment_type,
+                        'score': score,
+                        'mix_amount': mix_amount,
+                        'filter_mod': filter_mod,
+                        'start_sample': int(relative_time * self.sample_rate),
+                        'end_sample': int((relative_time + duration) * self.sample_rate),
                     })
 
-            evolution_points.sort(key=lambda x: x['time'])
-            next_evolution_idx = 0
+            moment_events.sort(key=lambda x: x['start_time'])
 
-            # Generate sequence
+            # Debug: Print moment event timeline
+            if moment_events:
+                print(f"  → Moment events ({len(moment_events)}):")
+                for event in moment_events:
+                    print(f"      {event['type']:<20} t={event['start_time']:>5.1f}s-{event['end_time']:>5.1f}s "
+                          f"(dur={event['end_time']-event['start_time']:.1f}s, score={event['score']}, "
+                          f"mix={event['mix_amount']:.2f}, filter_mod={event['filter_mod']:.0f}Hz)")
+
+            # Generate sequence with event-based blending
             samples_per_step = int(sixteenth_duration * self.sample_rate)
             total_steps = int(section_duration / sixteenth_duration)
+
+            # Helper function to get active moments at a given time
+            def get_active_moments(current_time):
+                active = []
+                for event in moment_events:
+                    if event['start_time'] <= current_time <= event['end_time']:
+                        # Calculate blend factor based on crossfade
+                        crossfade_dur = mep['crossfade_duration_sec']
+                        time_in_event = current_time - event['start_time']
+                        time_to_end = event['end_time'] - current_time
+
+                        # Fade in at start
+                        if time_in_event < crossfade_dur:
+                            fade_in = time_in_event / crossfade_dur
+                        else:
+                            fade_in = 1.0
+
+                        # Fade out at end
+                        if time_to_end < crossfade_dur:
+                            fade_out = time_to_end / crossfade_dur
+                        else:
+                            fade_out = 1.0
+
+                        blend_factor = min(fade_in, fade_out)
+
+                        active.append({
+                            **event,
+                            'blend_factor': blend_factor
+                        })
+                return active
 
             full_sequence = []
             for i in range(total_steps):
                 step_index = i % 16
-                note_interval = current_pattern[step_index]
-
                 current_time = i * sixteenth_duration
                 current_sample = int(current_time * self.sample_rate)
 
-                # ENTROPY-DRIVEN NOTE SELECTION (Laurie Spiegel approach)
-                # Get entropy value for current position
+                # ENTROPY-DRIVEN NOTE SELECTION
                 current_ply = start_ply + int(current_time)
-                entropy_value = 0.5  # Default medium entropy
+                entropy_value = 0.5
 
                 if entropy_curve is not None and len(entropy_curve) > 0:
                     ply_offset = current_ply - start_ply
                     if 0 <= ply_offset < len(entropy_curve):
                         entropy_value = entropy_curve[ply_offset]
 
-                # Check for pattern evolution
-                if next_evolution_idx < len(evolution_points):
-                    if current_sample >= evolution_points[next_evolution_idx]['sample_pos']:
-                        evolution = evolution_points[next_evolution_idx]
-                        moment_type = evolution['type']
+                # Get active moments at this time
+                active_moments = get_active_moments(current_time)
 
-                        if moment_type in self.config.SEQUENCER_PATTERNS:
-                            if moment_type == 'DEVELOPMENT':
-                                development_count += 1
-                                if development_count == 1:
-                                    current_pattern = self.config.SEQUENCER_PATTERNS['DEVELOPMENT']['early']
-                                elif development_count == 2:
-                                    current_pattern = self.config.SEQUENCER_PATTERNS['DEVELOPMENT']['mid']
-                                else:
-                                    current_pattern = self.config.SEQUENCER_PATTERNS['DEVELOPMENT']['full']
-                                current_root = min(current_root + 7, 72)
-                                filter_target = min(filter_target + 500, 5000)
+                # Start with base pattern
+                base_pattern = current_pattern
+                base_interval = base_pattern[step_index]
+
+                # Blend with moment patterns
+                if active_moments:
+                    # Use highest score moment as primary
+                    primary_moment = max(active_moments, key=lambda m: m['score'])
+                    moment_type = primary_moment['type']
+
+                    # Get moment pattern
+                    if moment_type in self.config.SEQUENCER_PATTERNS:
+                        if moment_type == 'DEVELOPMENT':
+                            # Handle DEVELOPMENT progression
+                            development_count += 1
+                            if development_count == 1:
+                                moment_pattern = self.config.SEQUENCER_PATTERNS['DEVELOPMENT']['early']
+                            elif development_count == 2:
+                                moment_pattern = self.config.SEQUENCER_PATTERNS['DEVELOPMENT']['mid']
                             else:
-                                current_pattern = self.config.SEQUENCER_PATTERNS[moment_type]
+                                moment_pattern = self.config.SEQUENCER_PATTERNS['DEVELOPMENT']['full']
+                            current_root = min(current_root + 7, 72)
+                            filter_target = min(filter_target + 500, 5000)
+                        else:
+                            moment_pattern = self.config.SEQUENCER_PATTERNS[moment_type]
 
-                                # Adjust root and filter based on moment type
-                                if moment_type in ['BLUNDER', 'MISTAKE']:
-                                    current_root = max(current_root - 12, 36)
-                                    filter_target = 1000
-                                elif moment_type in ['BRILLIANT', 'STRONG']:
-                                    current_root = min(current_root + 12, 84)
-                                    filter_target = 5000
+                            # Adjust root and filter based on moment type
+                            if moment_type in ['BLUNDER', 'MISTAKE', 'INACCURACY']:
+                                current_root = max(current_root - 12, 36)
+                                filter_target = 1000 + primary_moment['filter_mod']
+                            elif moment_type in ['BRILLIANT', 'STRONG']:
+                                current_root = min(current_root + 12, 84)
+                                filter_target = 3000 + primary_moment['filter_mod']
 
-                        next_evolution_idx += 1
+                        moment_interval = moment_pattern[step_index]
+
+                        # Blend intervals based on mix amount and blend factor
+                        total_blend = primary_moment['mix_amount'] * primary_moment['blend_factor']
+
+                        if base_interval is not None and moment_interval is not None:
+                            # Both patterns have notes - blend them
+                            note_interval = int(base_interval * (1 - total_blend) + moment_interval * total_blend)
+                        elif moment_interval is not None:
+                            # Only moment has note
+                            note_interval = moment_interval if total_blend > 0.5 else base_interval
+                        else:
+                            # Use base
+                            note_interval = base_interval
+                    else:
+                        note_interval = base_interval
+                else:
+                    note_interval = base_interval
 
                 # ENTROPY-DRIVEN NOTE MODIFICATION
                 # Modify note interval based on position complexity
