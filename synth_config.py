@@ -671,7 +671,7 @@ class SynthConfig:
     DEFAULT_BPM: int = 120
 
     # === SAMPLE RATE ===
-    SAMPLE_RATE: int = 44100
+    SAMPLE_RATE: int = 88200  # 2x 44.1kHz - reduces PolyBLEP aliasing at high frequencies
 
     # === WAV OUTPUT PARAMETERS ===
     WAV_OUTPUT: Dict = field(default_factory=lambda: {

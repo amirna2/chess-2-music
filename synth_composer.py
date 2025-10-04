@@ -86,7 +86,7 @@ def stereo_width(mono_signal, width, center_pan=0.0):
     stereo = np.zeros((len(mono_signal), 2))
 
     # Haas effect: delay one channel slightly for width
-    delay_samples = int(width * 20)  # Up to 20 samples delay (~0.45ms at 44.1kHz)
+    delay_samples = int(width * 40)  # Up to 40 samples delay (~0.45ms at 88.2kHz)
 
     if delay_samples == 0:
         stereo[:, 0] = mono_signal

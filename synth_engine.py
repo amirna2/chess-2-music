@@ -26,7 +26,7 @@ class SubtractiveSynth:
         self.phase = 0.0
         self.last_env_value = 0.0
         self.last_signal_tail = None  # For crossfading
-        self.crossfade_samples = 64  # ~1.45ms at 44.1kHz
+        self.crossfade_samples = 128  # ~1.45ms at 88.2kHz (was 64 @ 44.1kHz)
 
         # Dedicated RNG for reproducible randomness
         self.rng = rng if rng is not None else np.random.default_rng()
