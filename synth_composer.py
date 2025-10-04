@@ -1235,19 +1235,19 @@ class ChessSynthComposer:
         - MICRO evolution: Fast LFO shimmer (10 seconds)
         """
         # Generate multiple detuned oscillators with FIXED detune spread
-        num_voices = 7
+        num_voices = current_base.get('drone_voices', 3)
         oscillators = []
 
         for v in range(num_voices):
             # Fixed detune per voice (in cents)
-            detune_cents = (v - 3) * current_base['detune'] / 3
+            detune_cents = np.linspace(-4, 4, num_voices)[v]
             detune_hz = drone_freq * (2 ** (detune_cents / 1200.0) - 1.0)
 
             osc = self.synth_layer1.oscillator(drone_freq + detune_hz, section_duration, waveform)
 
             # Apply time-varying amplitude modulation to create beating
             detune_lfo = np.sin(2 * np.pi * 0.03 * np.arange(len(osc)) / self.sample_rate + v * 0.5)
-            osc = osc * (1.0 + detune_lfo * 0.1)  # ±10% amplitude modulation
+            osc = osc * (1.0 + detune_lfo * 0.03) # drone breathes instead of “chugging.”
 
             oscillators.append(osc)
 
@@ -1300,6 +1300,9 @@ class ChessSynthComposer:
         # Apply amplitude envelope
         amp_env = self.synth_layer1.adsr_envelope(len(base_drone), *get_envelope('pad', self.config))
         base_drone = base_drone * amp_env
+        # Reduce drone level
+        drone_gain = 0.3  # adjust between 0.2–0.5 as needed
+        base_drone = base_drone * drone_gain
 
         return base_drone
 

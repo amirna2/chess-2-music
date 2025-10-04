@@ -108,15 +108,16 @@ class SynthConfig:
         },
         'TACTICAL_MASTERPIECE': {
             'base_waveform': 'pulse',
-            'filter_start': 500,
-            'filter_end': 5000,
+            'filter_start': 800,
+            'filter_end': 3000,
             'resonance_start': 0.5,
-            'resonance_end': 1.8,
+            'resonance_end': 1.3,
             'tempo_start': 0.8,
             'tempo_end': 1.2,
             'detune_start': 0,
             'detune_end': 7,
             'scale': 'dorian',
+            'drone_voices': 3
         },
         'PEACEFUL_DRAW': {
             'base_waveform': 'triangle',
