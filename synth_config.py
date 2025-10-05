@@ -545,7 +545,7 @@ class SynthConfig:
     # === LAYER MUTING (True = enabled, False = muted) ===
     LAYER_ENABLE: Dict[str, bool] = field(default_factory=lambda: {
         'drone': True,      # Layer 1: Base drone (overall narrative)
-        'patterns': True,  # Layer 2: Rhythmic patterns (section narrative)
+        'patterns': False,  # Layer 2: Rhythmic patterns (section narrative)
         'sequencer': True,  # Layer 3: Continuous sequencer (heartbeat)
         'moments': True,    # Key moment punctuation
     })

@@ -501,8 +501,8 @@ class SubtractiveSynth:
         lub_env = self._create_linear_adsr(actual_lub_duration, *amp_env)
         lub_audio = lub_wave * lub_env
 
-        # Apply filter to enveloped signal (matching standalone)
-        lub_audio = self._apply_fft_filter(lub_audio, filter_cutoff)
+        # Apply filter to enveloped signal
+        lub_audio = self._apply_lowpass_filter(lub_audio, filter_cutoff)
 
         # Gap (zeros)
         gap_samples = int(gap_sec * self.sample_rate)
@@ -514,8 +514,8 @@ class SubtractiveSynth:
         dub_env = self._create_linear_adsr(actual_dub_duration, *amp_env) * dub_volume
         dub_audio = dub_wave * dub_env
 
-        # Apply filter to enveloped signal (matching standalone)
-        dub_audio = self._apply_fft_filter(dub_audio, filter_cutoff)
+        # Apply filter to enveloped signal
+        dub_audio = self._apply_lowpass_filter(dub_audio, filter_cutoff)
 
         # Pause (zeros)
         pause_samples = int(pause_sec * self.sample_rate)
@@ -559,20 +559,18 @@ class SubtractiveSynth:
 
         return envelope
 
-    def _apply_fft_filter(self, audio, cutoff_freq):
-        """FFT lowpass filter - exact copy from heartbeat_designer.py"""
-        # FFT
-        fft = np.fft.rfft(audio)
-        freqs = np.fft.rfftfreq(len(audio), 1/self.sample_rate)
+    def _apply_lowpass_filter(self, audio, cutoff_freq):
+        """Butterworth lowpass filter - no ringing artifacts"""
+        from scipy.signal import butter, sosfiltfilt
 
-        # Create filter (smooth rolloff)
-        filter_response = 1 / (1 + (freqs / cutoff_freq)**4)
+        nyquist = self.sample_rate / 2
+        normalized_cutoff = cutoff_freq / nyquist
 
-        # Apply filter
-        fft_filtered = fft * filter_response
+        # 2nd order Butterworth for minimal ringing
+        sos = butter(2, normalized_cutoff, btype='low', output='sos')
 
-        # IFFT back to time domain
-        return np.fft.irfft(fft_filtered, len(audio))
+        # Zero-phase filtering (no phase distortion, no pre-ringing)
+        return sosfiltfilt(sos, audio)
 
 
     def _generate_beat_waveform(self, freq, duration):

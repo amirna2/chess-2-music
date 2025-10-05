@@ -222,6 +222,10 @@ class ChessEntropyCalculator:
         # Normalize to ensure 0-1 range
         combined = np.clip(combined, 0.0, 1.0)
 
+        # Smooth entropy for gradual transitions (like cardiac response)
+        from scipy.ndimage import gaussian_filter1d
+        combined = gaussian_filter1d(combined, sigma=2.5, mode='nearest')
+
         if self.debug:
             print(f"\n=== ENTROPY CALCULATION ===")
             print(f"Section: ply {start_ply} to {end_ply}")
@@ -313,5 +317,5 @@ if __name__ == "__main__":
 
     moves = game_features['moves']
 
-    # Demo on first 20 moves
-    demonstrate_entropy(moves, "Opening", 1, min(20, len(moves)))
+    # Demo on all moves
+    demonstrate_entropy(moves, "Opening", 1, len(moves))

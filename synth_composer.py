@@ -1912,23 +1912,25 @@ class ChessSynthComposer:
                 pause_sec = 0.1
 
             # Generate complete heartbeat cycles with ENTROPY-DRIVEN VARIATION
-            current_time = 0.0
-            while current_time < section_duration:
-                # Get entropy for this heartbeat position
+            current_sample = 0  # Use sample-accurate positioning instead of time
+
+            while current_sample < len(heartbeat_layer):
+                # Get entropy for this heartbeat position (pre-smoothed in entropy calculator)
+                current_time = current_sample / self.sample_rate
                 current_ply = start_ply + int(current_time)
-                heartbeat_entropy = 0.5
+                ply_offset = current_ply - start_ply
 
-                if entropy_curve is not None and len(entropy_curve) > 0:
-                    ply_offset = current_ply - start_ply
-                    if 0 <= ply_offset < len(entropy_curve):
-                        heartbeat_entropy = entropy_curve[ply_offset]
+                if entropy_curve is not None and 0 <= ply_offset < len(entropy_curve):
+                    heartbeat_entropy = entropy_curve[ply_offset]
+                else:
+                    heartbeat_entropy = 0.5
 
-                # ENTROPY-DRIVEN BPM VARIATION
-                # Low entropy = slower, calmer (60 BPM)
-                # High entropy = faster, anxious (80 BPM)
-                ec = self.config.ENTROPY_CONFIG
-                bpm_variation = heartbeat_entropy * 10  # 0-10 BPM variation
-                varied_bpm = heartbeat_bpm + bpm_variation
+                # ENTROPY-DRIVEN BPM VARIATION (Player's heart rate during chess)
+                # Low entropy = calm, resting heart rate (60 BPM)
+                # High entropy = extreme tension/time pressure (130 BPM)
+                min_bpm = 60  # Calm, controlled positions
+                max_bpm = 130  # Extreme tension, tactical chaos, time scramble
+                varied_bpm = min_bpm + (heartbeat_entropy * (max_bpm - min_bpm))
                 varied_interval = 60.0 / varied_bpm
                 varied_pause = varied_interval - lub_duration - gap_sec - dub_duration
                 if varied_pause < 0:
@@ -1959,14 +1961,13 @@ class ChessSynthComposer:
                     filter_env=heartbeat_filter_env
                 )
 
-                # Add complete cycle to heartbeat layer
-                cycle_start = int(current_time * self.sample_rate)
-                cycle_end = min(cycle_start + len(cycle_audio), len(heartbeat_layer))
-                if cycle_end > cycle_start:
-                    heartbeat_layer[cycle_start:cycle_end] += cycle_audio[:cycle_end-cycle_start] * 0.25
+                # Add complete cycle to heartbeat layer (sample-accurate positioning)
+                cycle_end = min(current_sample + len(cycle_audio), len(heartbeat_layer))
+                if cycle_end > current_sample:
+                    heartbeat_layer[current_sample:cycle_end] += cycle_audio[:cycle_end-current_sample] * 0.25
 
-                # Advance by entropy-varied cycle duration
-                current_time += varied_interval
+                # Advance by entropy-varied cycle duration (sample-accurate)
+                current_sample += len(cycle_audio)
 
             # === GENERATE MOMENT SEQUENCER SUB-LAYER (3b) ===
             # Event-driven supersaw sequences for chess moments
@@ -2030,7 +2031,7 @@ class ChessSynthComposer:
 
                     # MOMENTS ONLY: No base pattern anymore (heartbeat layer handles that)
                     if not active_moments:
-                        full_sequence.append((None, 0.0))
+                        full_sequence.append(None)
                         continue
 
                     # Process moment patterns (no base pattern - moments only!)
@@ -2186,7 +2187,12 @@ class ChessSynthComposer:
                     end_pos = min(start_pos + len(note_audio), len(sequencer_layer))
 
                     if end_pos > start_pos:
-                        sequencer_layer[start_pos:end_pos] += note_audio[:end_pos-start_pos] * self.config.LAYER_MIXING['sequencer_note_level']
+                        # ENTROPY-DRIVEN MOMENT INTENSITY
+                        # Scale volume with entropy: calm moments are subtle, tense moments are prominent
+                        base_level = self.config.LAYER_MIXING['sequencer_note_level']
+                        intensity_scale = 0.5 + (note_entropy * 1.0)  # 0.5x to 1.5x based on entropy
+                        moment_level = base_level * intensity_scale
+                        sequencer_layer[start_pos:end_pos] += note_audio[:end_pos-start_pos] * moment_level
 
                     # ENTROPY-DRIVEN HARMONIC DENSITY
                     # High entropy = add random harmony notes (cluster effect)

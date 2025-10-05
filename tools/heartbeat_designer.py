@@ -69,19 +69,17 @@ def create_adsr_envelope(duration_sec, attack, decay, sustain, release):
     return envelope
 
 def apply_lowpass_filter(audio, cutoff_freq, sample_rate):
-    """Simple lowpass filter using FFT."""
-    # FFT
-    fft = np.fft.rfft(audio)
-    freqs = np.fft.rfftfreq(len(audio), 1/sample_rate)
+    """Butterworth lowpass filter - no ringing artifacts."""
+    from scipy.signal import butter, sosfiltfilt
 
-    # Create filter (smooth rolloff)
-    filter_response = 1 / (1 + (freqs / cutoff_freq)**4)
+    nyquist = sample_rate / 2
+    normalized_cutoff = cutoff_freq / nyquist
 
-    # Apply filter
-    fft_filtered = fft * filter_response
+    # 2nd order Butterworth for minimal ringing
+    sos = butter(2, normalized_cutoff, btype='low', output='sos')
 
-    # IFFT back to time domain
-    return np.fft.irfft(fft_filtered, len(audio))
+    # Zero-phase filtering (no phase distortion, no pre-ringing)
+    return sosfiltfilt(sos, audio)
 
 def generate_heartbeat():
     """Generate one complete heartbeat cycle (LUB-dub-pause)."""
@@ -143,9 +141,9 @@ def update_display():
 
     heartbeat_audio = generate_heartbeat_sequence(3)
 
-    # Normalize
+    # Normalize to full scale for better speaker volume
     if np.max(np.abs(heartbeat_audio)) > 0:
-        heartbeat_audio = heartbeat_audio / np.max(np.abs(heartbeat_audio)) * 0.8
+        heartbeat_audio = heartbeat_audio / np.max(np.abs(heartbeat_audio)) * 0.95
 
     # Update plot
     ax.clear()
