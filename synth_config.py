@@ -516,7 +516,8 @@ class SynthConfig:
         'BRILLIANT': [0, 7, 12, 19, 24, 31, 36, 43, 48, 43, 36, 31, 24, 19, 12, 7],
         'TIME_PRESSURE': [0, 12, 0, 12, 0, 12, 0, 12, 0, 12, 0, 12, 0, 12, 0, 12],
         'TIME_SCRAMBLE': [0, 12, 0, 12, 0, 12, 0, 12, 0, 12, 0, 12, 0, 12, 0, 12],
-        'PULSE': [0, 7, 0, 7, 0, 7, 0, 7, 0, 7, 0, 7, 0, 7, 0, 7],  # Default
+        'SIGNIFICANT_SHIFT': [0, 7, 14, 7, 0, -7, -14, -7, 0, 5, 10, 5, 0, -5, -10, -5],  # Major positional shift: wave motion
+        'PULSE': [0, None, -5, None, None, None, 0, None, -5, None, None, None, 0, None, -5, None],  # Heartbeat: lub-dub pattern
     })
 
     # === SUPERSAW DETUNE PRESETS ===
@@ -544,9 +545,9 @@ class SynthConfig:
     # === LAYER MUTING (True = enabled, False = muted) ===
     LAYER_ENABLE: Dict[str, bool] = field(default_factory=lambda: {
         'drone': True,      # Layer 1: Base drone (overall narrative)
-        'patterns': True,   # Layer 2: Rhythmic patterns (section narrative)
-        'sequencer': True,  # Layer 3: Continuous sequencer
-        'moments': True,    # Key moment punctuation
+        'patterns': False,   # Layer 2: Rhythmic patterns (section narrative)
+        'sequencer': True,  # Layer 3: Continuous sequencer (baseline texture)
+        'moments': False,    # Key moment punctuation
     })
 
     # === MIXING LEVELS ===
@@ -621,13 +622,17 @@ class SynthConfig:
         'filter_increment_per_step': 150,
         'filter_env_amount': 2000,
         'resonance': 1.2,
-        'amp_env': (0.02, 0.1, 0.9, 0.8),
-        'filter_env': (0.02, 0.2, 0.7, 0.3),
+        'amp_env': (0.001, 0.08, 0.0, 0.25),    # Heartbeat: instant attack, medium decay, no sustain (kick drum thump), medium release
+        'filter_env': (0.01, 0.15, 0.2, 0.2),   # Filter closes quickly for thump effect
         'global_filter_base': 2000,
         'global_filter_lfo_amount': 1500,
         'global_filter_sweep_amount': 1000,
         'global_filter_resonance': 2.0,
         'smoothing_window_sec': 0.005,
+        # Heartbeat-specific (base PULSE pattern)
+        'heartbeat_filter': 80,       # Sub-bass range - deep thump
+        'heartbeat_resonance': 0.3,   # Very low - tight, punchy kick
+        'heartbeat_use_fixed': True,  # Don't let section modulation change it
     })
 
     # === MOMENT EVENT PARAMETERS ===

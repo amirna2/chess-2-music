@@ -1758,6 +1758,10 @@ class ChessSynthComposer:
             filter_target = 3000
             development_count = 0
 
+            # Debug: Show base pattern
+            pattern_preview = [f"{x:02d}" if x is not None else '__' for x in current_pattern[:8]]
+            print(f"      base pattern: PULSE [{','.join(pattern_preview)}] at {self.config.MOMENT_EVENT_PARAMS['base_pattern_level']*100:.0f}% volume")
+
             # OUTRO: Seeded variation based on total plies
             if section.get('name') == 'OUTRO':
                 # Use total plies as seed for variation
@@ -2054,13 +2058,25 @@ class ChessSynthComposer:
                     self.last_layer3_filter_env = filter_env_to_use
 
                 # Generate main note
+                # Check if this is base heartbeat (no active moments) and use fixed heartbeat filter
+                is_heartbeat = len(active_moments) == 0 and self.config.SEQUENCER_SYNTH.get('heartbeat_use_fixed', False)
+
+                if is_heartbeat:
+                    # Use fixed muffled heartbeat sound (like stethoscope)
+                    filter_to_use = self.config.SEQUENCER_SYNTH['heartbeat_filter']
+                    resonance_to_use = self.config.SEQUENCER_SYNTH['heartbeat_resonance']
+                else:
+                    # Use normal evolving filter/resonance
+                    filter_to_use = self.config.SEQUENCER_SYNTH['filter_base_start'] + (i * self.config.SEQUENCER_SYNTH['filter_increment_per_step'])
+                    resonance_to_use = self.config.SEQUENCER_SYNTH['resonance']
+
                 note_audio = self.synth_layer3.supersaw(
                     target_freq,
                     actual_duration,
                     detune_cents=self.config.SEQUENCER_SYNTH['detune_cents'],
-                    filter_base=self.config.SEQUENCER_SYNTH['filter_base_start'] + (i * self.config.SEQUENCER_SYNTH['filter_increment_per_step']),
+                    filter_base=filter_to_use,
                     filter_env_amount=self.config.SEQUENCER_SYNTH['filter_env_amount'],
-                    resonance=self.config.SEQUENCER_SYNTH['resonance'],
+                    resonance=resonance_to_use,
                     amp_env=amp_env_to_use,
                     filter_env=filter_env_to_use
                 )

@@ -203,6 +203,14 @@ class KingHuntPattern(PatternGenerator):
 
             timing.add_pause(pause_dur)
 
+        # Debug output
+        if events:
+            state_counts = {}
+            for e in events:
+                state = e.extra_context.get('state', 'unknown')
+                state_counts[state] = state_counts.get(state, 0) + 1
+            self.print_debug_summary(events, extra_stats={'states': state_counts})
+
         return events
 
     def _state_name(self, state: int) -> str:
@@ -314,7 +322,7 @@ class DesperateDefensePattern(PatternGenerator):
                 note_dur_quantized = note_samples / params['sample_rate']
 
                 # Darker waveform, lower filter for defensive sound
-                waveform = 'saw' if current_state == self.STATE_RETREAT else 'pulse'
+                waveform = 'saw' if current_state == self.STATE_RETREAT else 'triangle'  # Triangle less nasal than pulse
 
                 events.append(NoteEvent(
                     freq=note_freq,
@@ -325,9 +333,9 @@ class DesperateDefensePattern(PatternGenerator):
                     filter_base=params['filter'] * (0.5 + progress * 0.3),  # Dark, opening slightly
                     filter_env_amount=params['filter_env'] * 0.5,
                     resonance=params['resonance'] * (0.8 + params['tension'] * 0.4),
-                    amp_env=get_envelope('pluck', params['config']),
+                    amp_env=get_envelope('sustained', params['config']),
                     filter_env=get_filter_envelope('closing', params['config']),
-                    amp_env_name='pluck',
+                    amp_env_name='sustained',
                     filter_env_name='closing',
                     extra_context={
                         'state': self._state_name(current_state),

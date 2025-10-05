@@ -91,12 +91,22 @@ class SharpTheoryPattern(PatternGenerator):
                     resonance=final_resonance * 0.8,
                     amp_env=get_envelope('pluck', config),
                     filter_env=get_filter_envelope('sweep', config),
+                    amp_env_name='pluck',
+                    filter_env_name='sweep',
                     extra_context={'mix_level': config.LAYER_MIXING['pattern_note_level'] * velocity}
                 )
                 events.append(event)
 
             pause_samples = int(base_note_dur * 0.05 * params['sample_rate'])
             timing.advance(note_samples + pause_samples)
+
+        # Debug output
+        if events:
+            self.print_debug_summary(events, extra_stats={
+                'states': {'attack': sum(1 for _ in events if 'attack' in str(_.timestamp)),
+                          'dart': sum(1 for _ in events if 'dart' in str(_.timestamp)),
+                          'settle': sum(1 for _ in events if 'settle' in str(_.timestamp))}
+            })
 
         return events
 
@@ -159,12 +169,14 @@ class PositionalTheoryPattern(PatternGenerator):
                     duration=duration_quantized,
                     timestamp=timing.current_time,
                     velocity=velocity,
-                    waveform='pulse',
+                    waveform='triangle',  # Warmer, less nasal than pulse
                     filter_base=final_filter * 0.7,  # Darker, less bright
                     filter_env_amount=filter_env_amount * 0.5,  # Less filter movement
                     resonance=final_resonance * 0.5,  # Softer resonance
                     amp_env=get_envelope('soft', config),
                     filter_env=get_filter_envelope('gentle', config),
+                    amp_env_name='soft',
+                    filter_env_name='gentle',
                     extra_context={'mix_level': config.LAYER_MIXING['pattern_note_level'] * velocity}
                 )
                 events.append(event)
@@ -179,6 +191,10 @@ class PositionalTheoryPattern(PatternGenerator):
                 current_note_idx = self.rng.choice(len(probabilities), p=probabilities)
             else:
                 current_note_idx = 0
+
+        # Debug output
+        if events:
+            self.print_debug_summary(events)
 
         return events
 
@@ -237,12 +253,14 @@ class SolidTheoryPattern(PatternGenerator):
                     duration=duration_quantized,
                     timestamp=timing.current_time,
                     velocity=velocity,
-                    waveform='pulse',  # Warm, solid
+                    waveform='sine',  # Pure, smooth, solid bass
                     filter_base=final_filter * filter_mult,
                     filter_env_amount=filter_env_amount * 0.6,
                     resonance=final_resonance * 0.5,  # Low resonance for solid feel
                     amp_env=get_envelope('soft', config),
                     filter_env=get_filter_envelope('gentle', config),
+                    amp_env_name='soft',
+                    filter_env_name='gentle',
                     extra_context={'mix_level': config.LAYER_MIXING['pattern_note_level'] * velocity}
                 )
                 events.append(event)
@@ -253,5 +271,9 @@ class SolidTheoryPattern(PatternGenerator):
 
             # Advance pattern
             pattern_idx += 1
+
+        # Debug output
+        if events:
+            self.print_debug_summary(events)
 
         return events

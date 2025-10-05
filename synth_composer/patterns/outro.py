@@ -67,6 +67,8 @@ class DecisiveOutroPattern(PatternGenerator):
                     resonance=final_resonance * 0.7,
                     amp_env=get_envelope('sustained', config),
                     filter_env=get_filter_envelope('closing', config),
+                    amp_env_name='sustained',
+                    filter_env_name='closing',
                     extra_context={
                         'mix_level': velocity,
                         'decay_curve': 'exp',  # Signal that we need exponential decay
@@ -76,6 +78,11 @@ class DecisiveOutroPattern(PatternGenerator):
                 events.append(event)
 
             timing.advance(note_samples)
+
+        # Debug output
+        if events:
+            direction = 'descending' if is_defeat else 'ascending'
+            self.print_debug_summary(events, extra_stats={'direction': direction})
 
         return events
 
@@ -128,6 +135,8 @@ class DrawOutroPattern(PatternGenerator):
                     resonance=final_resonance * 0.5,
                     amp_env=get_envelope('pad', config),
                     filter_env=get_filter_envelope('slow', config),
+                    amp_env_name='pad',
+                    filter_env_name='slow',
                     extra_context={
                         'mix_level': velocity,
                         'decay_curve': 'exp',  # Signal that we need exponential decay
@@ -137,5 +146,9 @@ class DrawOutroPattern(PatternGenerator):
                 events.append(event)
 
             timing.advance(note_samples)
+
+        # Debug output
+        if events:
+            self.print_debug_summary(events)
 
         return events
