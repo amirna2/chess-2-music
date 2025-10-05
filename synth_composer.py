@@ -1728,7 +1728,11 @@ class ChessSynthComposer:
                 # Don't print here - will be printed under Layer 3 header
                 entropy_curve = None
 
-        # LAYER 3: CONTINUOUS SEQUENCER
+        # LAYER 3: TWO SUB-LAYERS
+        # 3a: Heartbeat sub-drone (sine, entropy-driven, continuous)
+        # 3b: Moment sequencer (supersaw, event-driven)
+
+        heartbeat_layer = np.zeros_like(samples)
         sequencer_layer = np.zeros_like(samples)
         filtered_sequence = np.zeros_like(samples)
 
@@ -1879,267 +1883,348 @@ class ChessSynthComposer:
                           f"| dur={event['end_time']-event['start_time']:.1f}s score={event['score']} "
                           f"mix={event['mix_amount']:.2f} flt={event['filter_mod']:.0f}Hz | pat:[{pattern_preview},...]")
 
-            # Generate sequence with event-based blending
-            samples_per_step = int(sixteenth_duration * self.sample_rate)
-            total_steps = int(section_duration / sixteenth_duration)
+            # === GENERATE HEARTBEAT SUB-LAYER (3a) ===
+            # Continuous sine wave heartbeat, entropy-driven, always present
+            print(f"  → Layer 3a: Heartbeat sub-drone | wave: sine | filter: {self.config.SEQUENCER_SYNTH['heartbeat_filter']}Hz")
 
-            # Helper function to get active moments at a given time
-            def get_active_moments(current_time):
-                active = []
-                for event in moment_events:
-                    if event['start_time'] <= current_time <= event['end_time']:
-                        # Calculate blend factor based on crossfade
-                        crossfade_dur = mep['crossfade_duration_sec']
-                        time_in_event = current_time - event['start_time']
-                        time_to_end = event['end_time'] - current_time
+            def midi_to_freq(midi_note):
+                return 440.0 * 2**((midi_note - 69) / 12.0)
 
-                        # Fade in at start
-                        if time_in_event < crossfade_dur:
-                            fade_in = time_in_event / crossfade_dur
-                        else:
-                            fade_in = 1.0
+            heartbeat_pattern = self.config.SEQUENCER_PATTERNS['PULSE']
+            heartbeat_root = 36  # Low C (sub-bass range, ~65Hz - like kick drum)
+            heartbeat_sixteenth = sixteenth_duration
+            heartbeat_steps = int(section_duration / heartbeat_sixteenth)
 
-                        # Fade out at end
-                        if time_to_end < crossfade_dur:
-                            fade_out = time_to_end / crossfade_dur
-                        else:
-                            fade_out = 1.0
-
-                        blend_factor = min(fade_in, fade_out)
-
-                        active.append({
-                            **event,
-                            'blend_factor': blend_factor
-                        })
-                return active
-
-            full_sequence = []
-            for i in range(total_steps):
+            for i in range(heartbeat_steps):
                 step_index = i % 16
-                current_time = i * sixteenth_duration
-                current_sample = int(current_time * self.sample_rate)
+                pattern_value = heartbeat_pattern[step_index]
 
-                # ENTROPY-DRIVEN NOTE SELECTION
+                if pattern_value is None:
+                    continue
+
+                # Get entropy for this position
+                current_time = i * heartbeat_sixteenth
                 current_ply = start_ply + int(current_time)
-                entropy_value = 0.5
+                note_entropy = 0.5
 
                 if entropy_curve is not None and len(entropy_curve) > 0:
                     ply_offset = current_ply - start_ply
                     if 0 <= ply_offset < len(entropy_curve):
-                        entropy_value = entropy_curve[ply_offset]
+                        note_entropy = entropy_curve[ply_offset]
 
-                # Get active moments at this time
-                active_moments = get_active_moments(current_time)
+                # ENTROPY-DRIVEN NOTE SELECTION (like moment sequencer)
+                ec = self.config.ENTROPY_CONFIG
+                low_thresh = ec['low_threshold']
+                high_thresh = ec['high_threshold']
 
-                # Start with base pattern
-                base_pattern = current_pattern
-                base_interval = base_pattern[step_index]
+                if note_entropy < low_thresh:
+                    available_intervals = ec['note_pools']['low']  # Simple
+                elif note_entropy < high_thresh:
+                    available_intervals = ec['note_pools']['medium']  # Moderate
+                else:
+                    available_intervals = ec['note_pools']['high']  # Complex
 
-                # Blend with moment patterns
-                if active_moments:
-                    # Use highest score moment as primary
-                    primary_moment = max(active_moments, key=lambda m: m['score'])
-                    moment_type = primary_moment['type']
+                # Use pattern interval if in pool, otherwise pick random
+                if pattern_value not in available_intervals:
+                    pattern_value = self.rng.choice(available_intervals)
 
-                    # Get moment pattern
-                    if moment_type in self.config.SEQUENCER_PATTERNS:
-                        if moment_type == 'DEVELOPMENT':
-                            # Handle DEVELOPMENT progression
-                            development_count += 1
-                            if development_count == 1:
-                                moment_pattern = self.config.SEQUENCER_PATTERNS['DEVELOPMENT']['early']
-                            elif development_count == 2:
-                                moment_pattern = self.config.SEQUENCER_PATTERNS['DEVELOPMENT']['mid']
+                heartbeat_midi = heartbeat_root + pattern_value
+                heartbeat_freq = midi_to_freq(heartbeat_midi)
+
+                # Generate heartbeat note with SINE wave
+                heartbeat_audio = self.synth_layer3.create_synth_note(
+                    freq=heartbeat_freq,
+                    duration=heartbeat_sixteenth,
+                    waveform='sine',  # Pure sine for heartbeat!
+                    filter_base=self.config.SEQUENCER_SYNTH['heartbeat_filter'],
+                    filter_env_amount=0,  # Minimal filter movement for heartbeat
+                    resonance=self.config.SEQUENCER_SYNTH['heartbeat_resonance'],
+                    amp_env=self.config.SEQUENCER_SYNTH['amp_env'],
+                    filter_env=self.config.SEQUENCER_SYNTH['filter_env']
+                )
+
+                # Apply gentle crossfade to prevent clicks/artifacts between notes
+                # (Anti-clipping strategy: smooth transitions per architecture doc)
+                fade_samples = min(int(0.005 * self.sample_rate), len(heartbeat_audio) // 8)  # 5ms fade
+                if fade_samples > 1:
+                    # Fade out last 5ms to prevent clicks
+                    heartbeat_audio[-fade_samples:] *= np.linspace(1.0, 0.0, fade_samples)
+
+                # Add to heartbeat layer
+                start_pos = int(i * heartbeat_sixteenth * self.sample_rate)
+                end_pos = min(start_pos + len(heartbeat_audio), len(heartbeat_layer))
+                if end_pos > start_pos:
+                    heartbeat_layer[start_pos:end_pos] += heartbeat_audio[:end_pos-start_pos] * 0.3  # Heartbeat volume (reduced to prevent clipping)
+
+            # === GENERATE MOMENT SEQUENCER SUB-LAYER (3b) ===
+            # Event-driven supersaw sequences for chess moments
+            if self.config.LAYER_ENABLE.get('moments', True):
+                print(f"  → Layer 3b: Moment sequencer | wave: supersaw")
+            else:
+                print(f"  → Layer 3b: Moment sequencer (muted)")
+
+            # Generate sequence with event-based blending (only if moments enabled)
+            if self.config.LAYER_ENABLE.get('moments', True):
+                samples_per_step = int(sixteenth_duration * self.sample_rate)
+                total_steps = int(section_duration / sixteenth_duration)
+
+                # Helper function to get active moments at a given time
+                def get_active_moments(current_time):
+                    active = []
+                    for event in moment_events:
+                        if event['start_time'] <= current_time <= event['end_time']:
+                            # Calculate blend factor based on crossfade
+                            crossfade_dur = mep['crossfade_duration_sec']
+                            time_in_event = current_time - event['start_time']
+                            time_to_end = event['end_time'] - current_time
+
+                            # Fade in at start
+                            if time_in_event < crossfade_dur:
+                                fade_in = time_in_event / crossfade_dur
                             else:
-                                moment_pattern = self.config.SEQUENCER_PATTERNS['DEVELOPMENT']['full']
-                            current_root = min(current_root + 7, 72)
-                            filter_target = min(filter_target + 500, 5000)
+                                fade_in = 1.0
+
+                            # Fade out at end
+                            if time_to_end < crossfade_dur:
+                                fade_out = time_to_end / crossfade_dur
+                            else:
+                                fade_out = 1.0
+
+                            blend_factor = min(fade_in, fade_out)
+
+                            active.append({
+                                **event,
+                                'blend_factor': blend_factor
+                            })
+                    return active
+
+                full_sequence = []
+                for i in range(total_steps):
+                    step_index = i % 16
+                    current_time = i * sixteenth_duration
+                    current_sample = int(current_time * self.sample_rate)
+
+                    # ENTROPY-DRIVEN NOTE SELECTION
+                    current_ply = start_ply + int(current_time)
+                    entropy_value = 0.5
+
+                    if entropy_curve is not None and len(entropy_curve) > 0:
+                        ply_offset = current_ply - start_ply
+                        if 0 <= ply_offset < len(entropy_curve):
+                            entropy_value = entropy_curve[ply_offset]
+
+                    # Get active moments at this time
+                    active_moments = get_active_moments(current_time)
+
+                    # Start with base pattern
+                    base_pattern = current_pattern
+                    base_interval = base_pattern[step_index]
+
+                    # Blend with moment patterns
+                    if active_moments:
+                        # Use highest score moment as primary
+                        primary_moment = max(active_moments, key=lambda m: m['score'])
+                        moment_type = primary_moment['type']
+
+                        # Get moment pattern
+                        if moment_type in self.config.SEQUENCER_PATTERNS:
+                            if moment_type == 'DEVELOPMENT':
+                                # Handle DEVELOPMENT progression
+                                development_count += 1
+                                if development_count == 1:
+                                    moment_pattern = self.config.SEQUENCER_PATTERNS['DEVELOPMENT']['early']
+                                elif development_count == 2:
+                                    moment_pattern = self.config.SEQUENCER_PATTERNS['DEVELOPMENT']['mid']
+                                else:
+                                    moment_pattern = self.config.SEQUENCER_PATTERNS['DEVELOPMENT']['full']
+                                current_root = min(current_root + 7, 72)
+                                filter_target = min(filter_target + 500, 5000)
+                            else:
+                                moment_pattern = self.config.SEQUENCER_PATTERNS[moment_type]
+
+                                # Adjust root and filter based on moment type
+                                if moment_type in ['BLUNDER', 'MISTAKE', 'INACCURACY']:
+                                    current_root = max(current_root - 12, 36)
+                                    filter_target = 1000 + primary_moment['filter_mod']
+                                elif moment_type in ['BRILLIANT', 'STRONG']:
+                                    current_root = min(current_root + 12, 84)
+                                    filter_target = 3000 + primary_moment['filter_mod']
+
+                            moment_interval = moment_pattern[step_index]
+
+                            # Blend intervals based on mix amount and blend factor
+                            total_blend = primary_moment['mix_amount'] * primary_moment['blend_factor']
+
+                            if base_interval is not None and moment_interval is not None:
+                                # Both patterns have notes - blend them
+                                note_interval = int(base_interval * (1 - total_blend) + moment_interval * total_blend)
+                            elif moment_interval is not None:
+                                # Only moment has note
+                                note_interval = moment_interval if total_blend > 0.5 else base_interval
+                            else:
+                                # Use base
+                                note_interval = base_interval
                         else:
-                            moment_pattern = self.config.SEQUENCER_PATTERNS[moment_type]
-
-                            # Adjust root and filter based on moment type
-                            if moment_type in ['BLUNDER', 'MISTAKE', 'INACCURACY']:
-                                current_root = max(current_root - 12, 36)
-                                filter_target = 1000 + primary_moment['filter_mod']
-                            elif moment_type in ['BRILLIANT', 'STRONG']:
-                                current_root = min(current_root + 12, 84)
-                                filter_target = 3000 + primary_moment['filter_mod']
-
-                        moment_interval = moment_pattern[step_index]
-
-                        # Blend intervals based on mix amount and blend factor
-                        total_blend = primary_moment['mix_amount'] * primary_moment['blend_factor']
-
-                        if base_interval is not None and moment_interval is not None:
-                            # Both patterns have notes - blend them
-                            note_interval = int(base_interval * (1 - total_blend) + moment_interval * total_blend)
-                        elif moment_interval is not None:
-                            # Only moment has note
-                            note_interval = moment_interval if total_blend > 0.5 else base_interval
-                        else:
-                            # Use base
                             note_interval = base_interval
                     else:
                         note_interval = base_interval
-                else:
-                    note_interval = base_interval
 
-                # ENTROPY-DRIVEN NOTE MODIFICATION
-                # Modify note interval based on position complexity
-                if note_interval is not None:
-                    # Get entropy-appropriate note pool
-                    ec = self.config.ENTROPY_CONFIG
-                    low_thresh = ec['low_threshold']
-                    high_thresh = ec['high_threshold']
+                    # ENTROPY-DRIVEN NOTE MODIFICATION
+                    # Modify note interval based on position complexity
+                    if note_interval is not None:
+                        # Get entropy-appropriate note pool
+                        ec = self.config.ENTROPY_CONFIG
+                        low_thresh = ec['low_threshold']
+                        high_thresh = ec['high_threshold']
 
-                    if entropy_value < low_thresh:
-                        # Low entropy: simple, predictable (root-fifth only)
-                        available_intervals = ec['note_pools']['low']
-                    elif entropy_value < high_thresh:
-                        # Medium entropy: moderate complexity
-                        available_intervals = ec['note_pools']['medium']
+                        if entropy_value < low_thresh:
+                            # Low entropy: simple, predictable (root-fifth only)
+                            available_intervals = ec['note_pools']['low']
+                        elif entropy_value < high_thresh:
+                            # Medium entropy: moderate complexity
+                            available_intervals = ec['note_pools']['medium']
+                        else:
+                            # High entropy: full chromatic complexity
+                            available_intervals = ec['note_pools']['high']
+
+                        # If pattern note is None or outside available pool, pick random from pool
+                        # Otherwise use pattern note if it's in the available pool
+                        if note_interval not in available_intervals:
+                            # Replace with random note from entropy-appropriate pool
+                            note_interval = self.rng.choice(available_intervals)
+
+                    if note_interval is None:
+                        midi_note = None
                     else:
-                        # High entropy: full chromatic complexity
-                        available_intervals = ec['note_pools']['high']
+                        midi_note = current_root + note_interval
 
-                    # If pattern note is None or outside available pool, pick random from pool
-                    # Otherwise use pattern note if it's in the available pool
-                    if note_interval not in available_intervals:
-                        # Replace with random note from entropy-appropriate pool
-                        note_interval = self.rng.choice(available_intervals)
+                    full_sequence.append(midi_note)
 
-                if note_interval is None:
-                    midi_note = None
-                else:
-                    midi_note = current_root + note_interval
+                    # ENTROPY-DRIVEN FILTER MODULATION
+                    # High entropy = faster filter changes
+                    filter_rate = 0.02 + entropy_value * 0.05  # 0.02-0.07
+                    filter_frequency += (filter_target - filter_frequency) * filter_rate
 
-                full_sequence.append(midi_note)
+                # Generate audio from sequence with portamento
+                prev_freq = None
+                for i, midi_note in enumerate(full_sequence):
+                    if i * samples_per_step >= len(sequencer_layer):
+                        break
 
-                # ENTROPY-DRIVEN FILTER MODULATION
-                # High entropy = faster filter changes
-                filter_rate = 0.02 + entropy_value * 0.05  # 0.02-0.07
-                filter_frequency += (filter_target - filter_frequency) * filter_rate
+                    if midi_note is None:
+                        prev_freq = None
+                        continue
 
-            # Generate audio from sequence with portamento
-            prev_freq = None
-            for i, midi_note in enumerate(full_sequence):
-                if i * samples_per_step >= len(sequencer_layer):
-                    break
+                    target_freq = midi_to_freq(midi_note)
 
-                if midi_note is None:
-                    prev_freq = None
-                    continue
+                    # Get entropy for this note position
+                    note_time = i * sixteenth_duration
+                    note_ply = start_ply + int(note_time)
+                    note_entropy = 0.5
 
-                target_freq = midi_to_freq(midi_note)
+                    if entropy_curve is not None and len(entropy_curve) > 0:
+                        ply_offset = note_ply - start_ply
+                        if 0 <= ply_offset < len(entropy_curve):
+                            note_entropy = entropy_curve[ply_offset]
 
-                # Get entropy for this note position
-                note_time = i * sixteenth_duration
-                note_ply = start_ply + int(note_time)
-                note_entropy = 0.5
+                    # ENTROPY-DRIVEN PORTAMENTO
+                    # Low entropy = smooth long glides (flowing)
+                    # High entropy = short jumpy glides (nervous)
+                    # Add portamento (frequency glide) from previous note
+                    if prev_freq is not None:
+                        # Create frequency glide from prev to target
+                        ec = self.config.ENTROPY_CONFIG
+                        glide_reduction = note_entropy * ec['glide_reduction_max']  # 0 to 0.5
+                        glide_time = sixteenth_duration * 0.3 * (1.0 - glide_reduction)  # Reduce glide at high entropy
+                        glide_samples = int(glide_time * self.sample_rate)
+                        freq_curve = np.linspace(prev_freq, target_freq, glide_samples)
 
-                if entropy_curve is not None and len(entropy_curve) > 0:
-                    ply_offset = note_ply - start_ply
-                    if 0 <= ply_offset < len(entropy_curve):
-                        note_entropy = entropy_curve[ply_offset]
+                        # Generate glide with changing frequency
+                        t = np.arange(glide_samples) / self.sample_rate
+                        phase = np.zeros(glide_samples)
+                        for s in range(1, glide_samples):
+                            phase[s] = phase[s-1] + 2 * np.pi * freq_curve[s] / self.sample_rate
+                        glide_audio = np.sin(phase) * 0.3  # Lower volume for glide
 
-                # ENTROPY-DRIVEN PORTAMENTO
-                # Low entropy = smooth long glides (flowing)
-                # High entropy = short jumpy glides (nervous)
-                # Add portamento (frequency glide) from previous note
-                if prev_freq is not None:
-                    # Create frequency glide from prev to target
+                        # Add glide to start of note position
+                        start_pos = int(i * samples_per_step * self.config.TIMING['sequencer_overlap'])
+                        end_pos = min(start_pos + len(glide_audio), len(sequencer_layer))
+                        if end_pos > start_pos:
+                            sequencer_layer[start_pos:end_pos] += glide_audio[:end_pos-start_pos] * self.config.LAYER_MIXING['sequencer_note_level']
+
+                    # ENTROPY-DRIVEN RHYTHM VARIATION
+                    # High entropy = more timing variation (less predictable)
                     ec = self.config.ENTROPY_CONFIG
-                    glide_reduction = note_entropy * ec['glide_reduction_max']  # 0 to 0.5
-                    glide_time = sixteenth_duration * 0.3 * (1.0 - glide_reduction)  # Reduce glide at high entropy
-                    glide_samples = int(glide_time * self.sample_rate)
-                    freq_curve = np.linspace(prev_freq, target_freq, glide_samples)
+                    rhythm_var = note_entropy * ec['rhythm_variation_max']  # 0 to 0.5
+                    duration_multiplier = 1.0 + self.rng.uniform(-rhythm_var, rhythm_var)
+                    actual_duration = sixteenth_duration * duration_multiplier
 
-                    # Generate glide with changing frequency
-                    t = np.arange(glide_samples) / self.sample_rate
-                    phase = np.zeros(glide_samples)
-                    for s in range(1, glide_samples):
-                        phase[s] = phase[s-1] + 2 * np.pi * freq_curve[s] / self.sample_rate
-                    glide_audio = np.sin(phase) * 0.3  # Lower volume for glide
+                    # OUTRO: Use last section's envelope for continuity
+                    if section.get('name') == 'OUTRO':
+                        amp_env_to_use = self.last_layer3_amp_env
+                        filter_env_to_use = self.last_layer3_filter_env
+                    else:
+                        amp_env_to_use = self.config.SEQUENCER_SYNTH['amp_env']
+                        filter_env_to_use = self.config.SEQUENCER_SYNTH['filter_env']
+                        # Store for potential outro use
+                        self.last_layer3_amp_env = amp_env_to_use
+                        self.last_layer3_filter_env = filter_env_to_use
 
-                    # Add glide to start of note position
-                    start_pos = int(i * samples_per_step * self.config.TIMING['sequencer_overlap'])
-                    end_pos = min(start_pos + len(glide_audio), len(sequencer_layer))
-                    if end_pos > start_pos:
-                        sequencer_layer[start_pos:end_pos] += glide_audio[:end_pos-start_pos] * self.config.LAYER_MIXING['sequencer_note_level']
+                    # Generate main note
+                    # Check if this is base heartbeat (no active moments) and use fixed heartbeat filter
+                    is_heartbeat = len(active_moments) == 0 and self.config.SEQUENCER_SYNTH.get('heartbeat_use_fixed', False)
 
-                # ENTROPY-DRIVEN RHYTHM VARIATION
-                # High entropy = more timing variation (less predictable)
-                ec = self.config.ENTROPY_CONFIG
-                rhythm_var = note_entropy * ec['rhythm_variation_max']  # 0 to 0.5
-                duration_multiplier = 1.0 + self.rng.uniform(-rhythm_var, rhythm_var)
-                actual_duration = sixteenth_duration * duration_multiplier
+                    if is_heartbeat:
+                        # Use fixed muffled heartbeat sound (like stethoscope)
+                        filter_to_use = self.config.SEQUENCER_SYNTH['heartbeat_filter']
+                        resonance_to_use = self.config.SEQUENCER_SYNTH['heartbeat_resonance']
+                    else:
+                        # Use normal evolving filter/resonance
+                        filter_to_use = self.config.SEQUENCER_SYNTH['filter_base_start'] + (i * self.config.SEQUENCER_SYNTH['filter_increment_per_step'])
+                        resonance_to_use = self.config.SEQUENCER_SYNTH['resonance']
 
-                # OUTRO: Use last section's envelope for continuity
-                if section.get('name') == 'OUTRO':
-                    amp_env_to_use = self.last_layer3_amp_env
-                    filter_env_to_use = self.last_layer3_filter_env
-                else:
-                    amp_env_to_use = self.config.SEQUENCER_SYNTH['amp_env']
-                    filter_env_to_use = self.config.SEQUENCER_SYNTH['filter_env']
-                    # Store for potential outro use
-                    self.last_layer3_amp_env = amp_env_to_use
-                    self.last_layer3_filter_env = filter_env_to_use
-
-                # Generate main note
-                # Check if this is base heartbeat (no active moments) and use fixed heartbeat filter
-                is_heartbeat = len(active_moments) == 0 and self.config.SEQUENCER_SYNTH.get('heartbeat_use_fixed', False)
-
-                if is_heartbeat:
-                    # Use fixed muffled heartbeat sound (like stethoscope)
-                    filter_to_use = self.config.SEQUENCER_SYNTH['heartbeat_filter']
-                    resonance_to_use = self.config.SEQUENCER_SYNTH['heartbeat_resonance']
-                else:
-                    # Use normal evolving filter/resonance
-                    filter_to_use = self.config.SEQUENCER_SYNTH['filter_base_start'] + (i * self.config.SEQUENCER_SYNTH['filter_increment_per_step'])
-                    resonance_to_use = self.config.SEQUENCER_SYNTH['resonance']
-
-                note_audio = self.synth_layer3.supersaw(
-                    target_freq,
-                    actual_duration,
-                    detune_cents=self.config.SEQUENCER_SYNTH['detune_cents'],
-                    filter_base=filter_to_use,
-                    filter_env_amount=self.config.SEQUENCER_SYNTH['filter_env_amount'],
-                    resonance=resonance_to_use,
-                    amp_env=amp_env_to_use,
-                    filter_env=filter_env_to_use
-                )
-
-                start_pos = int(i * samples_per_step * self.config.TIMING['sequencer_overlap'])
-                end_pos = min(start_pos + len(note_audio), len(sequencer_layer))
-
-                if end_pos > start_pos:
-                    sequencer_layer[start_pos:end_pos] += note_audio[:end_pos-start_pos] * self.config.LAYER_MIXING['sequencer_note_level']
-
-                # ENTROPY-DRIVEN HARMONIC DENSITY
-                # High entropy = add random harmony notes (cluster effect)
-                harmony_threshold = ec['harmony_probability_threshold']
-                if note_entropy > harmony_threshold and self.rng.random() < (note_entropy - harmony_threshold):
-                    # Add a harmony note (third, fourth, or fifth)
-                    harmony_intervals = [3, 4, 7]  # Musical intervals in semitones
-                    harmony_interval = self.rng.choice(harmony_intervals)
-                    harmony_freq = target_freq * (2 ** (harmony_interval / 12.0))
-
-                    harmony_audio = self.synth_layer3.supersaw(
-                        harmony_freq,
-                        actual_duration * 0.8,  # Slightly shorter
+                    note_audio = self.synth_layer3.supersaw(
+                        target_freq,
+                        actual_duration,
                         detune_cents=self.config.SEQUENCER_SYNTH['detune_cents'],
-                        filter_base=self.config.SEQUENCER_SYNTH['filter_base_start'] + (i * self.config.SEQUENCER_SYNTH['filter_increment_per_step']),
+                        filter_base=filter_to_use,
                         filter_env_amount=self.config.SEQUENCER_SYNTH['filter_env_amount'],
-                        resonance=self.config.SEQUENCER_SYNTH['resonance'],
-                        amp_env=self.config.SEQUENCER_SYNTH['amp_env'],
-                        filter_env=self.config.SEQUENCER_SYNTH['filter_env']
+                        resonance=resonance_to_use,
+                        amp_env=amp_env_to_use,
+                        filter_env=filter_env_to_use
                     )
 
-                    harmony_end = min(start_pos + len(harmony_audio), len(sequencer_layer))
-                    if harmony_end > start_pos:
-                        sequencer_layer[start_pos:harmony_end] += harmony_audio[:harmony_end-start_pos] * self.config.LAYER_MIXING['sequencer_note_level'] * 0.5
+                    start_pos = int(i * samples_per_step * self.config.TIMING['sequencer_overlap'])
+                    end_pos = min(start_pos + len(note_audio), len(sequencer_layer))
 
-                prev_freq = target_freq
+                    if end_pos > start_pos:
+                        sequencer_layer[start_pos:end_pos] += note_audio[:end_pos-start_pos] * self.config.LAYER_MIXING['sequencer_note_level']
+
+                    # ENTROPY-DRIVEN HARMONIC DENSITY
+                    # High entropy = add random harmony notes (cluster effect)
+                    harmony_threshold = ec['harmony_probability_threshold']
+                    if note_entropy > harmony_threshold and self.rng.random() < (note_entropy - harmony_threshold):
+                        # Add a harmony note (third, fourth, or fifth)
+                        harmony_intervals = [3, 4, 7]  # Musical intervals in semitones
+                        harmony_interval = self.rng.choice(harmony_intervals)
+                        harmony_freq = target_freq * (2 ** (harmony_interval / 12.0))
+
+                        harmony_audio = self.synth_layer3.supersaw(
+                            harmony_freq,
+                            actual_duration * 0.8,  # Slightly shorter
+                            detune_cents=self.config.SEQUENCER_SYNTH['detune_cents'],
+                            filter_base=self.config.SEQUENCER_SYNTH['filter_base_start'] + (i * self.config.SEQUENCER_SYNTH['filter_increment_per_step']),
+                            filter_env_amount=self.config.SEQUENCER_SYNTH['filter_env_amount'],
+                            resonance=self.config.SEQUENCER_SYNTH['resonance'],
+                            amp_env=self.config.SEQUENCER_SYNTH['amp_env'],
+                            filter_env=self.config.SEQUENCER_SYNTH['filter_env']
+                        )
+
+                        harmony_end = min(start_pos + len(harmony_audio), len(sequencer_layer))
+                        if harmony_end > start_pos:
+                            sequencer_layer[start_pos:harmony_end] += harmony_audio[:harmony_end-start_pos] * self.config.LAYER_MIXING['sequencer_note_level'] * 0.5
+
+                    prev_freq = target_freq
 
             # Apply global filter sweep
             sweep_length = len(sequencer_layer)
@@ -2176,15 +2261,21 @@ class ChessSynthComposer:
             samples = samples * ducking
 
         # Return layers separately for stereo processing
-        # Store layer 3 separately for dynamic panning
-        layer_3 = filtered_sequence * self.config.MIXING['filtered_sequence_level'] if self.config.LAYER_ENABLE['sequencer'] else np.zeros_like(samples)
+        # Keep Layer 3 sub-layers SEPARATE for independent stereo treatment
+        if self.config.LAYER_ENABLE['sequencer']:
+            layer_3a_heartbeat = heartbeat_layer * 0.4  # Centered (will be)
+            layer_3b_moments = filtered_sequence * self.config.MIXING['filtered_sequence_level']  # Panning (will be)
+        else:
+            layer_3a_heartbeat = np.zeros_like(samples)
+            layer_3b_moments = np.zeros_like(samples)
 
-        # OUTRO: Apply decay to Layer 3 so it fades with Layers 1+2
-        if section.get('name') == 'OUTRO' and len(layer_3) > 0:
-            # Match the decay curve of Layers 1+2 for coherent fadeout
-            decay_curve = np.exp(np.linspace(0, -3.5, len(layer_3)))
-            layer_3 *= decay_curve
-            print(f"  → Layer 3: Applied matching decay for coherent outro")
+        # OUTRO: Apply decay to Layer 3 sub-layers so they fade with Layers 1+2
+        if section.get('name') == 'OUTRO':
+            if len(layer_3a_heartbeat) > 0:
+                decay_curve = np.exp(np.linspace(0, -3.5, len(layer_3a_heartbeat)))
+                layer_3a_heartbeat *= decay_curve
+                layer_3b_moments *= decay_curve
+                print(f"  → Layer 3 (both sub-layers): Applied matching decay for coherent outro")
 
         # Layers 1+2 combined (will be centered/static stereo)
         layers_1_2 = samples
@@ -2199,7 +2290,8 @@ class ChessSynthComposer:
         # Return as dict for stereo processing
         return {
             'layers_1_2': np.array(layers_1_2),
-            'layer_3': np.array(layer_3),
+            'layer_3a_heartbeat': np.array(layer_3a_heartbeat),
+            'layer_3b_moments': np.array(layer_3b_moments),
             'entropy_curve': entropy_curve if entropy_curve is not None else np.zeros(1)
         }
 
@@ -2246,26 +2338,41 @@ class ChessSynthComposer:
             else:
                 layers_1_2 = np.concatenate([layers_1_2, next_section])
 
-        # Combine layer_3
-        layer_3 = section_audios[0]['layer_3']
+        # Combine layer_3a (heartbeat)
+        layer_3a_heartbeat = section_audios[0]['layer_3a_heartbeat']
         for i in range(1, len(section_audios)):
-            next_section = section_audios[i]['layer_3']
+            next_section = section_audios[i]['layer_3a_heartbeat']
 
-            if len(layer_3) > crossfade_samples and len(next_section) > crossfade_samples:
+            if len(layer_3a_heartbeat) > crossfade_samples and len(next_section) > crossfade_samples:
                 fade_out = np.linspace(1.0, 0.0, crossfade_samples)
-                layer_3[-crossfade_samples:] *= fade_out
+                layer_3a_heartbeat[-crossfade_samples:] *= fade_out
                 fade_in = np.linspace(0.0, 1.0, crossfade_samples)
                 next_section[:crossfade_samples] *= fade_in
-                layer_3 = np.concatenate([
-                    layer_3[:-crossfade_samples],
-                    layer_3[-crossfade_samples:] + next_section[:crossfade_samples],
+                layer_3a_heartbeat = np.concatenate([
+                    layer_3a_heartbeat[:-crossfade_samples],
+                    layer_3a_heartbeat[-crossfade_samples:] + next_section[:crossfade_samples],
                     next_section[crossfade_samples:]
                 ])
             else:
-                layer_3 = np.concatenate([layer_3, next_section])
+                layer_3a_heartbeat = np.concatenate([layer_3a_heartbeat, next_section])
 
-        # Combine mono for now (will convert to stereo next)
-        composition = layers_1_2 + layer_3
+        # Combine layer_3b (moments)
+        layer_3b_moments = section_audios[0]['layer_3b_moments']
+        for i in range(1, len(section_audios)):
+            next_section = section_audios[i]['layer_3b_moments']
+
+            if len(layer_3b_moments) > crossfade_samples and len(next_section) > crossfade_samples:
+                fade_out = np.linspace(1.0, 0.0, crossfade_samples)
+                layer_3b_moments[-crossfade_samples:] *= fade_out
+                fade_in = np.linspace(0.0, 1.0, crossfade_samples)
+                next_section[:crossfade_samples] *= fade_in
+                layer_3b_moments = np.concatenate([
+                    layer_3b_moments[:-crossfade_samples],
+                    layer_3b_moments[-crossfade_samples:] + next_section[:crossfade_samples],
+                    next_section[crossfade_samples:]
+                ])
+            else:
+                layer_3b_moments = np.concatenate([layer_3b_moments, next_section])
 
         # Convert to stereo if configured (BEFORE normalization)
         if self.config.WAV_OUTPUT['channels'] == 2:
@@ -2278,35 +2385,39 @@ class ChessSynthComposer:
             stereo_12 = stereo_width(layers_1_2, width=width_12, center_pan=0.0)
             print(f"  Layer 1+2: Centered, width={width_12:.2f}")
 
-            # Layer 3: ENTROPY-DRIVEN dynamic panning (Spiegel principle)
+            # Layer 3a: HEARTBEAT - centered (biological constant)
+            stereo_3a = pan_mono_to_stereo(layer_3a_heartbeat, pan_position=0.5)  # Dead center
+            print(f"  Layer 3a (heartbeat): Centered (biological anchor)")
+
+            # Layer 3b: MOMENTS - ENTROPY-DRIVEN dynamic panning (Spiegel principle)
             # Combine entropy curves from all sections
             entropy_combined = np.concatenate([s['entropy_curve'] for s in section_audios])
 
-            # Resample entropy to match layer_3 length
+            # Resample entropy to match layer_3b length
             if len(entropy_combined) > 1:
                 entropy_resampled = np.interp(
-                    np.linspace(0, len(entropy_combined)-1, len(layer_3)),
+                    np.linspace(0, len(entropy_combined)-1, len(layer_3b_moments)),
                     np.arange(len(entropy_combined)),
                     entropy_combined
                 )
             else:
-                entropy_resampled = np.ones(len(layer_3)) * 0.5
+                entropy_resampled = np.ones(len(layer_3b_moments)) * 0.5
 
             # Map entropy to pan: low=centered, high=wide movement
             # Use absolute deviation from center for pan amount
             # Add slow oscillation for direction
             pan_amount = np.abs(entropy_resampled - 0.5) * 2.0 * self.config.STEREO_CONFIG['entropy_pan_amount']
-            pan_direction = np.sin(np.linspace(0, 3*np.pi, len(layer_3)))  # Slow L/R oscillation
+            pan_direction = np.sin(np.linspace(0, 3*np.pi, len(layer_3b_moments)))  # Slow L/R oscillation
             pan_curve = pan_amount * pan_direction
             pan_curve = np.clip(pan_curve, -1.0, 1.0)
 
-            stereo_3 = apply_dynamic_pan(layer_3, pan_curve)
+            stereo_3b = apply_dynamic_pan(layer_3b_moments, pan_curve)
             avg_entropy = np.mean(entropy_resampled)
-            print(f"  Layer 3: Entropy-driven panning (avg={avg_entropy:.3f}, complexity→position)")
+            print(f"  Layer 3b (moments): Entropy-driven panning (avg={avg_entropy:.3f}, complexity→position)")
 
             # Mix stereo layers
-            composition = mix_stereo([stereo_12, stereo_3])
-            print(f"  Result: Layer 3 travels across stereo field dynamically!")
+            composition = mix_stereo([stereo_12, stereo_3a, stereo_3b])
+            print(f"  Result: Heartbeat centered, moments travel dynamically!")
 
         # Master bus processing - AFTER stereo conversion
         print(f"\n{'━' * 50}")
