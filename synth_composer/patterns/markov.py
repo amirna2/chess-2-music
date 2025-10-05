@@ -124,6 +124,9 @@ class MarkovChainPattern(PatternGenerator):
             # Markov transition
             current_note_idx = self._next_note(current_note_idx)
 
+        # Debug output
+        self.print_debug_summary(events)
+
         return events
 
     def _build_transition_matrix(self) -> np.ndarray:

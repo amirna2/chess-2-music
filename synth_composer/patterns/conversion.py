@@ -88,11 +88,16 @@ class FlawlessConversionPattern(PatternGenerator):
                     resonance=final_resonance * 0.6,
                     amp_env=get_envelope('sustained', config),
                     filter_env=get_filter_envelope('closing', config),
+                    amp_env_name='sustained',
+                    filter_env_name='closing',
                     extra_context={'mix_level': config.LAYER_MIXING['pattern_note_level'] * velocity * 0.85}
                 )
                 events.append(event)
 
             pause_samples = int(base_note_dur * 0.18 * params['sample_rate'])
             timing.advance(note_samples + pause_samples)
+
+        # Debug output
+        self.print_debug_summary(events)
 
         return events

@@ -1635,7 +1635,7 @@ class ChessSynthComposer:
         base_drone = np.zeros(total_samples)
 
         if self.config.LAYER_ENABLE['drone']:
-            print(f"  → Layer 1: Evolving drone ({drone_freq:.1f}Hz base)")
+            print(f"  → Layer 1: Evolving drone ({drone_freq:.1f}Hz base) | wave: {waveform} | detune: {current_base['detune']:.1f}¢")
         else:
             print(f"  → Layer 1: (muted)")
 
@@ -1654,6 +1654,7 @@ class ChessSynthComposer:
         section_pattern = np.zeros(total_samples)
 
         if self.config.LAYER_ENABLE['patterns']:
+            print(f"  → Layer 2: {narrative} pattern")
             # Use refactored pattern coordinator
             params = {
                 'sample_rate': self.sample_rate,
@@ -1721,10 +1722,10 @@ class ChessSynthComposer:
                     entropy_curve = raw_entropy
 
                 avg_entropy = np.mean(entropy_curve)
-                print(f"  Entropy: mean={avg_entropy:.3f}, range=[{np.min(entropy_curve):.3f}, {np.max(entropy_curve):.3f}]")
+                # Don't print here - will be printed under Layer 3 header
 
             except Exception as e:
-                print(f"  Entropy: (calculation failed: {e})")
+                # Don't print here - will be printed under Layer 3 header
                 entropy_curve = None
 
         # LAYER 3: CONTINUOUS SEQUENCER
@@ -1732,7 +1733,13 @@ class ChessSynthComposer:
         filtered_sequence = np.zeros_like(samples)
 
         if self.config.LAYER_ENABLE['sequencer']:
-            print(f"  → Layer 3: Sequencer ({key_moments_count} key moments, entropy-driven)")
+            amp_env = self.config.SEQUENCER_SYNTH['amp_env']
+            filter_env = self.config.SEQUENCER_SYNTH['filter_env']
+            print(f"  → Layer 3: Sequencer ({key_moments_count} key moments) | wave: supersaw | amp: {amp_env[0]:.3f} {amp_env[1]:.2f} {amp_env[2]:.2f} {amp_env[3]:.2f} | filter: {filter_env[0]:.3f} {filter_env[1]:.2f} {filter_env[2]:.2f} {filter_env[3]:.2f}")
+            # Print entropy info if available
+            if entropy_curve is not None and len(entropy_curve) > 0:
+                avg_entropy = np.mean(entropy_curve)
+                print(f"      entropy: mean={avg_entropy:.3f}, range=[{np.min(entropy_curve):.3f}, {np.max(entropy_curve):.3f}]")
         else:
             print(f"  → Layer 3: (muted)")
 
@@ -1819,13 +1826,26 @@ class ChessSynthComposer:
 
             moment_events.sort(key=lambda x: x['start_time'])
 
-            # Debug: Print moment event timeline
+            # Debug: Print moment event timeline with synthesis info
             if moment_events:
-                print(f"  → Moment events ({len(moment_events)}):")
+                amp_env = self.config.SEQUENCER_SYNTH['amp_env']
+                filter_env = self.config.SEQUENCER_SYNTH['filter_env']
+                print(f"  → Moment events ({len(moment_events)}) | wave: supersaw | amp: {amp_env[0]:.3f} {amp_env[1]:.2f} {amp_env[2]:.2f} {amp_env[3]:.2f} | filter: {filter_env[0]:.3f} {filter_env[1]:.2f} {filter_env[2]:.2f} {filter_env[3]:.2f}")
                 for event in moment_events:
-                    print(f"      {event['type']:<20} t={event['start_time']:>5.1f}s-{event['end_time']:>5.1f}s "
-                          f"(dur={event['end_time']-event['start_time']:.1f}s, score={event['score']}, "
-                          f"mix={event['mix_amount']:.2f}, filter_mod={event['filter_mod']:.0f}Hz)")
+                    pattern_name = event['type']
+                    pattern_preview = ""
+                    if pattern_name in self.config.SEQUENCER_PATTERNS:
+                        pat = self.config.SEQUENCER_PATTERNS[pattern_name]
+                        if isinstance(pat, dict):  # DEVELOPMENT has sub-patterns
+                            pattern_preview = "prog"
+                        else:
+                            # Show first 6 steps with zero-padded double digits
+                            preview = [f"{x:02d}" if x is not None else '__' for x in pat[:6]]
+                            pattern_preview = ','.join(preview)
+
+                    print(f"      {event['type']:<18} t={event['start_time']:05.1f}-{event['end_time']:05.1f}s "
+                          f"| dur={event['end_time']-event['start_time']:.1f}s score={event['score']} "
+                          f"mix={event['mix_amount']:.2f} flt={event['filter_mod']:.0f}Hz | pat:[{pattern_preview},...]")
 
             # Generate sequence with event-based blending
             samples_per_step = int(sixteenth_duration * self.sample_rate)

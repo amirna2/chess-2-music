@@ -345,6 +345,16 @@ class DesperateDefensePattern(PatternGenerator):
             pause_dur = base_note_dur * self.rng.uniform(0.15, 0.35)
             timing.add_pause(pause_dur)
 
+        # Debug output
+        if events:
+            # Count states
+            state_counts = {}
+            for e in events:
+                state = e.extra_context.get('state', 'unknown')
+                state_counts[state] = state_counts.get(state, 0) + 1
+
+            self.print_debug_summary(events, extra_stats={'states': state_counts})
+
         return events
 
     def _state_name(self, state: int) -> str:
@@ -473,6 +483,9 @@ class TacticalChaosPattern(PatternGenerator):
                 pause_dur = base_note_dur * self.rng.uniform(0.2, 0.5)
 
             timing.add_pause(pause_dur)
+
+        # Debug output
+        self.print_debug_summary(events, extra_stats={'burst_mode': f"{sum(1 for e in events if 'square' == e.waveform)}/{len(events)}"})
 
         return events
 
