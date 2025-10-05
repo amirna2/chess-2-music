@@ -86,6 +86,14 @@ def generate_waveform(waveform_type, frequency, duration, samplerate):
         # Pulse wave with 25% duty cycle
         phase = (t * frequency) % 1.0
         return np.where(phase < 0.25, 1.0, -1.0)
+    elif waveform_type == 'supersaw':
+        # 6 detuned sawtooth waves
+        detune_cents = [-15, -9, -4.5, 4.5, 9, 15]
+        supersaw = np.zeros_like(t)
+        for detune in detune_cents:
+            freq_detune = frequency * (2 ** (detune / 1200))
+            supersaw += 2 * (t * freq_detune - np.floor(0.5 + t * freq_detune))
+        return supersaw / 6.0  # Normalize
     else:
         return np.sin(2. * np.pi * frequency * t)
 
@@ -159,11 +167,12 @@ slider_sustain.on_changed(update)
 slider_release.on_changed(update)
 
 # Create buttons for control - row 1 (waveforms)
-btn_sine = Button(ax=fig.add_axes([0.10, 0.03, 0.09, 0.025]), label='Sine')
-btn_saw = Button(ax=fig.add_axes([0.20, 0.03, 0.09, 0.025]), label='Saw')
-btn_square = Button(ax=fig.add_axes([0.30, 0.03, 0.09, 0.025]), label='Square')
-btn_tri = Button(ax=fig.add_axes([0.40, 0.03, 0.09, 0.025]), label='Tri')
-btn_pulse = Button(ax=fig.add_axes([0.50, 0.03, 0.09, 0.025]), label='Pulse')
+btn_sine = Button(ax=fig.add_axes([0.10, 0.03, 0.08, 0.025]), label='Sine')
+btn_saw = Button(ax=fig.add_axes([0.19, 0.03, 0.08, 0.025]), label='Saw')
+btn_square = Button(ax=fig.add_axes([0.28, 0.03, 0.08, 0.025]), label='Square')
+btn_tri = Button(ax=fig.add_axes([0.37, 0.03, 0.08, 0.025]), label='Tri')
+btn_pulse = Button(ax=fig.add_axes([0.46, 0.03, 0.08, 0.025]), label='Pulse')
+btn_supersaw = Button(ax=fig.add_axes([0.55, 0.03, 0.09, 0.025]), label='Supersaw')
 
 # Row 2 (curve type and play)
 btn_curve_linear = Button(ax=fig.add_axes([0.10, 0.005, 0.12, 0.025]), label='Linear')
@@ -198,5 +207,6 @@ btn_saw.on_clicked(on_waveform_clicked('sawtooth'))
 btn_square.on_clicked(on_waveform_clicked('square'))
 btn_tri.on_clicked(on_waveform_clicked('triangle'))
 btn_pulse.on_clicked(on_waveform_clicked('pulse'))
+btn_supersaw.on_clicked(on_waveform_clicked('supersaw'))
 
 plt.show()

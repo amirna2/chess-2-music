@@ -1584,7 +1584,10 @@ class ChessSynthComposer:
         key_moments_count = len(section.get('key_moments', []))
         section_num = section_index + 1
 
-        print(f"\nSECTION {section_num}/{total_sections}: {section['name']} ({section_duration}s)")
+        section_start = section.get('_start_time', 0.0)
+        start_mm = int(section_start // 60)
+        start_ss = int(section_start % 60)
+        print(f"\nSECTION {section_num}/{total_sections}: {section['name']} ({section_duration}s) @ {start_mm:02d}:{start_ss:02d}")
         print(f"  Narrative: {narrative} | Tension: {tension:.2f}")
         print(f"  Filter: {final_filter:.0f}Hz | Resonance: {final_resonance:.2f}")
         print(f"  Key Moments: {key_moments_count}")
@@ -2027,7 +2030,7 @@ class ChessSynthComposer:
 
                     # MOMENTS ONLY: No base pattern anymore (heartbeat layer handles that)
                     if not active_moments:
-                        full_sequence.append(None)
+                        full_sequence.append((None, 0.0))
                         continue
 
                     # Process moment patterns (no base pattern - moments only!)
