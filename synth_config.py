@@ -517,7 +517,7 @@ class SynthConfig:
         'TIME_PRESSURE': [0, 12, 0, 12, 0, 12, 0, 12, 0, 12, 0, 12, 0, 12, 0, 12],
         'TIME_SCRAMBLE': [0, 12, 0, 12, 0, 12, 0, 12, 0, 12, 0, 12, 0, 12, 0, 12],
         'SIGNIFICANT_SHIFT': [0, 7, 14, 7, 0, -7, -14, -7, 0, 5, 10, 5, 0, -5, -10, -5],  # Major positional shift: wave motion
-        'PULSE': [0, None, -5, None, None, None, 0, None, -5, None, None, None, 0, None, -5, None],  # Heartbeat: lub-dub pattern
+        'PULSE': [0, None, -2, None, None, None, None, None, 0, None, -2, None, None, None, None, None],  # Heartbeat: LUB-dub (first loud/low, second quiet/lower)
     })
 
     # === SUPERSAW DETUNE PRESETS ===
@@ -622,7 +622,7 @@ class SynthConfig:
         'filter_increment_per_step': 150,
         'filter_env_amount': 2000,
         'resonance': 1.2,
-        'amp_env': (0.001, 0.08, 0.0, 0.25),    # Heartbeat: instant attack, medium decay, no sustain (kick drum thump), medium release
+        'amp_env': (0.003, 0.06, 0.15, 0.20),   # Heartbeat: tested values from heartbeat_designer.py
         'filter_env': (0.01, 0.15, 0.2, 0.2),   # Filter closes quickly for thump effect
         'global_filter_base': 2000,
         'global_filter_lfo_amount': 1500,
@@ -630,18 +630,18 @@ class SynthConfig:
         'global_filter_resonance': 2.0,
         'smoothing_window_sec': 0.005,
         # Heartbeat-specific (base PULSE pattern)
-        'heartbeat_filter': 80,       # Sub-bass range - deep thump
-        'heartbeat_resonance': 0.3,   # Very low - tight, punchy kick
+        'heartbeat_filter': 220,      # Tested value - muffled but audible
+        'heartbeat_resonance': 0.4,   # Minimal, natural
         'heartbeat_use_fixed': True,  # Don't let section modulation change it
     })
 
     # === MOMENT EVENT PARAMETERS ===
     # Controls how key moments are rendered as events with duration and emphasis
     MOMENT_EVENT_PARAMS: Dict = field(default_factory=lambda: {
-        'base_duration_sec': 4.0,          # Base duration for a moment (in seconds)
-        'min_duration_sec': 2.0,           # Minimum audible duration (at least one 16-step cycle)
-        'max_duration_sec': 8.0,           # Maximum duration to prevent overly long moments
-        'score_duration_mult': 0.5,        # Multiplier for score-based duration: duration = base * (1 + score/10 * mult)
+        'base_duration_sec': 2.5,          # Base duration for a moment (shorter to leave heartbeat room)
+        'min_duration_sec': 1.5,           # Minimum audible duration
+        'max_duration_sec': 4.0,           # Maximum duration (reduced to prevent overlap)
+        'score_duration_mult': 0.3,        # Reduced multiplier to keep moments shorter
         'base_mix_amount': 0.3,            # Base mix amount for moment pattern
         'max_mix_amount': 0.9,             # Maximum mix for highest score moments
         'score_mix_mult': 0.06,            # Score multiplier for mix: mix = base + (score * mult)
@@ -649,6 +649,7 @@ class SynthConfig:
         'filter_mod_per_score': 200,       # Additional filter modulation per score point
         'crossfade_duration_sec': 0.5,     # Duration of crossfade between patterns
         'base_pattern_level': 0.4,         # Volume of base PULSE pattern during moments
+        'moment_spacing_sec': 1.0,         # Minimum gap between moments for heartbeat breathing
     })
 
     # === PROCESS TRANSFORMATION PARAMETERS ===

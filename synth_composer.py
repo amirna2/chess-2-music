@@ -1830,6 +1830,34 @@ class ChessSynthComposer:
 
             moment_events.sort(key=lambda x: x['start_time'])
 
+            # Adjust overlapping moments: shorten them to fit, but NEVER skip
+            # This preserves critical chess narratives while leaving some heartbeat room
+            adjusted_events = []
+
+            for i, event in enumerate(moment_events):
+                if i == 0:
+                    # First event - use as is
+                    adjusted_events.append(event)
+                else:
+                    prev_event = adjusted_events[-1]
+
+                    # If this moment starts before previous ends, adjust durations
+                    if event['start_time'] < prev_event['end_time']:
+                        # Calculate overlap
+                        overlap = prev_event['end_time'] - event['start_time']
+
+                        # Shorten previous event to end right when this one starts
+                        prev_event['end_time'] = event['start_time']
+                        prev_event['end_sample'] = int(prev_event['end_time'] * self.sample_rate)
+
+                        # Keep current event as is (or slightly shorten if needed for next)
+                        adjusted_events.append(event)
+                    else:
+                        # No overlap - keep as is
+                        adjusted_events.append(event)
+
+            moment_events = adjusted_events
+
             # Debug: Print moment event timeline with synthesis info
             if moment_events:
                 amp_env = self.config.SEQUENCER_SYNTH['amp_env']
