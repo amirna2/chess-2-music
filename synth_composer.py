@@ -1762,10 +1762,6 @@ class ChessSynthComposer:
             filter_target = 3000
             development_count = 0
 
-            # Debug: Show base pattern
-            pattern_preview = [f"{x:02d}" if x is not None else '__' for x in current_pattern[:8]]
-            print(f"      base pattern: PULSE [{','.join(pattern_preview)}] at {self.config.MOMENT_EVENT_PARAMS['base_pattern_level']*100:.0f}% volume")
-
             # OUTRO: Seeded variation based on total plies
             if section.get('name') == 'OUTRO':
                 # Use total plies as seed for variation
@@ -1884,77 +1880,90 @@ class ChessSynthComposer:
                           f"mix={event['mix_amount']:.2f} flt={event['filter_mod']:.0f}Hz | pat:[{pattern_preview},...]")
 
             # === GENERATE HEARTBEAT SUB-LAYER (3a) ===
-            # Continuous sine wave heartbeat, entropy-driven, always present
-            print(f"  → Layer 3a: Heartbeat sub-drone | wave: sine | filter: {self.config.SEQUENCER_SYNTH['heartbeat_filter']}Hz")
+            # LUB-dub heartbeat pattern (from heartbeat_designer.py testing)
+            cfg = self.config.SEQUENCER_SYNTH
+            print(f"  → Layer 3a: Heartbeat sub-drone | wave: sine | filter: {cfg['heartbeat_filter']}Hz | BPM: {cfg['heartbeat_bpm']}")
 
             def midi_to_freq(midi_note):
                 return 440.0 * 2**((midi_note - 69) / 12.0)
 
-            heartbeat_pattern = self.config.SEQUENCER_PATTERNS['PULSE']
-            heartbeat_root = 36  # Low C (sub-bass range, ~65Hz - like kick drum)
-            heartbeat_sixteenth = sixteenth_duration
-            heartbeat_steps = int(section_duration / heartbeat_sixteenth)
+            # All values from config
+            heartbeat_bpm = cfg['heartbeat_bpm']
+            heartbeat_interval = 60.0 / heartbeat_bpm
+            lub_dub_gap = cfg['heartbeat_lub_dub_gap']
+            heartbeat_amp_env = cfg['heartbeat_amp_env']
+            heartbeat_filter_env = cfg['heartbeat_filter_env']
+            heartbeat_root = cfg['heartbeat_root_midi']
+            dub_offset = cfg['heartbeat_dub_offset']
+            dub_volume = cfg['heartbeat_dub_volume']
 
-            for i in range(heartbeat_steps):
-                step_index = i % 16
-                pattern_value = heartbeat_pattern[step_index]
+            # Calculate durations (from heartbeat_designer.py)
+            lub_duration = heartbeat_amp_env[0] + heartbeat_amp_env[1] + heartbeat_amp_env[3]  # attack + decay + release
+            dub_duration = lub_duration * 0.8  # dub is slightly shorter
+            gap_sec = lub_dub_gap
 
-                if pattern_value is None:
-                    continue
+            # Calculate pause to fill cycle (heartbeat_designer.py line 124)
+            cycle_duration = heartbeat_interval  # 60.0 / BPM
+            pause_sec = cycle_duration - lub_duration - gap_sec - dub_duration
+            if pause_sec < 0:
+                pause_sec = 0.1
 
-                # Get entropy for this position
-                current_time = i * heartbeat_sixteenth
+            # Generate complete heartbeat cycles with ENTROPY-DRIVEN VARIATION
+            current_time = 0.0
+            while current_time < section_duration:
+                # Get entropy for this heartbeat position
                 current_ply = start_ply + int(current_time)
-                note_entropy = 0.5
+                heartbeat_entropy = 0.5
 
                 if entropy_curve is not None and len(entropy_curve) > 0:
                     ply_offset = current_ply - start_ply
                     if 0 <= ply_offset < len(entropy_curve):
-                        note_entropy = entropy_curve[ply_offset]
+                        heartbeat_entropy = entropy_curve[ply_offset]
 
-                # ENTROPY-DRIVEN NOTE SELECTION (like moment sequencer)
+                # ENTROPY-DRIVEN BPM VARIATION
+                # Low entropy = slower, calmer (60 BPM)
+                # High entropy = faster, anxious (80 BPM)
                 ec = self.config.ENTROPY_CONFIG
-                low_thresh = ec['low_threshold']
-                high_thresh = ec['high_threshold']
+                bpm_variation = heartbeat_entropy * 10  # 0-10 BPM variation
+                varied_bpm = heartbeat_bpm + bpm_variation
+                varied_interval = 60.0 / varied_bpm
+                varied_pause = varied_interval - lub_duration - gap_sec - dub_duration
+                if varied_pause < 0:
+                    varied_pause = 0.05
 
-                if note_entropy < low_thresh:
-                    available_intervals = ec['note_pools']['low']  # Simple
-                elif note_entropy < high_thresh:
-                    available_intervals = ec['note_pools']['medium']  # Moderate
-                else:
-                    available_intervals = ec['note_pools']['high']  # Complex
+                # ENTROPY-DRIVEN PITCH VARIATION
+                # Low entropy = stable root note
+                # High entropy = slight pitch wobble (+/- 2 semitones)
+                pitch_variation = int((heartbeat_entropy - 0.5) * 4)  # -2 to +2 semitones
+                varied_root = heartbeat_root + pitch_variation
 
-                # Use pattern interval if in pool, otherwise pick random
-                if pattern_value not in available_intervals:
-                    pattern_value = self.rng.choice(available_intervals)
+                # Calculate frequencies with entropy variation
+                lub_freq = midi_to_freq(varied_root)
+                dub_freq = midi_to_freq(varied_root + dub_offset)
 
-                heartbeat_midi = heartbeat_root + pattern_value
-                heartbeat_freq = midi_to_freq(heartbeat_midi)
-
-                # Generate heartbeat note with SINE wave
-                heartbeat_audio = self.synth_layer3.create_synth_note(
-                    freq=heartbeat_freq,
-                    duration=heartbeat_sixteenth,
-                    waveform='sine',  # Pure sine for heartbeat!
-                    filter_base=self.config.SEQUENCER_SYNTH['heartbeat_filter'],
-                    filter_env_amount=0,  # Minimal filter movement for heartbeat
-                    resonance=self.config.SEQUENCER_SYNTH['heartbeat_resonance'],
-                    amp_env=self.config.SEQUENCER_SYNTH['amp_env'],
-                    filter_env=self.config.SEQUENCER_SYNTH['filter_env']
+                # Generate complete cycle (LUB + gap + dub + pause)
+                cycle_audio = self.synth_layer3.create_heartbeat_cycle(
+                    lub_freq=lub_freq,
+                    dub_freq=dub_freq,
+                    lub_duration=lub_duration,
+                    dub_duration=dub_duration,
+                    gap_sec=gap_sec,
+                    pause_sec=varied_pause,  # Use entropy-varied pause
+                    dub_volume=dub_volume,
+                    filter_cutoff=cfg['heartbeat_filter'],
+                    resonance=cfg['heartbeat_resonance'],
+                    amp_env=heartbeat_amp_env,
+                    filter_env=heartbeat_filter_env
                 )
 
-                # Apply gentle crossfade to prevent clicks/artifacts between notes
-                # (Anti-clipping strategy: smooth transitions per architecture doc)
-                fade_samples = min(int(0.005 * self.sample_rate), len(heartbeat_audio) // 8)  # 5ms fade
-                if fade_samples > 1:
-                    # Fade out last 5ms to prevent clicks
-                    heartbeat_audio[-fade_samples:] *= np.linspace(1.0, 0.0, fade_samples)
+                # Add complete cycle to heartbeat layer
+                cycle_start = int(current_time * self.sample_rate)
+                cycle_end = min(cycle_start + len(cycle_audio), len(heartbeat_layer))
+                if cycle_end > cycle_start:
+                    heartbeat_layer[cycle_start:cycle_end] += cycle_audio[:cycle_end-cycle_start] * 0.25
 
-                # Add to heartbeat layer
-                start_pos = int(i * heartbeat_sixteenth * self.sample_rate)
-                end_pos = min(start_pos + len(heartbeat_audio), len(heartbeat_layer))
-                if end_pos > start_pos:
-                    heartbeat_layer[start_pos:end_pos] += heartbeat_audio[:end_pos-start_pos] * 0.3  # Heartbeat volume (reduced to prevent clipping)
+                # Advance by entropy-varied cycle duration
+                current_time += varied_interval
 
             # === GENERATE MOMENT SEQUENCER SUB-LAYER (3b) ===
             # Event-driven supersaw sequences for chess moments
@@ -2016,58 +2025,43 @@ class ChessSynthComposer:
                     # Get active moments at this time
                     active_moments = get_active_moments(current_time)
 
-                    # Start with base pattern
-                    base_pattern = current_pattern
-                    base_interval = base_pattern[step_index]
+                    # MOMENTS ONLY: No base pattern anymore (heartbeat layer handles that)
+                    if not active_moments:
+                        full_sequence.append(None)
+                        continue
 
-                    # Blend with moment patterns
-                    if active_moments:
-                        # Use highest score moment as primary
-                        primary_moment = max(active_moments, key=lambda m: m['score'])
-                        moment_type = primary_moment['type']
+                    # Process moment patterns (no base pattern - moments only!)
+                    # Use highest score moment as primary
+                    primary_moment = max(active_moments, key=lambda m: m['score'])
+                    moment_type = primary_moment['type']
 
-                        # Get moment pattern
-                        if moment_type in self.config.SEQUENCER_PATTERNS:
-                            if moment_type == 'DEVELOPMENT':
-                                # Handle DEVELOPMENT progression
-                                development_count += 1
-                                if development_count == 1:
-                                    moment_pattern = self.config.SEQUENCER_PATTERNS['DEVELOPMENT']['early']
-                                elif development_count == 2:
-                                    moment_pattern = self.config.SEQUENCER_PATTERNS['DEVELOPMENT']['mid']
-                                else:
-                                    moment_pattern = self.config.SEQUENCER_PATTERNS['DEVELOPMENT']['full']
-                                current_root = min(current_root + 7, 72)
-                                filter_target = min(filter_target + 500, 5000)
+                    # Get moment pattern - use it directly (no blending)
+                    note_interval = None
+                    if moment_type in self.config.SEQUENCER_PATTERNS:
+                        if moment_type == 'DEVELOPMENT':
+                            # Handle DEVELOPMENT progression
+                            development_count += 1
+                            if development_count == 1:
+                                moment_pattern = self.config.SEQUENCER_PATTERNS['DEVELOPMENT']['early']
+                            elif development_count == 2:
+                                moment_pattern = self.config.SEQUENCER_PATTERNS['DEVELOPMENT']['mid']
                             else:
-                                moment_pattern = self.config.SEQUENCER_PATTERNS[moment_type]
-
-                                # Adjust root and filter based on moment type
-                                if moment_type in ['BLUNDER', 'MISTAKE', 'INACCURACY']:
-                                    current_root = max(current_root - 12, 36)
-                                    filter_target = 1000 + primary_moment['filter_mod']
-                                elif moment_type in ['BRILLIANT', 'STRONG']:
-                                    current_root = min(current_root + 12, 84)
-                                    filter_target = 3000 + primary_moment['filter_mod']
-
-                            moment_interval = moment_pattern[step_index]
-
-                            # Blend intervals based on mix amount and blend factor
-                            total_blend = primary_moment['mix_amount'] * primary_moment['blend_factor']
-
-                            if base_interval is not None and moment_interval is not None:
-                                # Both patterns have notes - blend them
-                                note_interval = int(base_interval * (1 - total_blend) + moment_interval * total_blend)
-                            elif moment_interval is not None:
-                                # Only moment has note
-                                note_interval = moment_interval if total_blend > 0.5 else base_interval
-                            else:
-                                # Use base
-                                note_interval = base_interval
+                                moment_pattern = self.config.SEQUENCER_PATTERNS['DEVELOPMENT']['full']
+                            current_root = min(current_root + 7, 72)
+                            filter_target = min(filter_target + 500, 5000)
                         else:
-                            note_interval = base_interval
-                    else:
-                        note_interval = base_interval
+                            moment_pattern = self.config.SEQUENCER_PATTERNS[moment_type]
+
+                            # Adjust root and filter based on moment type
+                            if moment_type in ['BLUNDER', 'MISTAKE', 'INACCURACY']:
+                                current_root = max(current_root - 12, 36)
+                                filter_target = 1000 + primary_moment['filter_mod']
+                            elif moment_type in ['BRILLIANT', 'STRONG']:
+                                current_root = min(current_root + 12, 84)
+                                filter_target = 3000 + primary_moment['filter_mod']
+
+                        # Use moment pattern directly (no base pattern to blend with)
+                        note_interval = moment_pattern[step_index]
 
                     # ENTROPY-DRIVEN NOTE MODIFICATION
                     # Modify note interval based on position complexity
@@ -2170,18 +2164,9 @@ class ChessSynthComposer:
                         self.last_layer3_amp_env = amp_env_to_use
                         self.last_layer3_filter_env = filter_env_to_use
 
-                    # Generate main note
-                    # Check if this is base heartbeat (no active moments) and use fixed heartbeat filter
-                    is_heartbeat = len(active_moments) == 0 and self.config.SEQUENCER_SYNTH.get('heartbeat_use_fixed', False)
-
-                    if is_heartbeat:
-                        # Use fixed muffled heartbeat sound (like stethoscope)
-                        filter_to_use = self.config.SEQUENCER_SYNTH['heartbeat_filter']
-                        resonance_to_use = self.config.SEQUENCER_SYNTH['heartbeat_resonance']
-                    else:
-                        # Use normal evolving filter/resonance
-                        filter_to_use = self.config.SEQUENCER_SYNTH['filter_base_start'] + (i * self.config.SEQUENCER_SYNTH['filter_increment_per_step'])
-                        resonance_to_use = self.config.SEQUENCER_SYNTH['resonance']
+                    # Generate main note with evolving filter (moments only - heartbeat is separate layer)
+                    filter_to_use = self.config.SEQUENCER_SYNTH['filter_base_start'] + (i * self.config.SEQUENCER_SYNTH['filter_increment_per_step'])
+                    resonance_to_use = self.config.SEQUENCER_SYNTH['resonance']
 
                     note_audio = self.synth_layer3.supersaw(
                         target_freq,

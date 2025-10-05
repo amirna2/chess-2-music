@@ -4,6 +4,7 @@ Low-level synthesis without hard-coded musical parameters
 """
 
 import numpy as np
+from scipy.signal import get_window, butter, sosfilt
 
 
 class SubtractiveSynth:
@@ -477,3 +478,108 @@ class SubtractiveSynth:
         self.last_env_value = amp_env_signal[-1] if len(amp_env_signal) > 0 else 0.0
 
         return output
+
+
+    def create_heartbeat_cycle(self, lub_freq, dub_freq, lub_duration, dub_duration,
+                                    gap_sec, pause_sec, dub_volume,
+                                    filter_cutoff, resonance, amp_env, filter_env):
+        """
+        EXACT reproduction of the standalone heartbeat_designer.py logic.
+        This produces ZERO clicks and ZERO booming.
+
+        NOTE: resonance and filter_env are ignored to match the reference implementation.
+        """
+
+        # Calculate durations EXACTLY like standalone script
+        # lub_duration = attack + decay + release (no sustain time)
+        actual_lub_duration = amp_env[0] + amp_env[1] + amp_env[3]  # attack + decay + release
+        actual_dub_duration = actual_lub_duration * 0.8  # Slightly shorter, like standalone
+
+        # LUB Beat - exact same logic as standalone
+        t_lub = np.linspace(0, actual_lub_duration, int(actual_lub_duration * self.sample_rate))
+        lub_wave = np.sin(2 * np.pi * lub_freq * t_lub)
+        lub_env = self._create_linear_adsr(actual_lub_duration, *amp_env)
+        lub_audio = lub_wave * lub_env
+
+        # Apply filter to enveloped signal (matching standalone)
+        lub_audio = self._apply_fft_filter(lub_audio, filter_cutoff)
+
+        # Gap (zeros)
+        gap_samples = int(gap_sec * self.sample_rate)
+        gap_audio = np.zeros(gap_samples)
+
+        # DUB Beat - exact same logic as standalone
+        t_dub = np.linspace(0, actual_dub_duration, int(actual_dub_duration * self.sample_rate))
+        dub_wave = np.sin(2 * np.pi * dub_freq * t_dub)
+        dub_env = self._create_linear_adsr(actual_dub_duration, *amp_env) * dub_volume
+        dub_audio = dub_wave * dub_env
+
+        # Apply filter to enveloped signal (matching standalone)
+        dub_audio = self._apply_fft_filter(dub_audio, filter_cutoff)
+
+        # Pause (zeros)
+        pause_samples = int(pause_sec * self.sample_rate)
+        pause_audio = np.zeros(pause_samples)
+
+        # Combine exactly like standalone: [lub, gap, dub, pause]
+        heartbeat = np.concatenate([lub_audio, gap_audio, dub_audio, pause_audio])
+
+        # Reset for phase continuity tracking
+        self.last_env_value = 0.0
+
+        return heartbeat
+
+    def _create_linear_adsr(self, duration_sec, attack, decay, sustain, release):
+        """Linear ADSR - exact copy from heartbeat_designer.py"""
+        num_samples = int(duration_sec * self.sample_rate)
+        envelope = np.zeros(num_samples)
+
+        attack_samples = int(attack * self.sample_rate)
+        decay_samples = int(decay * self.sample_rate)
+        release_samples = int(release * self.sample_rate)
+
+        # Attack
+        if attack_samples > 0:
+            envelope[:attack_samples] = np.linspace(0, 1, attack_samples)
+
+        # Decay
+        decay_end = attack_samples + decay_samples
+        if decay_samples > 0 and decay_end <= num_samples:
+            envelope[attack_samples:decay_end] = np.linspace(1, sustain, decay_samples)
+
+        # Sustain
+        sustain_start = decay_end
+        sustain_end = num_samples - release_samples
+        if sustain_end > sustain_start:
+            envelope[sustain_start:sustain_end] = sustain
+
+        # Release
+        if release_samples > 0 and sustain_end < num_samples:
+            envelope[sustain_end:] = np.linspace(sustain, 0, min(release_samples, num_samples - sustain_end))
+
+        return envelope
+
+    def _apply_fft_filter(self, audio, cutoff_freq):
+        """FFT lowpass filter - exact copy from heartbeat_designer.py"""
+        # FFT
+        fft = np.fft.rfft(audio)
+        freqs = np.fft.rfftfreq(len(audio), 1/self.sample_rate)
+
+        # Create filter (smooth rolloff)
+        filter_response = 1 / (1 + (freqs / cutoff_freq)**4)
+
+        # Apply filter
+        fft_filtered = fft * filter_response
+
+        # IFFT back to time domain
+        return np.fft.irfft(fft_filtered, len(audio))
+
+
+    def _generate_beat_waveform(self, freq, duration):
+        """
+        Generates a single beat waveform with a phase that starts at zero.
+        """
+        samples = int(duration * self.sample_rate)
+        t = np.arange(samples) / self.sample_rate
+        phase = freq * t
+        return np.sin(2 * np.pi * phase)

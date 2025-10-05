@@ -545,7 +545,7 @@ class SynthConfig:
     # === LAYER MUTING (True = enabled, False = muted) ===
     LAYER_ENABLE: Dict[str, bool] = field(default_factory=lambda: {
         'drone': True,      # Layer 1: Base drone (overall narrative)
-        'patterns': False,  # Layer 2: Rhythmic patterns (section narrative)
+        'patterns': True,  # Layer 2: Rhythmic patterns (section narrative)
         'sequencer': True,  # Layer 3: Continuous sequencer (heartbeat)
         'moments': True,    # Key moment punctuation
     })
@@ -622,17 +622,23 @@ class SynthConfig:
         'filter_increment_per_step': 150,
         'filter_env_amount': 2000,
         'resonance': 1.2,
-        'amp_env': (0.003, 0.06, 0.15, 0.20),   # Heartbeat: tested values from heartbeat_designer.py
-        'filter_env': (0.01, 0.15, 0.2, 0.2),   # Filter closes quickly for thump effect
+        'amp_env': (0.02, 0.1, 0.9, 0.8),      # MOMENTS envelope (restored from 8343de4)
+        'filter_env': (0.02, 0.2, 0.7, 0.3),   # MOMENTS filter envelope (restored from 8343de4)
         'global_filter_base': 2000,
         'global_filter_lfo_amount': 1500,
         'global_filter_sweep_amount': 1000,
         'global_filter_resonance': 2.0,
         'smoothing_window_sec': 0.005,
-        # Heartbeat-specific (base PULSE pattern)
-        'heartbeat_filter': 220,      # Tested value - muffled but audible
-        'heartbeat_resonance': 0.4,   # Minimal, natural
-        'heartbeat_use_fixed': True,  # Don't let section modulation change it
+        # Heartbeat-specific (from heartbeat_designer.py testing)
+        'heartbeat_filter': 220,                      # Tested value - muffled but audible
+        'heartbeat_resonance': 0.0,                   # Minimal, natural
+        'heartbeat_bpm': 70,                          # Heartbeat rate
+        'heartbeat_lub_dub_gap': 0.080,               # 80ms gap between LUB and dub
+        'heartbeat_root_midi': 36,                    # Low C (~65Hz sub-bass)
+        'heartbeat_dub_offset': -2,                   # dub is 2 semitones lower than LUB
+        'heartbeat_dub_volume': 0.7,                  # dub is 70% volume of LUB
+        'heartbeat_amp_env': (0.003, 0.06, 0.03, 0.20),  # Heartbeat-only ADSR
+        'heartbeat_filter_env': (0.01, 0.1, 0.0, 0.1),   # Heartbeat-only filter envelope
     })
 
     # === MOMENT EVENT PARAMETERS ===
