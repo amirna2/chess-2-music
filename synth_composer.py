@@ -2014,7 +2014,7 @@ class ChessSynthComposer:
                 full_sequence = []
                 for i in range(total_steps):
                     step_index = i % 16
-                    current_time = i * sixteenth_duration
+                    current_time = i * base_note_duration
                     current_sample = int(current_time * self.sample_rate)
 
                     # ENTROPY-DRIVEN NOTE SELECTION
@@ -2133,7 +2133,7 @@ class ChessSynthComposer:
                         # Create frequency glide from prev to target
                         ec = self.config.ENTROPY_CONFIG
                         glide_reduction = note_entropy * ec['glide_reduction_max']  # 0 to 0.5
-                        glide_time = sixteenth_duration * 0.3 * (1.0 - glide_reduction)  # Reduce glide at high entropy
+                        glide_time = base_note_duration * 0.5 * (1.0 - glide_reduction)  # 50% of note duration for smooth legato
                         glide_samples = int(glide_time * self.sample_rate)
                         freq_curve = np.linspace(prev_freq, target_freq, glide_samples)
 
@@ -2172,10 +2172,10 @@ class ChessSynthComposer:
                     filter_to_use = self.config.SEQUENCER_SYNTH['filter_base_start'] + (i * self.config.SEQUENCER_SYNTH['filter_increment_per_step'])
                     resonance_to_use = self.config.SEQUENCER_SYNTH['resonance']
 
-                    note_audio = self.synth_layer3.supersaw(
+                    note_audio = self.synth_layer3.create_synth_note(
                         target_freq,
                         actual_duration,
-                        detune_cents=self.config.SEQUENCER_SYNTH['detune_cents'],
+                        waveform='saw',
                         filter_base=filter_to_use,
                         filter_env_amount=self.config.SEQUENCER_SYNTH['filter_env_amount'],
                         resonance=resonance_to_use,

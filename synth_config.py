@@ -537,7 +537,7 @@ class SynthConfig:
         'phrase_pause_sec': 0.15,
         'chunk_size_samples': 512,
         'filter_chunk_size_samples': 64,
-        'sequencer_overlap': 0.98,
+        'sequencer_overlap': 1.5,  # 150% overlap for smooth legato blending
         'lfo_frequency': 0.1,
         'sequencer_lfo_frequency': 0.25,
     })
@@ -561,7 +561,7 @@ class SynthConfig:
         'sidechain_amount': 0.3,
         'supersaw_compression': 0.8,
         'supersaw_gain': 1.25,
-        'filtered_sequence_level': 0.5,
+        'filtered_sequence_level': 0.7,  # Boosted for audible moments
         'ducking_amount': 0.3,
         'soft_clip_pre': 0.9,
         'soft_clip_post': 0.95,
@@ -572,7 +572,7 @@ class SynthConfig:
         'drone_in_supersaw': 0.3,
         'pattern_in_supersaw': 0.7,
         'pattern_note_level': 0.2,
-        'sequencer_note_level': 0.4,
+        'sequencer_note_level': 0.8,  # Boosted for audible moments
         'lfo_modulation_depth': 0.1,
     })
 
@@ -622,7 +622,7 @@ class SynthConfig:
         'filter_increment_per_step': 150,
         'filter_env_amount': 2000,
         'resonance': 1.2,
-        'amp_env': (0.02, 0.1, 0.9, 0.8),      # MOMENTS envelope (restored from 8343de4)
+        'amp_env': (0.1, 0.05, 0.9, 0.3),      # Legato envelope - soft attack for smooth melodic lines
         'filter_env': (0.02, 0.2, 0.7, 0.3),   # MOMENTS filter envelope (restored from 8343de4)
         'global_filter_base': 2000,
         'global_filter_lfo_amount': 1500,
