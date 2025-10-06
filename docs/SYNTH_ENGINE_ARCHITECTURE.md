@@ -349,6 +349,75 @@ def adsr_envelope(self, num_samples, attack=0.01, decay=0.1,
 
 ---
 
+## Heartbeat Synthesis
+
+### Biological LUB-dub Pattern
+
+A specialized synthesis method for creating click-free cardiac rhythms with precise timing control.
+
+```python
+def create_heartbeat_cycle(self, lub_freq, dub_freq, lub_duration, dub_duration,
+                                gap_sec, pause_sec, dub_volume,
+                                filter_cutoff, resonance, amp_env, filter_env):
+    # LUB beat - sine wave with linear ADSR
+    t_lub = np.linspace(0, actual_lub_duration, int(actual_lub_duration * self.sample_rate))
+    lub_wave = np.sin(2 * np.pi * lub_freq * t_lub)
+    lub_env = self._create_linear_adsr(actual_lub_duration, *amp_env)
+    lub_audio = lub_wave * lub_env
+    lub_audio = self._apply_lowpass_filter(lub_audio, filter_cutoff)
+
+    # Gap (silence)
+    gap_audio = np.zeros(int(gap_sec * self.sample_rate))
+
+    # DUB beat - quieter, slightly lower pitch
+    t_dub = np.linspace(0, actual_dub_duration, int(actual_dub_duration * self.sample_rate))
+    dub_wave = np.sin(2 * np.pi * dub_freq * t_dub)
+    dub_env = self._create_linear_adsr(actual_dub_duration, *amp_env) * dub_volume
+    dub_audio = dub_wave * dub_env
+    dub_audio = self._apply_lowpass_filter(dub_audio, filter_cutoff)
+
+    # Pause (silence to complete BPM cycle)
+    pause_audio = np.zeros(int(pause_sec * self.sample_rate))
+
+    # Combine: [LUB, gap, dub, pause]
+    heartbeat = np.concatenate([lub_audio, gap_audio, dub_audio, pause_audio])
+    return heartbeat
+```
+
+### Key Design Choices
+
+1. **Linear ADSR instead of exponential**: Cardiac contractions have more linear attack/release profiles than musical instruments
+2. **Lowpass filter on enveloped signal**: Prevents pre-ringing artifacts that would occur with filter→envelope ordering
+3. **Precise duration calculation**: `lub_duration = attack + decay + release` (no sustain segment)
+4. **Silence gaps**: Explicit zero arrays prevent numerical artifacts
+5. **Volume ratio**: DUB is typically 70-80% of LUB amplitude
+
+### Timing Structure
+
+```
+Total cycle = LUB + gap + DUB + pause
+
+Where:
+  LUB duration   = amp_env[0] + amp_env[1] + amp_env[3]  # A+D+R
+  gap            = ~0.15s (short silence)
+  DUB duration   = LUB duration * 0.8 (slightly shorter)
+  pause          = Calculated to match target BPM
+
+BPM = 60 / (lub_duration + gap + dub_duration + pause)
+```
+
+### Click Prevention
+
+Unlike `create_synth_note()` which uses phase continuity and crossfading, heartbeats use:
+- **Complete cycle isolation**: Each cycle starts/ends at zero
+- **Linear envelopes**: Gentler attack/release than exponential curves
+- **Post-envelope filtering**: Filter applied after amplitude shaping
+- **Explicit silence**: Zero arrays between beats
+
+**Rationale**: Heartbeats are discrete events (not continuous tones), so cycle boundaries naturally fall silent. This eliminates need for phase tracking.
+
+---
+
 ## Denormal Protection
 
 ### The Problem: CPU Spikes from Tiny Values

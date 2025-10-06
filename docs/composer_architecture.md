@@ -356,14 +356,49 @@ def create_narrative_process(narrative, duration, plies):
 - Same game produces identical output (ECO seeding)
 - Different openings produce different patterns
 
-### Layer 3: Key Moments (Entropy-Driven Sequencer)
-**Jarre-esque arpeggiated sequences with Spiegel-inspired continuous evolution**
+### Layer 3: Key Moments (Split into Two Sub-Layers)
+**Redesigned as dual-layer system: biological heartbeat foundation + event-driven moments**
+
+**Architecture:**
+Layer 3 is split into two independent sub-layers with different stereo treatment:
+
+#### Layer 3a: Heartbeat Sub-Drone (Biological Foundation)
+**LUB-dub cardiac rhythm providing organic temporal anchor**
 
 **Implementation:**
-- 16-step MIDI-style sequencer patterns as templates
-- **Continuously modulated by evaluation volatility entropy**
-- Supersaw synthesis with global filter sweeps
-- Classic electronic music aesthetic with organic evolution
+- Sine wave synthesis with precise LUB-dub pattern (from `heartbeat_designer.py`)
+- Entropy-driven variation (BPM, pitch, timing jitter)
+- Low-pass filtered for sub-bass/thump character
+- Click-free using linear ADSR and dedicated filter
+
+**Heartbeat Pattern:**
+```python
+# LUB-dub cycle structure
+lub_beat    # Main "LUB" (attack + decay + release)
+gap         # Short silence (~0.15s)
+dub_beat    # Quieter "dub" (80% volume, lower pitch)
+pause       # Rest to complete BPM cycle
+```
+
+**Entropy-Driven Variation:**
+- **BPM modulation**: Low entropy = slow/steady (60 BPM), high = fast/anxious (100 BPM)
+- **Pitch variation**: ±2 semitones around root based on entropy
+- **Timing jitter**: High entropy adds slight randomness to gaps/pauses
+
+**Audio Result:**
+- Biological, organic pulse underlying the composition
+- Continuous presence (not event-triggered)
+- Provides temporal/rhythmic foundation independent of chess events
+- Centered in stereo field (biological constant)
+
+#### Layer 3b: Moment Sequencer (Event-Driven)
+**Supersaw arpeggios triggered by key chess moments**
+
+**Implementation:**
+- Triggered ONLY by key moments (captures, blunders, brilliant moves, etc.)
+- Supersaw synthesis with entropy-driven note selection
+- Global filter sweeps for dramatic effect
+- No continuous base pattern (heartbeat layer handles that role)
 
 **Entropy-Driven Parameters:**
 - **Note selection**: Low entropy = root-fifth, high = chromatic
@@ -373,10 +408,7 @@ def create_narrative_process(narrative, duration, plies):
 - **Harmonic density**: High entropy = add cluster harmonies
 
 ```python
-# Example: Entropy-driven note selection
-current_ply = start_ply + int(current_time)
-entropy = entropy_curve[current_ply - start_ply]
-
+# Moment-triggered synthesis only
 if entropy < 0.3:
     available_notes = [0, 4]  # Simple: root-fifth
 elif entropy < 0.7:
@@ -388,11 +420,17 @@ note = random.choice(available_notes)
 ```
 
 **Audio Result:**
-- **Anticipatory tension**: Music evolves *before* critical moments
-- **Continuous evolution**: Not just event-triggered switches
-- **Context-aware**: Same pattern sounds different based on position complexity
-- **Organic arpeggios**: Repetitive base pattern with constantly varying execution
-- **Emotional arcs**: Rising/falling entropy creates anticipation/resolution
+- **Event-reactive**: Only plays during key chess moments
+- **Context-aware**: Entropy shapes how moments sound
+- **Spatial movement**: Entropy-driven panning (L/R position)
+- **Dramatic emphasis**: Supersaw richness highlights critical events
+
+**Layer 3 Design Philosophy:**
+The split addresses the original problem: Layer 3 needed both continuous presence (temporal foundation) and event emphasis (key moments). By separating these roles:
+- **3a (heartbeat)**: Continuous, biological, centered, entropy-modulated tempo
+- **3b (moments)**: Discrete, dramatic, spatially mobile, event-triggered
+
+This creates musical depth while maintaining clarity of both continuous and discrete narrative elements.
 
 ---
 
