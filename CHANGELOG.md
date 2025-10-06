@@ -2,6 +2,15 @@
 
 All notable changes to the chess-to-music project will be documented in this file.
 
+## [3.3.0] - 2025-10-05
+
+### Added
+- **Comprehensive redesign of Layer3 with heartbeat + moments**
+  - Layer3a: biological heartbeat with low-pass filter
+  - Layer3b: moments sequencer (updated sequence)
+
+
+
 ## [3.2.0] - 2025-10-04
 
 ### Added
