@@ -506,17 +506,17 @@ class SynthConfig:
         'ASYMMETRY': [0, None, 2, None, 0, None, -2, None, 0, 3, None, -3, 0, None, None, None],
         'CRITICAL_SWING': [0, 7, 12, 19, 12, 7, 0, -5, 0, 5, 12, 7, 0, -7, -12, None],
         'GAME_CHANGING': [0, 12, 0, 12, 24, 12, 0, 12, 24, 36, 24, 12, 0, None, None, None],
-        'TACTICAL_SEQUENCE': [0, 0, 0, 12, 0, 0, 0, 12, 0, 0, 0, 12, 0, 0, 0, 12],
+        'TACTICAL_SEQUENCE': [0, 5, 7, None, 5, 10, 12, None, 7, 12, 15, None, 12, 7, 5, 0],  # Bach sequences - tactical precision
         'KING_ATTACK': [0, 0, 0, 12, 0, 0, 0, 12, 0, 0, 0, 12, 0, 0, 0, 12],
-        'BLUNDER': [24, 24, 12, 12, 0, 0, -12, -12, -24, None, None, -36, None, None, None, -48],
-        'MISTAKE': [12, 10, 8, 7, 5, 3, 2, 0, -2, -3, -5, -7, -8, -10, -12, -15],
-        'INACCURACY': [0, None, 3, 2, None, 7, 5, None, 3, None, 0, None, -2, None, 0, None],
-        'FIRST_EXCHANGE': [0, 12, 19, 24, -24, -19, -12, 0, 0, 12, 19, 24, -24, -19, -12, 0],
+        'BLUNDER': [0, -1, -3, -6, -10, -15, None, None, -19, -22, -24, None, -27, -29, -31, -36],  # Accelerating fall - collapse
+        'MISTAKE': [0, 2, 3, 2, 0, -2, -3, -5, -7, -5, -3, -2, 0, None, -2, 0],  # Controlled descent - error recovery
+        'INACCURACY': [0, 1, -1, 2, 0, None, 3, 2, 1, 0, -2, -1, 0, None, 1, 0],  # Chromatic neighbor tones - uncertainty
+        'FIRST_EXCHANGE': [0, 3, 5, 8, 10, 8, 5, 3, 0, -3, -5, -8, -10, -8, -5, -3],  # Mirror symmetry - balanced dialogue
         'MATE_SEQUENCE': [0, None, None, None, -12, None, None, None, 0, None, None, None, -24, None, None, None],
-        'BRILLIANT': [0, 7, 12, 19, 24, 31, 36, 43, 48, 43, 36, 31, 24, 19, 12, 7],
+        'BRILLIANT': [0, 7, 12, 16, 19, 24, 28, 31, 36, 31, 28, 24, 19, 16, 12, 7],  # Harmonic series - ascending triumph
         'TIME_PRESSURE': [0, 12, 0, 12, 0, 12, 0, 12, 0, 12, 0, 12, 0, 12, 0, 12],
         'TIME_SCRAMBLE': [0, 12, 0, 12, 0, 12, 0, 12, 0, 12, 0, 12, 0, 12, 0, 12],
-        'SIGNIFICANT_SHIFT': [0, 7, 14, 7, 0, -7, -14, -7, 0, 5, 10, 5, 0, -5, -10, -5],  # Major positional shift: wave motion
+        'SIGNIFICANT_SHIFT': [0, 4, 7, 11, 12, 11, 7, 3, 0, -1, 3, 6, 7, 6, 3, 0],  # Modal interchange - transformation
         'PULSE': [0, None, -2, None, None, None, None, None, 0, None, -2, None, None, None, None, None],  # Heartbeat: LUB-dub (first loud/low, second quiet/lower)
     })
 

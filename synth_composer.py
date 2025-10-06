@@ -1978,8 +1978,8 @@ class ChessSynthComposer:
 
             # Generate sequence with event-based blending (only if moments enabled)
             if self.config.LAYER_ENABLE.get('moments', True):
-                samples_per_step = int(sixteenth_duration * self.sample_rate)
-                total_steps = int(section_duration / sixteenth_duration)
+                samples_per_step = int(base_note_duration * self.sample_rate)
+                total_steps = int(section_duration / base_note_duration)
 
                 # Helper function to get active moments at a given time
                 def get_active_moments(current_time):
@@ -2145,7 +2145,7 @@ class ChessSynthComposer:
                         glide_audio = np.sin(phase) * 0.3  # Lower volume for glide
 
                         # Add glide to start of note position
-                        start_pos = int(i * samples_per_step * self.config.TIMING['sequencer_overlap'])
+                        start_pos = int(i * samples_per_step)
                         end_pos = min(start_pos + len(glide_audio), len(sequencer_layer))
                         if end_pos > start_pos:
                             sequencer_layer[start_pos:end_pos] += glide_audio[:end_pos-start_pos] * self.config.LAYER_MIXING['sequencer_note_level']
@@ -2183,7 +2183,7 @@ class ChessSynthComposer:
                         filter_env=filter_env_to_use
                     )
 
-                    start_pos = int(i * samples_per_step * self.config.TIMING['sequencer_overlap'])
+                    start_pos = int(i * samples_per_step)
                     end_pos = min(start_pos + len(note_audio), len(sequencer_layer))
 
                     if end_pos > start_pos:
