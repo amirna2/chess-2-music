@@ -1,7 +1,7 @@
 # Layer 3b Implementation: Unified Moment Gesture System
 
-**Status:** Design Document
-**Date:** 2025-10-05
+**Status:** Design Document (Proposed Architecture)
+**Date:** 2025-10-05 (Updated: 2025-10-07)
 **Replaces:** Scattered Layer 3b implementation
 
 ## Overview
@@ -9,6 +9,18 @@
 Layer 3b generates **emotional gesture moments** that punctuate the musical narrative. This document specifies a **unified blueprint architecture** where all gesture archetypes (BLUNDER, BRILLIANT, TIME_PRESSURE, etc.) share the same synthesis pipeline and differ only in configuration parameters.
 
 This architecture **mirrors** the existing `synth_composer/patterns/` system used for Layer 2.
+
+### Architecture Update (2025-10-07)
+
+**IMPORTANT:** `GestureSynthesizer` is designed as a **HIGH-LEVEL wrapper** around the existing `synth_engine.SubtractiveSynth`, similar to how `synth_composer/core/synthesizer.NoteSynthesizer` wraps it for Layer 2.
+
+**Key principle:** Reuse `SubtractiveSynth` for all low-level DSP primitives (oscillators, filters, envelopes) to:
+- ✅ Avoid code duplication
+- ✅ Inherit all click-prevention and anti-aliasing benefits
+- ✅ Maintain architectural consistency
+- ✅ Leverage existing tested synthesis engine
+
+**See also:** `docs/synth_engine_enhancements.md` for required primitives that need to be added to `SubtractiveSynth` to support gesture synthesis.
 
 ---
 
@@ -1161,25 +1173,40 @@ def generate_texture_curve(config: Dict[str, Any],
 """
 Gesture audio synthesis engine.
 
+Renders parameter curves to audio using SubtractiveSynth as foundation.
+
+ARCHITECTURE: This is a HIGH-LEVEL wrapper around synth_engine.SubtractiveSynth,
+similar to how synth_composer/core/synthesizer.NoteSynthesizer wraps it for Layer 2.
+
 Renders parameter curves to audio using:
-- Multi-voice oscillators with time-varying pitch
-- Time-varying filter
-- Amplitude envelope
-- Noise texture
+- Multi-voice oscillators with time-varying pitch (via SubtractiveSynth)
+- Time-varying filter (via SubtractiveSynth.moog_filter_timevarying)
+- Amplitude envelope (direct multiplication)
+- Noise texture (via SubtractiveSynth.generate_noise)
 """
 
 import numpy as np
 from typing import List, Dict, Any
-from scipy import signal
+from synth_engine import SubtractiveSynth
 
 
 class GestureSynthesizer:
     """
-    Shared synthesis engine for all gesture archetypes.
+    High-level gesture synthesis coordinator.
+
+    Uses SubtractiveSynth for all low-level DSP (oscillators, filters, envelopes).
+    This wrapper orchestrates time-varying parameter curves and multi-voice rendering.
     """
 
-    def __init__(self):
-        pass
+    def __init__(self, synth_engine: SubtractiveSynth):
+        """
+        Initialize with existing SubtractiveSynth engine.
+
+        Args:
+            synth_engine: SubtractiveSynth instance (shared with other layers)
+        """
+        self.synth = synth_engine
+        self.sample_rate = synth_engine.sample_rate
 
     def synthesize(self,
                   pitch_voices: List[np.ndarray],
@@ -1203,116 +1230,80 @@ class GestureSynthesizer:
         total_samples = len(envelope)
         audio = np.zeros(total_samples)
 
-        # Synthesize each voice
+        # Synthesize each voice using SubtractiveSynth primitives
         for pitch_curve in pitch_voices:
-            voice_audio = self._generate_oscillator(pitch_curve, sample_rate)
+            voice_audio = self._generate_oscillator(pitch_curve)
             audio += voice_audio
 
-        # Normalize multi-voice sum
+        # Normalize multi-voice sum (equal-power)
         audio /= np.sqrt(len(pitch_voices))
 
         # Add noise texture
         if texture_curve['noise_ratio'] > 0:
-            noise = self._generate_noise(
-                total_samples,
-                texture_curve['noise_type'],
-                sample_rate
-            )
+            noise = self._generate_noise(total_samples, texture_curve['noise_type'])
             audio = (1 - texture_curve['noise_ratio']) * audio + \
                     texture_curve['noise_ratio'] * noise
 
-        # Apply time-varying filter
-        audio = self._apply_timevarying_filter(audio, filter_curve, sample_rate)
+        # Apply time-varying filter (via SubtractiveSynth)
+        audio = self._apply_timevarying_filter(audio, filter_curve)
 
-        # Apply envelope
+        # Apply envelope (simple multiplication)
         audio *= envelope
 
         # Optional shimmer effect
         if texture_curve.get('shimmer_enable', False):
-            audio = self._apply_shimmer(audio, texture_curve['shimmer_rate_hz'], sample_rate)
+            audio = self._apply_shimmer(audio, texture_curve['shimmer_rate_hz'])
 
         return audio
 
     def _generate_oscillator(self,
-                            pitch_curve: np.ndarray,
-                            sample_rate: int) -> np.ndarray:
+                            pitch_curve: np.ndarray) -> np.ndarray:
         """
         Generate oscillator with time-varying pitch.
 
-        Uses phase accumulation for smooth frequency modulation.
+        Delegates to SubtractiveSynth.oscillator_timevarying_pitch().
         """
-        # Accumulate phase (integral of frequency)
-        phase = np.cumsum(pitch_curve / sample_rate)
-
-        # Generate sine wave
-        # TODO: Add waveform selection (saw, square, etc.)
-        audio = np.sin(2 * np.pi * phase)
-
-        return audio
+        # Use SubtractiveSynth primitive (assumes it exists - see synth_engine_enhancements.md)
+        return self.synth.oscillator_timevarying_pitch(pitch_curve, waveform='sine')
 
     def _generate_noise(self,
                        num_samples: int,
-                       noise_type: str,
-                       sample_rate: int) -> np.ndarray:
+                       noise_type: str) -> np.ndarray:
         """
         Generate noise signal.
+
+        Delegates to SubtractiveSynth.generate_noise().
         """
-        if noise_type == 'white':
-            return np.random.randn(num_samples)
-
-        elif noise_type == 'pink':
-            # Simple pink noise approximation (1/f spectrum)
-            white = np.random.randn(num_samples)
-            # Low-pass filter white noise
-            b, a = signal.butter(1, 0.1)
-            pink = signal.filtfilt(b, a, white)
-            return pink / np.std(pink)  # Normalize
-
-        else:
-            return np.zeros(num_samples)
+        # Use SubtractiveSynth primitive (assumes it exists - see synth_engine_enhancements.md)
+        return self.synth.generate_noise(num_samples, noise_type)
 
     def _apply_timevarying_filter(self,
                                   audio: np.ndarray,
-                                  filter_curve: Dict[str, np.ndarray],
-                                  sample_rate: int) -> np.ndarray:
+                                  filter_curve: Dict[str, np.ndarray]) -> np.ndarray:
         """
         Apply time-varying filter.
 
-        WARNING: Original doc noted this is CPU-intensive.
-        TODO: Optimize with block-based processing or scipy.signal.lfilter
+        Delegates to SubtractiveSynth.moog_filter_timevarying().
+
+        NOTE: This assumes SubtractiveSynth has been enhanced with the
+        moog_filter_timevarying() method. See synth_engine_enhancements.md.
         """
-        # Simple block-based approach (divide into 100ms blocks)
-        block_size = int(0.1 * sample_rate)
-        filtered = np.zeros_like(audio)
+        cutoff_curve = filter_curve['cutoff']
+        resonance_curve = filter_curve['resonance']
 
-        for i in range(0, len(audio), block_size):
-            end = min(i + block_size, len(audio))
-
-            # Get filter params at block center
-            block_center = (i + end) // 2
-            cutoff = filter_curve['cutoff'][block_center]
-            resonance = filter_curve['resonance'][block_center]
-
-            # Design filter (normalized cutoff)
-            nyquist = sample_rate / 2
-            cutoff_norm = np.clip(cutoff / nyquist, 0.01, 0.99)
-
-            # TODO: Handle filter type switching (BP/LP/HP)
-            b, a = signal.butter(2, cutoff_norm, btype='low')
-
-            # Apply to block
-            filtered[i:end] = signal.filtfilt(b, a, audio[i:end])
-
-        return filtered
+        # Use SubtractiveSynth time-varying filter
+        # (assumes it exists - see synth_engine_enhancements.md Phase 1)
+        return self.synth.moog_filter_timevarying(audio, cutoff_curve, resonance_curve)
 
     def _apply_shimmer(self,
                       audio: np.ndarray,
-                      shimmer_rate_hz: float,
-                      sample_rate: int) -> np.ndarray:
+                      shimmer_rate_hz: float) -> np.ndarray:
         """
         Apply shimmer effect (amplitude modulation).
+
+        This is a simple effect, doesn't need SubtractiveSynth.
         """
-        t = np.arange(len(audio)) / sample_rate
+        t = np.arange(len(audio)) / self.sample_rate
         lfo = 0.5 + 0.5 * np.sin(2 * np.pi * shimmer_rate_hz * t)
         return audio * lfo
 ```
@@ -1553,19 +1544,34 @@ for section in tags['sections']:
 ## Open Questions / TODOs
 
 1. **Sample rate**: ✅ **RESOLVED** - All functions now properly use `sample_rate` parameter (default: 88200 Hz = 2x 44.1kHz for anti-aliasing per synth_config.py)
-2. **Filter optimization**: Block-based filtering is simple but crude. Consider `scipy.signal.sosfilt` or pre-computed filter banks.
-3. **Cellular automaton**: `_pitch_cellular_sequence` is stub. Needs proper CA implementation.
-4. **Waveform selection**: Currently only sine. Add saw/square/triangle options.
-5. **Stereo width**: Original doc mentions width curves, not implemented yet.
-6. **Performance**: Python loops in curve generators could be vectorized.
+2. **SubtractiveSynth enhancements**: ⚠️ **REQUIRED** - See `synth_engine_enhancements.md` for Phase 1 primitives:
+   - `moog_filter_timevarying(signal, cutoff_curve, resonance_curve)`
+   - `oscillator_timevarying_pitch(freq_curve, waveform)`
+   - `generate_noise(num_samples, noise_type)`
+3. **Filter optimization**: Delegated to SubtractiveSynth.moog_filter_timevarying() implementation
+4. **Cellular automaton**: `_pitch_cellular_sequence` is stub. Needs proper CA implementation.
+5. **Waveform selection**: Currently only sine (time-varying saw/square needs per-sample PolyBLEP - complex)
+6. **Stereo width**: Original doc mentions width curves, not implemented yet.
+7. **Performance**: Delegated to SubtractiveSynth optimizations
 
 ---
 
 ## Next Steps
 
-1. Implement core files (base.py, archetype_configs.py, curve_generators.py, synthesizer.py, utils.py, coordinator.py)
-2. Write unit tests for each curve generator
-3. Create test harness to render individual gestures (for auditioning)
-4. Integrate with existing Layer 3b renderer
-5. Profile and optimize bottlenecks
-6. Add remaining archetypes from `emotional_gesture_generator.md`
+### Phase 1: SubtractiveSynth Enhancements (PREREQUISITE)
+1. ✅ Document required primitives (see `synth_engine_enhancements.md`)
+2. ⏳ Implement Phase 1 primitives in `synth_engine.py`:
+   - `moog_filter_timevarying()`
+   - `oscillator_timevarying_pitch()`
+   - `generate_noise()`
+3. ⏳ Write unit tests for new primitives
+
+### Phase 2: Layer 3b Gesture System Implementation
+4. ⏳ Implement core files (base.py, archetype_configs.py, curve_generators.py, synthesizer.py, utils.py, coordinator.py)
+5. ⏳ Write unit tests for each curve generator
+6. ⏳ Create test harness to render individual gestures (for auditioning)
+7. ⏳ Integrate with existing Layer 3b renderer
+8. ⏳ Profile and optimize bottlenecks
+9. ⏳ Add remaining archetypes from `emotional_gesture_generator.md`
+
+**Critical Path:** Phase 1 must complete before Phase 2 can begin.
