@@ -581,3 +581,100 @@ class SubtractiveSynth:
         t = np.arange(samples) / self.sample_rate
         phase = freq * t
         return np.sin(2 * np.pi * phase)
+
+    # =========================================================================
+    # LAYER 3B GESTURE PRIMITIVES
+    # =========================================================================
+
+    def oscillator_timevarying_pitch(self, freq_curve, waveform='sine'):
+        """
+        Generate oscillator with time-varying pitch curve.
+
+        Args:
+            freq_curve: Frequency curve in Hz (numpy array)
+            waveform: 'sine' | 'triangle' (saw/square need PolyBLEP)
+
+        Returns:
+            Audio signal (same length as freq_curve)
+        """
+        n = len(freq_curve)
+
+        # Phase accumulation for sample-accurate pitch tracking
+        phase = np.cumsum(freq_curve) / self.sample_rate
+
+        if waveform == 'sine':
+            return np.sin(2 * np.pi * phase)
+        elif waveform == 'triangle':
+            # Triangle wave from phase
+            phase_frac = phase % 1.0
+            return np.where(phase_frac < 0.5,
+                          4.0 * phase_frac - 1.0,
+                          3.0 - 4.0 * phase_frac)
+        else:
+            raise NotImplementedError(f"Waveform '{waveform}' not supported for time-varying pitch")
+
+    def moog_filter_timevarying(self, signal, cutoff_curve, resonance_curve=None):
+        """
+        Apply Moog filter with time-varying parameters.
+
+        Args:
+            signal: Input audio
+            cutoff_curve: Cutoff in Hz (scalar or array)
+            resonance_curve: Resonance 0-4 (scalar or array)
+
+        Returns:
+            Filtered audio
+        """
+        n = len(signal)
+
+        # Handle scalar inputs
+        if np.isscalar(cutoff_curve):
+            cutoff_curve = np.full(n, cutoff_curve)
+        if resonance_curve is None or np.isscalar(resonance_curve):
+            resonance_curve = np.full(n, resonance_curve if resonance_curve is not None else 0.5)
+
+        # Process in chunks for efficiency
+        chunk_size = 128
+        filtered = np.zeros_like(signal)
+
+        for i in range(0, n, chunk_size):
+            end = min(i + chunk_size, n)
+            chunk = signal[i:end]
+
+            # Average parameters over chunk
+            cutoff = np.mean(cutoff_curve[i:end])
+            resonance = np.mean(resonance_curve[i:end])
+
+            # Apply filter (state preserved across chunks)
+            filtered[i:end] = self.moog_filter(chunk, cutoff, resonance)
+
+        return filtered
+
+    def generate_noise(self, num_samples, noise_type='white'):
+        """
+        Generate noise signal.
+
+        Args:
+            num_samples: Length of noise buffer
+            noise_type: 'white' | 'pink'
+
+        Returns:
+            Noise signal (normalized to ±1.0)
+        """
+        if noise_type == 'white':
+            return self.rng.standard_normal(num_samples)
+
+        elif noise_type == 'pink':
+            # Simple pink noise: low-pass filtered white noise
+            white = self.rng.standard_normal(num_samples)
+            # 1-pole LP filter
+            pink = np.zeros_like(white)
+            alpha = 0.1
+            pink[0] = white[0] * alpha
+            for i in range(1, num_samples):
+                pink[i] = pink[i-1] * (1 - alpha) + white[i] * alpha
+            # Normalize
+            return pink / (np.std(pink) + 1e-10)
+
+        else:
+            raise ValueError(f"Unknown noise type: {noise_type}")
