@@ -561,7 +561,7 @@ class SynthConfig:
         'sidechain_amount': 0.3,
         'supersaw_compression': 0.8,
         'supersaw_gain': 1.25,
-        'filtered_sequence_level': 0.7,  # Boosted for audible moments
+        'filtered_sequence_level': 0.04,  # Furtive gesture level - gestures are background texture
         'ducking_amount': 0.3,
         'soft_clip_pre': 0.9,
         'soft_clip_post': 0.95,

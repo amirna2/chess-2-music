@@ -166,48 +166,28 @@ ARCHETYPES: Dict[str, Dict[str, Any]] = {
         }
     },
 
-    # 4. SIGNIFICANT_SHIFT - Graduated Continuant - Gradual drift
+    # 4. SIGNIFICANT_SHIFT - Particle System - Sparse drifting particles
     "SIGNIFICANT_SHIFT": {
-        "duration_base": 3.2,
-        "duration_tension_scale": 0.7,
+        "duration_base": 3.6,
+        "duration_tension_scale": 0.3,
         "duration_entropy_scale": 0.0,
-        "phases": {
-            "pre_shadow": 0.20,
-            "impact": 0.12,
-            "bloom": 0.38,
-            "decay": 0.20,
-            "residue": 0.10
+        "particle": {
+            "emission": {
+                "type": "drift_scatter",
+                "start_density": 0.08,
+                "end_density": 0.15,
+                "drift_rate": 0.3
+            },
+            "base_spawn_rate": 0.0008,
+            "pitch_range_hz": [330, 880],
+            "lifetime_range_s": [1.5, 3.0],
+            "velocity_range": [0.2, 0.45],
+            "detune_range_cents": [-25, 25],
+            "decay_rate_range": [-3.0, -1.5],
+            "waveform": "sine"
         },
-        "pitch": {
-            "type": "slow_drift",
-            "start_freq_base": 330,
-            "drift_semitones": 7,
-            "drift_direction": "ascending"
-        },
-        "harmony": {
-            "type": "shifting_voices",
-            "num_voices": 4,
-            "shift_rate": 0.4
-        },
-        "filter": {
-            "type": "gradual_sweep",
-            "lp_start": 800,
-            "lp_end": 1900,
-            "sweep_curve": "sigmoid"
-        },
-        "envelope": {
-            "type": "gradual_sustained",
-            "attack_ms": 100,
-            "sustain_phase_ratio": 0.48,
-            "decay_curve": "linear"
-        },
-        "texture": {
-            "noise_ratio_base": 0.18,
-            "noise_ratio_entropy_scale": 0.20,
-            "noise_type": "pink"
-        },
-        "peak_limit": 0.78,
-        "rms_target": -17.5,
+        "peak_limit": 0.5,
+        "rms_target": -22.0,
         "morphology": {
             "spectromorphological_archetype": "Graduated Continuant",
             "gesture_class": "Gradual / Evolving",
@@ -545,107 +525,34 @@ ARCHETYPES: Dict[str, Dict[str, Any]] = {
         }
     },
 
-    # 11. INACCURACY - Attack–Decay (weak) - Wind chime gesture
+    # 11. INACCURACY - Particle System - Sparse stochastic wind chime strikes
     "INACCURACY": {
-        "duration_base": 1.5,
-        "duration_tension_scale": 0.4,
+        "duration_base": 4.5,
+        "duration_tension_scale": 0.0,
         "duration_entropy_scale": 0.0,
-        "phases": {
-            "pre_shadow": 0.14,
-            "impact": 0.12,
-            "bloom": 0.26,
-            "decay": 0.32,
-            "residue": 0.16
+        "particle": {
+            "emission": {
+                "type": "gusts",
+                "num_gusts": 2,
+                "base_density": 0.015,
+                "peak_density": 0.06
+            },
+            "base_spawn_rate": 0.001,
+            "pitch_range_hz": [880, 1760],
+            "lifetime_range_s": [1.2, 2.5],
+            "velocity_range": [0.35, 0.55],
+            "detune_range_cents": [-30, 30],
+            "decay_rate_range": [-2.5, -1.5],
+            "waveform": "triangle"
         },
-        "pitch": {
-            "type": "discrete_chimes",
-            "start_freq_base": 550,
-            "num_notes": 5,
-            "pitch_variation_semitones": 5
-        },
-        "harmony": {
-            "type": "minimal_dyad",
-            "num_voices": 1,
-            "interval_semitones": 3
-        },
-        "filter": {
-            "type": "gentle_bandpass",
-            "bp_center_base": 1500,
-            "bp_bandwidth": 1200,
-            "resonance": 0.25
-        },
-        "envelope": {
-            "type": "sudden_short_tail",
-            "attack_ms_base": 3,
-            "attack_ms_entropy_scale": 1,
-            "sustain_phase_ratio": 0.15,
-            "decay_curve": "exponential",
-            "decay_coefficient": -3.2
-        },
-        "texture": {
-            "noise_ratio_base": 0.0,
-            "noise_ratio_entropy_scale": 0.0,
-            "noise_type": "pink",
-            "waveform": "sine"
-        },
-        "peak_limit": 0.55,
-        "rms_target": -24.0,
+        "peak_limit": 0.6,
+        "rms_target": -20.0,
         "morphology": {
             "spectromorphological_archetype": "Attack–Decay",
             "gesture_class": "Gentle / Hesitant",
             "motion_type": "Parabolic (small rise–fall)"
         }
     },
-
-    # 12. INTERESTING - Graduated Continuant (asymmetric) - Wandering spiral
-    "INTERESTING": {
-        "duration_base": 2.6,
-        "duration_tension_scale": 0.5,
-        "duration_entropy_scale": 0.35,
-        "phases": {
-            "pre_shadow": 0.16,
-            "impact": 0.14,
-            "bloom": 0.36,
-            "decay": 0.24,
-            "residue": 0.10
-        },
-        "pitch": {
-            "type": "wandering_spiral",
-            "center_freq_base": 440,
-            "wander_semitones": 8,
-            "spiral_rate_hz": 3.5
-        },
-        "harmony": {
-            "type": "shifting_cluster",
-            "num_voices": 3,
-            "detune_randomness": 0.6
-        },
-        "filter": {
-            "type": "erratic_sweep",
-            "bp_center_range_low": 600,
-            "bp_center_range_high": 2100,
-            "sweep_irregularity": 0.7
-        },
-        "envelope": {
-            "type": "gradual_sustained",
-            "attack_ms": 55,
-            "sustain_phase_ratio": 0.42,
-            "decay_curve": "sigmoid"
-        },
-        "texture": {
-            "noise_ratio_base": 0.24,
-            "noise_ratio_entropy_scale": 0.32,
-            "noise_type": "white"
-        },
-        "peak_limit": 0.72,
-        "rms_target": -18.5,
-        "morphology": {
-            "spectromorphological_archetype": "Graduated Continuant",
-            "gesture_class": "Asymmetric / Curious",
-            "motion_type": "Spiral or Oscillation"
-        }
-    },
-
     # 13. STRONG - Graduated Continuant (firm) - Stable controlled flow
     "STRONG": {
         "duration_base": 2.9,
@@ -742,55 +649,28 @@ ARCHETYPES: Dict[str, Dict[str, Any]] = {
         }
     },
 
-    # 15. TACTICAL_SEQUENCE - Iterated Composite - Cellular rhythmic convolution
+    # 15. TACTICAL_SEQUENCE - Particle System - Calculation clicks in rhythmic clusters
     "TACTICAL_SEQUENCE": {
-        "duration_base": 1.8,
+        "duration_base": 2.2,
         "duration_tension_scale": 0.5,
         "duration_entropy_scale": 0.3,
-        "phases": {
-            "pre_shadow": 0.10,
-            "impact": 0.15,
-            "bloom": 0.30,
-            "decay": 0.25,
-            "residue": 0.20
+        "particle": {
+            "emission": {
+                "type": "rhythmic_clusters",
+                "num_clusters": 4,
+                "cluster_duration_ratio": 0.15,
+                "cluster_density": 0.7,
+                "gap_density": 0.05
+            },
+            "base_spawn_rate": 0.003,
+            "pitch_range_hz": [660, 1320],
+            "lifetime_range_s": [0.3, 0.7],
+            "velocity_range": [0.5, 0.7],
+            "detune_range_cents": [-15, 15],
+            "decay_rate_range": [-4.0, -2.5],
+            "waveform": "sine"
         },
-        "pitch": {
-            "type": "oscillating_tremor",
-            "center_freq_base": 440,
-            "center_freq_tension_scale": 220,
-            "tremor_rate_base_hz": 8,
-            "tremor_rate_tension_scale_hz": 8,
-            "tremor_depth_semitones": 2,
-            "acceleration_phase": "bloom"
-        },
-        "harmony": {
-            "type": "dense_cluster",
-            "num_voices": 5,
-            "semitone_spacing_min": 0.5,
-            "semitone_spacing_max": 1.5
-        },
-        "filter": {
-            "type": "bandpass_sweep",
-            "bp_center_start": 500,
-            "bp_center_end": 2000,
-            "bp_bandwidth": 600,
-            "sweep_rate_modulation": "accelerating",
-            "sweep_phase": "bloom"
-        },
-        "envelope": {
-            "type": "sudden_short_tail",
-            "attack_ms_base": 2,
-            "attack_ms_entropy_scale": 3,
-            "sustain_phase_ratio": 0.20,
-            "decay_curve": "exponential",
-            "decay_coefficient": -5
-        },
-        "texture": {
-            "noise_ratio_base": 0.5,
-            "noise_ratio_entropy_scale": 0.3,
-            "noise_type": "white"
-        },
-        "peak_limit": 0.75,
+        "peak_limit": 0.6,
         "rms_target": -20.0,
         "morphology": {
             "spectromorphological_archetype": "Iterated Composite",
@@ -1291,49 +1171,29 @@ ARCHETYPES: Dict[str, Dict[str, Any]] = {
         }
     },
 
-    # 26. FIRST_EXCHANGE - Attack–Decay - Collision impact
+    # 26. FIRST_EXCHANGE - Particle System - Metallic collision scatter
     "FIRST_EXCHANGE": {
-        "duration_base": 1.2,
+        "duration_base": 1.4,
         "duration_tension_scale": 0.35,
         "duration_entropy_scale": 0.0,
-        "phases": {
-            "pre_shadow": 0.06,
-            "impact": 0.20,
-            "bloom": 0.15,
-            "decay": 0.39,
-            "residue": 0.20
-        },
-        "pitch": {
-            "type": "impact_transient",
-            "strike_freq_base": 880,
-            "decay_mult": 0.5
-        },
-        "harmony": {
-            "type": "collision_cluster",
-            "num_voices": 2,
-            "impact_density": 0.4
-        },
-        "filter": {
-            "type": "impact_spike",
-            "bp_center": 2100,
-            "bp_bandwidth": 500,
-            "impact_resonance": 0.92
-        },
-        "envelope": {
-            "type": "gated_pulse",
-            "attack_ms": 1,
-            "gate_duration_ms": 40,
-            "release_ms": 18,
-            "pulse_rate_hz": 2.0
-        },
-        "texture": {
-            "noise_ratio_base": 0.0,
-            "noise_ratio_entropy_scale": 0.0,
-            "noise_type": "pink",
+        "particle": {
+            "emission": {
+                "type": "impact_burst",
+                "impact_time_ratio": 0.15,
+                "burst_density": 0.95,
+                "burst_duration_ratio": 0.08,
+                "tail_density": 0.05
+            },
+            "base_spawn_rate": 0.005,
+            "pitch_range_hz": [800, 2200],
+            "lifetime_range_s": [0.4, 1.2],
+            "velocity_range": [0.5, 0.7],
+            "detune_range_cents": [-60, 60],
+            "decay_rate_range": [-5.0, -2.5],
             "waveform": "triangle"
         },
-        "peak_limit": 0.84,
-        "rms_target": -17.5,
+        "peak_limit": 0.65,
+        "rms_target": -18.0,
         "morphology": {
             "spectromorphological_archetype": "Attack–Decay",
             "gesture_class": "Collision / Impact",
@@ -1542,50 +1402,27 @@ ARCHETYPES: Dict[str, Dict[str, Any]] = {
         }
     },
 
-    # 31. FINAL_RESOLUTION - Graduated Continuant - Fading dissolving descent
+    # 31. FINAL_RESOLUTION - Particle System - Dissolving particles fade to silence
     "FINAL_RESOLUTION": {
-        "duration_base": 4.2,
-        "duration_tension_scale": 0.9,
+        "duration_base": 4.7,
+        "duration_tension_scale": 0.5,
         "duration_entropy_scale": 0.0,
-        "phases": {
-            "pre_shadow": 0.15,
-            "impact": 0.10,
-            "bloom": 0.32,
-            "decay": 0.33,
-            "residue": 0.10
+        "particle": {
+            "emission": {
+                "type": "dissolve",
+                "start_density": 0.6,
+                "decay_rate": -1.8
+            },
+            "base_spawn_rate": 0.002,
+            "pitch_range_hz": [220, 660],
+            "lifetime_range_s": [2.0, 4.0],
+            "velocity_range": [0.15, 0.4],
+            "detune_range_cents": [-20, 20],
+            "decay_rate_range": [-1.5, -0.8],
+            "waveform": "sine"
         },
-        "pitch": {
-            "type": "final_descent",
-            "start_freq": 440,
-            "end_freq": 110,
-            "descent_curve": "logarithmic"
-        },
-        "harmony": {
-            "type": "resolving_to_root",
-            "num_voices_start": 5,
-            "num_voices_end": 1,
-            "resolution_chord": "tonic"
-        },
-        "filter": {
-            "type": "closing_focus",
-            "lp_start": 2100,
-            "lp_end": 320,
-            "final_resonance": 0.52
-        },
-        "envelope": {
-            "type": "gradual_sustained",
-            "attack_ms": 120,
-            "sustain_phase_ratio": 0.28,
-            "decay_curve": "exponential",
-            "final_fade_curve": "sigmoid"
-        },
-        "texture": {
-            "noise_ratio_base": 0.19,
-            "noise_ratio_entropy_scale": 0.18,
-            "noise_type": "pink"
-        },
-        "peak_limit": 0.75,
-        "rms_target": -18.0,
+        "peak_limit": 0.35,
+        "rms_target": -30.0,
         "morphology": {
             "spectromorphological_archetype": "Graduated Continuant",
             "gesture_class": "Fading / Dissolving",

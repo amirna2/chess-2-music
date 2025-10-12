@@ -1821,10 +1821,14 @@ class ChessSynthComposer:
 
                 print(f"  → Layer 3: Outro arpeggio (variation {variation_seed}, game length: {self.total_plies} plies)")
 
-            # Process key moments as events with duration and emphasis
+            # Process key moments with intelligent spacing algorithm
+            # Instead of using absolute timestamps, distribute moments evenly across section
+            # with breathing room to prevent particle overlap
             moment_events = []
             mep = self.config.MOMENT_EVENT_PARAMS
 
+            # Collect all moments that fall within this section (chronological order)
+            raw_moments = []
             for moment in section.get('key_moments', []):
                 moment_time = moment.get('second', moment.get('ply', 0))
                 duration_str = section.get('duration', '0:10')
@@ -1835,62 +1839,73 @@ class ChessSynthComposer:
                     score = moment.get('score', 5)
                     moment_type = moment.get('type', 'UNKNOWN')
 
-                    # Calculate duration based on score
-                    duration_mult = 1.0 + (score / 10.0) * mep['score_duration_mult']
-                    duration = mep['base_duration_sec'] * duration_mult
-                    duration = max(mep['min_duration_sec'], min(duration, mep['max_duration_sec']))
-
-                    # Calculate mix amount based on score
-                    mix_amount = mep['base_mix_amount'] + (score * mep['score_mix_mult'])
-                    mix_amount = min(mix_amount, mep['max_mix_amount'])
-
-                    # Calculate filter modulation based on score
-                    filter_mod = mep['filter_mod_base'] + (score * mep['filter_mod_per_score'])
-
-                    moment_events.append({
-                        'start_time': relative_time,
-                        'end_time': relative_time + duration,
+                    raw_moments.append({
                         'type': moment_type,
                         'score': score,
-                        'mix_amount': mix_amount,
-                        'filter_mod': filter_mod,
-                        'start_sample': int(relative_time * self.sample_rate),
-                        'end_sample': int((relative_time + duration) * self.sample_rate),
+                        'original_time': relative_time,  # Keep for reference
                     })
 
-            moment_events.sort(key=lambda x: x['start_time'])
+            # Sort by original chronological order
+            raw_moments.sort(key=lambda x: x['original_time'])
 
-            # Adjust overlapping moments: shorten them to fit, but NEVER skip
-            # This preserves critical chess narratives while leaving some heartbeat room
-            adjusted_events = []
+            # Intelligent spacing: distribute moments evenly across section with padding
+            if raw_moments:
+                # Configuration for spacing
+                start_padding = 2.0  # seconds of silence at start
+                end_padding = 2.0    # seconds of silence at end
 
-            for i, event in enumerate(moment_events):
-                if i == 0:
-                    # First event - use as is
-                    adjusted_events.append(event)
-                else:
-                    prev_event = adjusted_events[-1]
+                # Calculate available time and slot size
+                available_time = section_duration - start_padding - end_padding
+                num_moments = len(raw_moments)
 
-                    # If this moment starts before previous ends, adjust durations
-                    if event['start_time'] < prev_event['end_time']:
-                        # Calculate overlap
-                        overlap = prev_event['end_time'] - event['start_time']
+                if num_moments > 0 and available_time > 0:
+                    slot_duration = available_time / num_moments
 
-                        # Shorten previous event to end right when this one starts
-                        prev_event['end_time'] = event['start_time']
-                        prev_event['end_sample'] = int(prev_event['end_time'] * self.sample_rate)
+                    for i, moment in enumerate(raw_moments):
+                        score = moment['score']
+                        moment_type = moment['type']
 
-                        # Keep current event as is (or slightly shorten if needed for next)
-                        adjusted_events.append(event)
-                    else:
-                        # No overlap - keep as is
-                        adjusted_events.append(event)
+                        # Calculate gesture duration based on score
+                        # Higher score = longer duration
+                        duration_mult = 1.0 + (score / 10.0) * mep['score_duration_mult']
+                        gesture_duration = mep['base_duration_sec'] * duration_mult
+                        gesture_duration = max(mep['min_duration_sec'], min(gesture_duration, mep['max_duration_sec']))
 
-            moment_events = adjusted_events
+                        # Cap gesture duration to leave breathing room in slot
+                        # Reserve at least 30% of slot for breathing room
+                        max_gesture_in_slot = slot_duration * 0.7
+                        if gesture_duration > max_gesture_in_slot:
+                            gesture_duration = max_gesture_in_slot
+
+                        # Calculate start time: padding + slot_index * slot_duration
+                        start_time = start_padding + (i * slot_duration)
+                        end_time = start_time + gesture_duration
+
+                        # Calculate mix amount based on score
+                        mix_amount = mep['base_mix_amount'] + (score * mep['score_mix_mult'])
+                        mix_amount = min(mix_amount, mep['max_mix_amount'])
+
+                        # Calculate filter modulation based on score
+                        filter_mod = mep['filter_mod_base'] + (score * mep['filter_mod_per_score'])
+
+                        moment_events.append({
+                            'start_time': start_time,
+                            'end_time': end_time,
+                            'type': moment_type,
+                            'score': score,
+                            'mix_amount': mix_amount,
+                            'filter_mod': filter_mod,
+                            'start_sample': int(start_time * self.sample_rate),
+                            'end_sample': int(end_time * self.sample_rate),
+                            'original_time': moment['original_time'],  # For debugging
+                            'breathing_room': slot_duration - gesture_duration,  # For debugging
+                        })
 
             # Debug: Print moment event timeline with archetype mapping
             if moment_events:
-                print(f"  → Moment events ({len(moment_events)}) | Layer 3b gestures:")
+                print(f"  → Moment events ({len(moment_events)}) | Layer 3b gestures [INTELLIGENT SPACING]:")
+                print(f"     Section: {section_duration:.1f}s | Padding: start={start_padding:.1f}s end={end_padding:.1f}s")
+
                 for event in moment_events:
                     event_type = event['type']
                     archetype = self._map_event_to_archetype(event_type)
@@ -1900,9 +1915,28 @@ class ChessSynthComposer:
                     arch_config = ARCHETYPES.get(archetype, {})
                     base_dur = arch_config.get('duration_base', 2.0)
 
-                    print(f"      {event_type:<18} t={event['start_time']:05.1f}s "
-                          f"→ {archetype:14s} | dur≈{base_dur:.1f}s | "
-                          f"phases: pre→impact→bloom→decay→residue")
+                    # Get actual gesture duration and breathing room
+                    gesture_dur = event['end_time'] - event['start_time']
+                    breathing = event.get('breathing_room', 0.0)
+                    original_t = event.get('original_time', 0.0)
+
+                    # Check if particle-based or traditional
+                    if 'particle' in arch_config:
+                        # Particle system - show emission type and particle info
+                        particle_cfg = arch_config['particle']
+                        emission_type = particle_cfg['emission']['type']
+                        pitch_range = particle_cfg['pitch_range_hz']
+                        velocity_range = particle_cfg['velocity_range']
+                        lifetime_range = particle_cfg['lifetime_range_s']
+                        print(f"      {event_type:<18} t={event['start_time']:05.1f}s (was {original_t:05.1f}s) "
+                              f"→ {archetype:14s} | gest:{gesture_dur:.1f}s + particle_life:{lifetime_range[0]:.1f}-{lifetime_range[1]:.1f}s | "
+                              f"breath:{breathing:.1f}s | "
+                              f"🔊 {emission_type:16s} | {pitch_range[0]:.0f}-{pitch_range[1]:.0f}Hz")
+                    else:
+                        # Traditional gesture - show phase info
+                        print(f"      {event_type:<18} t={event['start_time']:05.1f}s (was {original_t:05.1f}s) "
+                              f"→ {archetype:14s} | gest:{gesture_dur:.1f}s | breath:{breathing:.1f}s | "
+                              f"phases: pre→impact→bloom→decay→residue")
 
             # === GENERATE HEARTBEAT SUB-LAYER (3a) ===
             # LUB-dub heartbeat pattern (from heartbeat_designer.py testing)
@@ -2032,6 +2066,7 @@ class ChessSynthComposer:
                     except Exception as e:
                         print(f"    [WARNING] Failed to generate {archetype} for {event_type}: {e}")
 
+                # Gestures are already filtered/synthesized - use directly without global filter
                 sequencer_layer = gesture_buffer
             else:
                 print(f"  → Layer 3b: Emotional gestures (muted)")
@@ -2282,26 +2317,10 @@ class ChessSynthComposer:
                     prev_freq = target_freq
             # End of old step sequencer code (if False block)
 
-            # Apply global filter sweep
-            sweep_length = len(sequencer_layer)
-            filter_sweep = np.zeros(sweep_length)
-
-            for i in range(sweep_length):
-                progress_local = i / sweep_length
-                lfo = np.sin(2 * np.pi * self.config.SEQUENCER_SYNTH['global_filter_lfo_amount'] * progress_local)
-                filter_sweep[i] = self.config.SEQUENCER_SYNTH['global_filter_base'] + self.config.SEQUENCER_SYNTH['global_filter_lfo_amount'] * lfo + self.config.SEQUENCER_SYNTH['global_filter_sweep_amount'] * progress_local
-
-            filtered_sequence = np.zeros_like(sequencer_layer)
-            chunk_size = int(self.config.TIMING['chunk_size_samples'])
-            for i in range(0, len(sequencer_layer), chunk_size):
-                chunk_end = min(i + chunk_size, len(sequencer_layer))
-                chunk = sequencer_layer[i:chunk_end]
-
-                avg_cutoff = np.mean(filter_sweep[i:chunk_end])
-
-                if len(chunk) > 0:
-                    filtered_chunk = self.synth_layer3.moog_filter(chunk, cutoff_hz=avg_cutoff, resonance=self.config.SEQUENCER_SYNTH['global_filter_resonance'])
-                    filtered_sequence[i:chunk_end] = filtered_chunk
+            # Skip global filter sweep for gesture-based Layer 3b
+            # Gestures are already synthesized with proper filtering
+            # Applying Moog filter destroys the delicate particle textures
+            filtered_sequence = sequencer_layer
 
             # Apply sidechain compression
             sequencer_envelope = np.abs(filtered_sequence)

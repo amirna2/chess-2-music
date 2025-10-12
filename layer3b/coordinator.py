@@ -7,9 +7,10 @@ moment events to appropriate archetypes.
 """
 
 import numpy as np
-from typing import Dict, Any
+from typing import Dict, Any, Union
 
 from .base import GestureGenerator
+from .particle_system import ParticleGestureGenerator
 from .archetype_configs import ARCHETYPES
 
 
@@ -55,27 +56,36 @@ class GestureCoordinator:
         self.synth_engine = synth_engine
         self.gestures = self._build_gesture_registry()
 
-    def _build_gesture_registry(self) -> Dict[str, GestureGenerator]:
+    def _build_gesture_registry(self) -> Dict[str, Union[GestureGenerator, ParticleGestureGenerator]]:
         """
         Build gesture registry mapping archetype names to generators.
 
-        Creates a GestureGenerator instance for each archetype defined in
-        ARCHETYPES configuration. All generators share the same RNG and
-        synth_engine for consistency.
+        Creates a GestureGenerator or ParticleGestureGenerator instance for
+        each archetype defined in ARCHETYPES configuration. Particle-based
+        archetypes (those with 'particle' config key) use ParticleGestureGenerator.
+        All generators share the same RNG and synth_engine for consistency.
 
         Returns:
-            Dict mapping archetype name → GestureGenerator instance
+            Dict mapping archetype name → generator instance
         """
         registry = {}
 
         for archetype_name, archetype_config in ARCHETYPES.items():
-            # Create generator with shared synth_engine
-            # Generators will validate synth_engine presence when generate_gesture() called
-            registry[archetype_name] = GestureGenerator(
-                archetype_config,
-                self.rng,
-                synth_engine=self.synth_engine
-            )
+            # Detect particle-based archetype by presence of 'particle' config key
+            if 'particle' in archetype_config:
+                # Particle-based gesture
+                registry[archetype_name] = ParticleGestureGenerator(
+                    archetype_config,
+                    self.rng,
+                    synth_engine=self.synth_engine
+                )
+            else:
+                # Traditional continuous gesture
+                registry[archetype_name] = GestureGenerator(
+                    archetype_config,
+                    self.rng,
+                    synth_engine=self.synth_engine
+                )
 
         return registry
 
@@ -177,10 +187,16 @@ class GestureCoordinator:
         """
         self.synth_engine = synth_engine
 
-        # Update all existing generators
+        # Update all existing generators (both traditional and particle-based)
         for generator in self.gestures.values():
-            from .synthesizer import GestureSynthesizer
-            generator.synthesizer = GestureSynthesizer(synth_engine)
+            # Check if it's a ParticleGestureGenerator
+            if isinstance(generator, ParticleGestureGenerator):
+                # Particle generators use synth_engine directly
+                generator.synth_engine = synth_engine
+            else:
+                # Traditional generators use synthesizer wrapper
+                from .synthesizer import GestureSynthesizer
+                generator.synthesizer = GestureSynthesizer(synth_engine)
 
     def get_archetype_config(self, archetype_name: str) -> Dict[str, Any]:
         """

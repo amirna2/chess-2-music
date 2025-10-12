@@ -70,28 +70,25 @@ def finalize_audio(audio: np.ndarray,
                   peak_limit: float,
                   rms_target: float) -> np.ndarray:
     """
-    Finalize audio with normalization and safety clipping.
+    Finalize audio with peak limiting only (no RMS normalization).
+
+    Preserves envelope dynamics for furtive gestures - allows pre_shadow
+    and residue phases to remain naturally quiet instead of boosting them.
 
     Args:
         audio: Raw audio buffer
         peak_limit: Maximum peak level (e.g., 0.8)
-        rms_target: Target RMS level in dB (e.g., -18.0)
+        rms_target: Target RMS level in dB (unused, kept for API compatibility)
 
     Returns:
         Finalized audio buffer
 
-    Pipeline: soft_clip → RMS normalize → hard clip
+    Pipeline: soft_clip → hard clip (RMS normalization removed)
     """
     # Step 1: Soft clip to prevent harsh peaks
     audio = soft_clip(audio, threshold=peak_limit * 1.2)
 
-    # Step 2: RMS normalization
-    current_rms = np.sqrt(np.mean(audio ** 2))
-    if current_rms > 1e-10:  # Avoid division by zero
-        target_rms_linear = 10 ** (rms_target / 20.0)
-        audio *= (target_rms_linear / current_rms)
-
-    # Step 3: Hard clip to absolute maximum
+    # Step 2: Hard clip to absolute maximum
     audio = np.clip(audio, -peak_limit, peak_limit)
 
     return audio
