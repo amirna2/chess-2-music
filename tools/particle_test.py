@@ -271,15 +271,20 @@ def analyze_particles(archetype_name, seed=42, generate_audio=False, output_file
 
 
 def list_archetypes():
-    """List all available archetypes with their types."""
+    """List all available particle-based archetypes."""
     print("\n" + "="*80)
-    print("AVAILABLE ARCHETYPES")
+    print("PARTICLE-BASED ARCHETYPES")
     print("="*80 + "\n")
 
+    particle_archetypes = []
     for name in sorted(ARCHETYPES.keys()):
         config = ARCHETYPES[name]
-        gesture_type = config.get('type', 'unknown')
-        print(f"  {name:<25s} ({gesture_type})")
+        if 'particle' in config:
+            particle_archetypes.append(name)
+            print(f"  {name}")
+
+    if not particle_archetypes:
+        print("  (No particle archetypes found)")
 
     print("\n" + "="*80 + "\n")
 

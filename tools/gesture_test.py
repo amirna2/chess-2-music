@@ -12,10 +12,14 @@ Usage:
 """
 
 import sys
+import os
 import argparse
 import numpy as np
 import wave
 import struct
+
+# Add parent directory to path
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # FORCE FRESH IMPORT - clear any cached modules
 for module_name in list(sys.modules.keys()):
@@ -106,11 +110,6 @@ def test_gesture(archetype_name, tension=0.7, entropy=0.5, sample_rate=88200, ou
     print("=" * 80)
 
     # Print archetype configuration
-    print(f"\n📋 ARCHETYPE CONFIGURATION")
-    print(f"   Morphology: {config['morphology']['spectromorphological_archetype']}")
-    print(f"   Gesture Class: {config['morphology']['gesture_class']}")
-    print(f"   Motion Type: {config['morphology']['motion_type']}")
-
     print(f"\n⏱  DURATION")
     print(f"   Base: {config['duration_base']:.2f}s")
     print(f"   Tension scale: {config.get('duration_tension_scale', 0):.2f}")
@@ -305,7 +304,7 @@ Examples:
         for name in sorted(ARCHETYPES.keys()):
             config = ARCHETYPES[name]
             if 'particle' not in config:
-                print(f"  {name:25} {config['morphology']['gesture_class']}")
+                print(f"  {name}")
         print("\nNote: Particle-based archetypes excluded. Use visualize_particles.py --audio for those.")
         return 0
 

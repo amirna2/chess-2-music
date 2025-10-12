@@ -48,12 +48,7 @@ ARCHETYPES: Dict[str, Dict[str, Any]] = {
             "noise_type": "pink"
         },
         "peak_limit": 0.7,
-        "rms_target": -20.0,
-        "morphology": {
-            "spectromorphological_archetype": "Attack–Decay",
-            "gesture_class": "Neutral / Transitional",
-            "motion_type": "Linear motion"
-        }
+        "rms_target": -20.0
     },
 
     # 2. GAME_CHANGING - Graduated Continuant - Transformative expansion
@@ -102,12 +97,7 @@ ARCHETYPES: Dict[str, Dict[str, Any]] = {
             "shimmer_rate_hz": 7.0
         },
         "peak_limit": 0.90,
-        "rms_target": -14.0,
-        "morphology": {
-            "spectromorphological_archetype": "Graduated Continuant",
-            "gesture_class": "Expansive / Transformative",
-            "motion_type": "Agglomeration–Divergence"
-        }
+        "rms_target": -14.0
     },
 
     # 3. CRITICAL_SWING - Attack–Decay (accented) - Dynamic parabolic gesture
@@ -158,12 +148,7 @@ ARCHETYPES: Dict[str, Dict[str, Any]] = {
             "noise_type": "pink"
         },
         "peak_limit": 0.85,
-        "rms_target": -15.5,
-        "morphology": {
-            "spectromorphological_archetype": "Attack–Decay",
-            "gesture_class": "Accented / Dynamic",
-            "motion_type": "Parabolic rise–fall"
-        }
+        "rms_target": -15.5
     },
 
     # 4. SIGNIFICANT_SHIFT - Particle System - Sparse drifting particles
@@ -187,12 +172,7 @@ ARCHETYPES: Dict[str, Dict[str, Any]] = {
             "waveform": "sine"
         },
         "peak_limit": 0.5,
-        "rms_target": -22.0,
-        "morphology": {
-            "spectromorphological_archetype": "Graduated Continuant",
-            "gesture_class": "Gradual / Evolving",
-            "motion_type": "Ascent or Descent drift"
-        }
+        "rms_target": -22.0
     },
 
     # 5. MATE_SEQUENCE - Composite Chain - Convergent resolution
@@ -236,12 +216,7 @@ ARCHETYPES: Dict[str, Dict[str, Any]] = {
             "noise_type": "white"
         },
         "peak_limit": 0.86,
-        "rms_target": -15.5,
-        "morphology": {
-            "spectromorphological_archetype": "Composite Chain",
-            "gesture_class": "Convergent / Resolving",
-            "motion_type": "Convergence → Closure"
-        }
+        "rms_target": -15.5
     },
 
     # 6. DEEP_THINK - Sustained Continuant - Static plateau
@@ -284,12 +259,7 @@ ARCHETYPES: Dict[str, Dict[str, Any]] = {
             "noise_type": "pink"
         },
         "peak_limit": 0.68,
-        "rms_target": -20.5,
-        "morphology": {
-            "spectromorphological_archetype": "Sustained Continuant",
-            "gesture_class": "Static / Contained",
-            "motion_type": "Stasis"
-        }
+        "rms_target": -20.5
     },
 
     # 7. TIME_PRESSURE - Iterative - Oscillatory tremor
@@ -341,12 +311,7 @@ ARCHETYPES: Dict[str, Dict[str, Any]] = {
             "noise_type": "white"
         },
         "peak_limit": 0.75,
-        "rms_target": -20.0,
-        "morphology": {
-            "spectromorphological_archetype": "Iterative",
-            "gesture_class": "Oscillatory / Tremor",
-            "motion_type": "Reciprocal motion"
-        }
+        "rms_target": -20.0
     },
 
     # 8. BLUNDER - Attack–Decay - Impulsive collapse
@@ -402,12 +367,7 @@ ARCHETYPES: Dict[str, Dict[str, Any]] = {
             "noise_type": "pink"
         },
         "peak_limit": 0.8,
-        "rms_target": -18.0,
-        "morphology": {
-            "spectromorphological_archetype": "Attack–Decay",
-            "gesture_class": "Impulsive / Collapsing",
-            "motion_type": "Descent–Dissipation"
-        }
+        "rms_target": -18.0
     },
 
     # 9. BRILLIANT - Graduated Continuant - Expansive ascending gesture
@@ -456,12 +416,7 @@ ARCHETYPES: Dict[str, Dict[str, Any]] = {
             "shimmer_rate_hz": 7.5
         },
         "peak_limit": 0.86,
-        "rms_target": -15.5,
-        "morphology": {
-            "spectromorphological_archetype": "Graduated Continuant",
-            "gesture_class": "Expansive / Ascending",
-            "motion_type": "Ascent–Agglomeration (Exogeny)"
-        }
+        "rms_target": -15.5
     },
 
     # 10. MISTAKE - Attack–Decay (damped) - Weak impulsive collapse
@@ -517,12 +472,7 @@ ARCHETYPES: Dict[str, Dict[str, Any]] = {
             "noise_type": "pink"
         },
         "peak_limit": 0.76,
-        "rms_target": -19.0,
-        "morphology": {
-            "spectromorphological_archetype": "Attack–Decay",
-            "gesture_class": "Impulsive / Weak",
-            "motion_type": "Descent–Dissipation"
-        }
+        "rms_target": -19.0
     },
 
     # 11. INACCURACY - Particle System - Sparse stochastic wind chime strikes
@@ -546,12 +496,7 @@ ARCHETYPES: Dict[str, Dict[str, Any]] = {
             "waveform": "triangle"
         },
         "peak_limit": 0.6,
-        "rms_target": -20.0,
-        "morphology": {
-            "spectromorphological_archetype": "Attack–Decay",
-            "gesture_class": "Gentle / Hesitant",
-            "motion_type": "Parabolic (small rise–fall)"
-        }
+        "rms_target": -20.0
     },
     # 13. STRONG - Graduated Continuant (firm) - Stable controlled flow
     "STRONG": {
@@ -593,12 +538,7 @@ ARCHETYPES: Dict[str, Dict[str, Any]] = {
             "noise_type": "pink"
         },
         "peak_limit": 0.83,
-        "rms_target": -17.0,
-        "morphology": {
-            "spectromorphological_archetype": "Graduated Continuant",
-            "gesture_class": "Stable / Controlled",
-            "motion_type": "Steady Flow / Endogeny"
-        }
+        "rms_target": -17.0
     },
 
     # 14. KING_ATTACK - Graduated Continuant (high-energy) - Forceful agglomeration
@@ -641,12 +581,7 @@ ARCHETYPES: Dict[str, Dict[str, Any]] = {
             "noise_type": "white"
         },
         "peak_limit": 0.88,
-        "rms_target": -15.0,
-        "morphology": {
-            "spectromorphological_archetype": "Graduated Continuant",
-            "gesture_class": "Forceful / Driven",
-            "motion_type": "Ascent–Agglomeration"
-        }
+        "rms_target": -15.0
     },
 
     # 15. TACTICAL_SEQUENCE - Particle System - Calculation clicks in rhythmic clusters
@@ -671,12 +606,7 @@ ARCHETYPES: Dict[str, Dict[str, Any]] = {
             "waveform": "sine"
         },
         "peak_limit": 0.6,
-        "rms_target": -20.0,
-        "morphology": {
-            "spectromorphological_archetype": "Iterated Composite",
-            "gesture_class": "Segmented / Cellular",
-            "motion_type": "Periodic iteration / rhythmic convolution"
-        }
+        "rms_target": -20.0
     },
 
     # 16. CHECKMATE - Attack–Decay Chain - Terminal resolution
@@ -720,12 +650,7 @@ ARCHETYPES: Dict[str, Dict[str, Any]] = {
             "noise_type": "white"
         },
         "peak_limit": 0.90,
-        "rms_target": -14.5,
-        "morphology": {
-            "spectromorphological_archetype": "Attack–Decay Chain",
-            "gesture_class": "Terminal / Resolving",
-            "motion_type": "Convergence → Termination"
-        }
+        "rms_target": -14.5
     },
 
     # 17. CASTLING - Composite Dual - Balanced mirrored gesture
@@ -767,12 +692,7 @@ ARCHETYPES: Dict[str, Dict[str, Any]] = {
             "noise_type": "pink"
         },
         "peak_limit": 0.74,
-        "rms_target": -19.0,
-        "morphology": {
-            "spectromorphological_archetype": "Composite Dual",
-            "gesture_class": "Balanced / Mirrored",
-            "motion_type": "Reciprocal motion"
-        }
+        "rms_target": -19.0
     },
 
     # 18. PROMOTION - Graduated Continuant - Ascending transformation
@@ -819,12 +739,7 @@ ARCHETYPES: Dict[str, Dict[str, Any]] = {
             "shimmer_rate_hz": 8.0
         },
         "peak_limit": 0.87,
-        "rms_target": -15.0,
-        "morphology": {
-            "spectromorphological_archetype": "Graduated Continuant",
-            "gesture_class": "Ascending / Transformative",
-            "motion_type": "Ascent → Burst"
-        }
+        "rms_target": -15.0
     },
 
     # 19. PAWN_ADVANCE - Attack–Decay (elongated) - Grounded progressive push
@@ -868,12 +783,7 @@ ARCHETYPES: Dict[str, Dict[str, Any]] = {
             "noise_type": "pink"
         },
         "peak_limit": 0.71,
-        "rms_target": -19.5,
-        "morphology": {
-            "spectromorphological_archetype": "Attack–Decay (elongated)",
-            "gesture_class": "Grounded / Progressive",
-            "motion_type": "Gradual Ascent"
-        }
+        "rms_target": -19.5
     },
 
     # 20. CENTER_CONTROL - Continuant - Stable balanced centric motion
@@ -916,12 +826,7 @@ ARCHETYPES: Dict[str, Dict[str, Any]] = {
             "noise_type": "pink"
         },
         "peak_limit": 0.77,
-        "rms_target": -18.0,
-        "morphology": {
-            "spectromorphological_archetype": "Continuant",
-            "gesture_class": "Stable / Balanced",
-            "motion_type": "Centric motion"
-        }
+        "rms_target": -18.0
     },
 
     # 21. PIECE_MANEUVER - Graduated Continuant - Curved graceful arc
@@ -966,12 +871,7 @@ ARCHETYPES: Dict[str, Dict[str, Any]] = {
             "noise_type": "pink"
         },
         "peak_limit": 0.73,
-        "rms_target": -19.0,
-        "morphology": {
-            "spectromorphological_archetype": "Graduated Continuant",
-            "gesture_class": "Curved / Graceful",
-            "motion_type": "Parabolic / Spiral"
-        }
+        "rms_target": -19.0
     },
 
     # 22. DEVELOPMENT - Continuant Growth - Emergent formation
@@ -1015,12 +915,7 @@ ARCHETYPES: Dict[str, Dict[str, Any]] = {
             "noise_type": "pink"
         },
         "peak_limit": 0.76,
-        "rms_target": -18.5,
-        "morphology": {
-            "spectromorphological_archetype": "Continuant Growth",
-            "gesture_class": "Emergent / Forming",
-            "motion_type": "Exogeny / Growth"
-        }
+        "rms_target": -18.5
     },
 
     # 23. ROOK_ACTIVATION - Attack–Continuant - Forceful directed expansion
@@ -1065,12 +960,7 @@ ARCHETYPES: Dict[str, Dict[str, Any]] = {
             "noise_type": "white"
         },
         "peak_limit": 0.84,
-        "rms_target": -16.5,
-        "morphology": {
-            "spectromorphological_archetype": "Attack–Continuant",
-            "gesture_class": "Forceful / Directed",
-            "motion_type": "Linear Ascent / Expansion"
-        }
+        "rms_target": -16.5
     },
 
     # 24. ROOKS_DOUBLED - Composite Dual - Coupled reinforcing resonance
@@ -1115,12 +1005,7 @@ ARCHETYPES: Dict[str, Dict[str, Any]] = {
             "noise_type": "pink"
         },
         "peak_limit": 0.81,
-        "rms_target": -17.5,
-        "morphology": {
-            "spectromorphological_archetype": "Composite Dual",
-            "gesture_class": "Coupled / Reinforcing",
-            "motion_type": "Centric rotation"
-        }
+        "rms_target": -17.5
     },
 
     # 25. QUEEN_CENTRALIZED - Continuant - Focused stable centric fixation
@@ -1163,12 +1048,7 @@ ARCHETYPES: Dict[str, Dict[str, Any]] = {
             "noise_type": "pink"
         },
         "peak_limit": 0.79,
-        "rms_target": -17.5,
-        "morphology": {
-            "spectromorphological_archetype": "Continuant",
-            "gesture_class": "Focused / Stable",
-            "motion_type": "Centric fixation"
-        }
+        "rms_target": -17.5
     },
 
     # 26. FIRST_EXCHANGE - Particle System - Metallic collision scatter
@@ -1193,12 +1073,7 @@ ARCHETYPES: Dict[str, Dict[str, Any]] = {
             "waveform": "triangle"
         },
         "peak_limit": 0.65,
-        "rms_target": -18.0,
-        "morphology": {
-            "spectromorphological_archetype": "Attack–Decay",
-            "gesture_class": "Collision / Impact",
-            "motion_type": "Transient strike"
-        }
+        "rms_target": -18.0
     },
 
     # 27. ASYMMETRY - Continuant - Distorted divergent fragmentation
@@ -1244,12 +1119,7 @@ ARCHETYPES: Dict[str, Dict[str, Any]] = {
             "noise_type": "white"
         },
         "peak_limit": 0.78,
-        "rms_target": -18.0,
-        "morphology": {
-            "spectromorphological_archetype": "Continuant",
-            "gesture_class": "Distorted / Divergent",
-            "motion_type": "Fragmentation / Divergence"
-        }
+        "rms_target": -18.0
     },
 
     # 28. TIME_MILESTONE - Continuant - Transitional checkpoint marker
@@ -1291,12 +1161,7 @@ ARCHETYPES: Dict[str, Dict[str, Any]] = {
             "noise_type": "pink"
         },
         "peak_limit": 0.70,
-        "rms_target": -20.0,
-        "morphology": {
-            "spectromorphological_archetype": "Continuant",
-            "gesture_class": "Marker / Transitional",
-            "motion_type": "Periodic checkpoint"
-        }
+        "rms_target": -20.0
     },
 
     # 29. TIME_SCRAMBLE - Iterative - Turbulent chaotic rapid oscillation
@@ -1343,12 +1208,7 @@ ARCHETYPES: Dict[str, Dict[str, Any]] = {
             "noise_type": "white"
         },
         "peak_limit": 0.73,
-        "rms_target": -19.0,
-        "morphology": {
-            "spectromorphological_archetype": "Iterative",
-            "gesture_class": "Turbulent / Chaotic",
-            "motion_type": "Rapid oscillation / turbulence"
-        }
+        "rms_target": -19.0
     },
 
     # 30. QUEENS_TRADED - Dual Attack–Decay - Symmetrical convergent dissipation
@@ -1394,12 +1254,7 @@ ARCHETYPES: Dict[str, Dict[str, Any]] = {
             "noise_type": "pink"
         },
         "peak_limit": 0.72,
-        "rms_target": -19.5,
-        "morphology": {
-            "spectromorphological_archetype": "Dual Attack–Decay",
-            "gesture_class": "Symmetrical / Resolving",
-            "motion_type": "Convergence–Dissipation"
-        }
+        "rms_target": -19.5
     },
 
     # 31. FINAL_RESOLUTION - Particle System - Dissolving particles fade to silence
@@ -1422,12 +1277,7 @@ ARCHETYPES: Dict[str, Dict[str, Any]] = {
             "waveform": "sine"
         },
         "peak_limit": 0.35,
-        "rms_target": -30.0,
-        "morphology": {
-            "spectromorphological_archetype": "Graduated Continuant",
-            "gesture_class": "Fading / Dissolving",
-            "motion_type": "Descent–Resolution"
-        }
+        "rms_target": -30.0
     },
 
 }
