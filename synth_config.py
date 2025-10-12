@@ -552,10 +552,10 @@ class SynthConfig:
 
     # === MIXING LEVELS ===
     MIXING: Dict[str, float] = field(default_factory=lambda: {
-        'drone_level': 0.3,
-        'pattern_level': 0.4,
-        'sequencer_level': 0.5,
-        'moment_level': 0.8,
+        'drone_level': 0.15,   # Reduced drone for less dark ambience
+        'pattern_level': 0.6,   # Boosted patterns for more melody
+        'sequencer_level': 0.4, # Slightly reduced heartbeat
+        'moment_level': 0.5,    # REDUCED Layer3b - they were too loud!
         'section_level': 0.7,
         'master_limiter': 0.9,
         'sidechain_amount': 0.3,
