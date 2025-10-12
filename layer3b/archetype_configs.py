@@ -432,21 +432,21 @@ ARCHETYPES: Dict[str, Dict[str, Any]] = {
 
     # 9. BRILLIANT - Graduated Continuant - Expansive ascending gesture
     "BRILLIANT": {
-        "duration_base": 3.0,
+        "duration_base": 3.3,
         "duration_tension_scale": 0.8,
         "duration_entropy_scale": -0.5,
         "phases": {
-            "pre_shadow": 0.20,
+            "pre_shadow": 0.16,
             "impact": 0.10,
-            "bloom": 0.40,
-            "decay": 0.20,
+            "bloom": 0.48,
+            "decay": 0.16,
             "residue": 0.10
         },
         "pitch": {
             "type": "ascending_spread",
             "start_freq_base": 220,
             "start_freq_entropy_scale": 110,
-            "octave_rise": 2,
+            "octave_rise": 2.2,
             "spread_phases": ["impact", "bloom"]
         },
         "harmony": {
@@ -458,25 +458,25 @@ ARCHETYPES: Dict[str, Dict[str, Any]] = {
         "filter": {
             "type": "lowpass_to_highpass_open",
             "lp_cutoff_start": 300,
-            "hp_cutoff_end": 3000,
-            "resonance_base": 0.4,
+            "hp_cutoff_end": 3800,
+            "resonance_base": 0.48,
             "morph_phase": "bloom"
         },
         "envelope": {
             "type": "gradual_sustained",
-            "attack_ms": 50,
-            "sustain_phase_ratio": 0.5,
+            "attack_ms": 40,
+            "sustain_phase_ratio": 0.54,
             "decay_curve": "linear"
         },
         "texture": {
-            "noise_ratio_base": 0.1,
-            "noise_ratio_entropy_scale": 0.2,
+            "noise_ratio_base": 0.06,
+            "noise_ratio_entropy_scale": 0.16,
             "noise_type": "white",
             "shimmer_enable": True,
-            "shimmer_rate_hz": 6.0
+            "shimmer_rate_hz": 7.5
         },
-        "peak_limit": 0.85,
-        "rms_target": -16.0,
+        "peak_limit": 0.86,
+        "rms_target": -15.5,
         "morphology": {
             "spectromorphological_archetype": "Graduated Continuant",
             "gesture_class": "Expansive / Ascending",
@@ -558,37 +558,38 @@ ARCHETYPES: Dict[str, Dict[str, Any]] = {
             "residue": 0.16
         },
         "pitch": {
-            "type": "weak_parabolic",
+            "type": "discrete_chimes",
             "start_freq_base": 550,
-            "rise_semitones": 3,
-            "fall_semitones": 4
+            "num_notes": 5,
+            "pitch_variation_semitones": 5
         },
         "harmony": {
             "type": "minimal_dyad",
-            "num_voices": 2,
+            "num_voices": 1,
             "interval_semitones": 3
         },
         "filter": {
             "type": "gentle_bandpass",
-            "bp_center_base": 950,
-            "bp_bandwidth": 500,
-            "resonance": 0.35
+            "bp_center_base": 1500,
+            "bp_bandwidth": 1200,
+            "resonance": 0.25
         },
         "envelope": {
             "type": "sudden_short_tail",
-            "attack_ms_base": 5,
-            "attack_ms_entropy_scale": 2,
-            "sustain_phase_ratio": 0.20,
+            "attack_ms_base": 3,
+            "attack_ms_entropy_scale": 1,
+            "sustain_phase_ratio": 0.15,
             "decay_curve": "exponential",
-            "decay_coefficient": -2.8
+            "decay_coefficient": -3.2
         },
         "texture": {
-            "noise_ratio_base": 0.20,
-            "noise_ratio_entropy_scale": 0.18,
-            "noise_type": "pink"
+            "noise_ratio_base": 0.0,
+            "noise_ratio_entropy_scale": 0.0,
+            "noise_type": "pink",
+            "waveform": "sine"
         },
-        "peak_limit": 0.65,
-        "rms_target": -21.0,
+        "peak_limit": 0.55,
+        "rms_target": -24.0,
         "morphology": {
             "spectromorphological_archetype": "Attack–Decay",
             "gesture_class": "Gentle / Hesitant",
@@ -1292,47 +1293,47 @@ ARCHETYPES: Dict[str, Dict[str, Any]] = {
 
     # 26. FIRST_EXCHANGE - Attack–Decay - Collision impact
     "FIRST_EXCHANGE": {
-        "duration_base": 1.4,
+        "duration_base": 1.2,
         "duration_tension_scale": 0.35,
         "duration_entropy_scale": 0.0,
         "phases": {
-            "pre_shadow": 0.10,
-            "impact": 0.22,
-            "bloom": 0.18,
-            "decay": 0.32,
-            "residue": 0.18
+            "pre_shadow": 0.06,
+            "impact": 0.20,
+            "bloom": 0.15,
+            "decay": 0.39,
+            "residue": 0.20
         },
         "pitch": {
             "type": "impact_transient",
-            "strike_freq_base": 660,
-            "decay_mult": 0.7
+            "strike_freq_base": 880,
+            "decay_mult": 0.5
         },
         "harmony": {
             "type": "collision_cluster",
-            "num_voices": 3,
-            "impact_density": 0.9
+            "num_voices": 2,
+            "impact_density": 0.4
         },
         "filter": {
             "type": "impact_spike",
-            "bp_center": 1500,
-            "bp_bandwidth": 900,
-            "impact_resonance": 0.75
+            "bp_center": 2100,
+            "bp_bandwidth": 500,
+            "impact_resonance": 0.92
         },
         "envelope": {
-            "type": "sudden_short_tail",
-            "attack_ms_base": 1,
-            "attack_ms_entropy_scale": 2,
-            "sustain_phase_ratio": 0.15,
-            "decay_curve": "exponential",
-            "decay_coefficient": -4.5
+            "type": "gated_pulse",
+            "attack_ms": 1,
+            "gate_duration_ms": 40,
+            "release_ms": 18,
+            "pulse_rate_hz": 2.0
         },
         "texture": {
-            "noise_ratio_base": 0.28,
-            "noise_ratio_entropy_scale": 0.25,
-            "noise_type": "white"
+            "noise_ratio_base": 0.0,
+            "noise_ratio_entropy_scale": 0.0,
+            "noise_type": "pink",
+            "waveform": "triangle"
         },
-        "peak_limit": 0.78,
-        "rms_target": -18.5,
+        "peak_limit": 0.84,
+        "rms_target": -17.5,
         "morphology": {
             "spectromorphological_archetype": "Attack–Decay",
             "gesture_class": "Collision / Impact",

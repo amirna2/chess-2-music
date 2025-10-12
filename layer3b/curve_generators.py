@@ -446,10 +446,21 @@ def _pitch_discrete_chimes(config: Dict[str, Any],
     gap_ratio = 0.3  # 30% gap between notes
 
     # Generate discrete notes
+    # Default to silence during bloom for clear gaps; notes will set non-zero velocity
+    velocity_curve[bloom_start:decay_end] = 0.0
     for i in range(num_notes):
-        note_start = bloom_start + i * note_duration_samples
+        # Base start with slight jitter for wind variability (±20% of note duration)
+        base_start = bloom_start + i * note_duration_samples
+        jitter = int((note_duration_samples * 0.2) * (rng.random() - 0.5) * 2)
+        note_start = max(bloom_start, min(base_start + jitter, decay_end - 1))
+        # Ensure first note does not start exactly at bloom boundary to avoid abrupt onset
+        if i == 0:
+            min_offset = int(0.005 * sample_rate)  # 5ms
+            note_start = max(note_start, bloom_start + min_offset)
         note_length = int(note_duration_samples * (1 - gap_ratio))
         note_end = min(note_start + note_length, total_samples)
+        # Allow ringing to extend into the gap up to the next slot boundary
+        ring_end = min(note_start + note_duration_samples, total_samples)
 
         if note_start >= total_samples:
             break
@@ -469,12 +480,33 @@ def _pitch_discrete_chimes(config: Dict[str, Any],
         note_freq = base_freq * (2 ** (pitch_offset / 12))
 
         # Random velocity for this note (wind chime randomness)
-        # Some hits are loud and bright, others soft and muted
-        velocity = 0.3 + 0.7 * rng.random()  # Range 0.3 to 1.0
+        # Softer overall to avoid harshness
+        velocity = 0.2 + 0.5 * rng.random()  # Range ~0.2 to 0.7
 
-        # Constant pitch for this note (like struck chime)
-        curve[note_start:note_end] = note_freq
-        velocity_curve[note_start:note_end] = velocity
+        # Constant pitch for this note including ring tail
+        curve[note_start:ring_end] = note_freq
+
+        # Per-note strike envelope: fast attack, exponential decay
+        seg_len = max(1, ring_end - note_start)
+        t = np.arange(seg_len) / sample_rate
+        # Attack ~6ms (raised-cosine) for clickless onset
+        attack_s = 0.006
+        attack_samples = max(1, int(attack_s * sample_rate))
+        attack_samples = min(attack_samples, seg_len)
+        per_note_env = np.ones(seg_len)
+        # Raised-cosine (half-Hann) attack for ultra-smooth onset
+        per_note_env[:attack_samples] = 0.5 - 0.5 * np.cos(np.linspace(0, np.pi, attack_samples))
+        # Exponential decay over segment
+        if seg_len - attack_samples > 0:
+            decay_t = np.linspace(0, 1, seg_len - attack_samples)
+            per_note_env[attack_samples:] = np.exp(-1.1 * decay_t)
+
+        # Accumulate tails so multiple notes can overlap naturally
+        current = velocity_curve[note_start:ring_end]
+        added = velocity * per_note_env
+        summed = current + added
+        # Soft clip to 1.0 to avoid overs
+        velocity_curve[note_start:ring_end] = np.minimum(1.0, summed)
 
     # Pre-bloom and post-decay: silence (or very low)
     curve[:bloom_start] = base_freq * 0.5
