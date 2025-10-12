@@ -6,9 +6,9 @@ Interactive tool to test individual gesture archetypes and diagnose synthesis is
 Generates isolated gesture audio with detailed parameter analysis.
 
 Usage:
-    python3 test_gesture_sound.py INACCURACY
-    python3 test_gesture_sound.py FIRST_EXCHANGE --tension 0.8
-    python3 test_gesture_sound.py --list  # List all archetypes
+    python3 gesture_test.py INACCURACY
+    python3 gesture_test.py FIRST_EXCHANGE --tension 0.8
+    python3 gesture_test.py --list  # List all archetypes
 """
 
 import sys
@@ -92,11 +92,18 @@ def test_gesture(archetype_name, tension=0.7, entropy=0.5, sample_rate=88200, ou
         print(f"\nAvailable archetypes: {', '.join(sorted(ARCHETYPES.keys()))}")
         return 1
 
+    config = ARCHETYPES[archetype_name]
+
+    # Check if this is a particle-based archetype
+    if 'particle' in config:
+        print(f"❌ {archetype_name} is a particle-based archetype.")
+        print(f"   Use visualize_particles.py with --audio flag for particle archetypes.")
+        print(f"\n   Example: python3 visualize_particles.py {archetype_name} --audio")
+        return 1
+
     print("=" * 80)
     print(f"LAYER3B GESTURE TEST: {archetype_name}")
     print("=" * 80)
-
-    config = ARCHETYPES[archetype_name]
 
     # Print archetype configuration
     print(f"\n📋 ARCHETYPE CONFIGURATION")
@@ -276,10 +283,10 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python3 test_gesture_sound.py INACCURACY
-  python3 test_gesture_sound.py FIRST_EXCHANGE --tension 0.9
-  python3 test_gesture_sound.py BRILLIANT -o brilliant_test.wav
-  python3 test_gesture_sound.py --list
+  python3 gesture_test.py INACCURACY
+  python3 gesture_test.py FIRST_EXCHANGE --tension 0.9
+  python3 gesture_test.py BRILLIANT -o brilliant_test.wav
+  python3 gesture_test.py --list
         """
     )
 
@@ -293,11 +300,13 @@ Examples:
     args = parser.parse_args()
 
     if args.list:
-        print("Available Layer3b Archetypes:")
+        print("Available Layer3b Archetypes (Curve-based only):")
         print("=" * 80)
         for name in sorted(ARCHETYPES.keys()):
             config = ARCHETYPES[name]
-            print(f"  {name:25} {config['morphology']['gesture_class']}")
+            if 'particle' not in config:
+                print(f"  {name:25} {config['morphology']['gesture_class']}")
+        print("\nNote: Particle-based archetypes excluded. Use visualize_particles.py --audio for those.")
         return 0
 
     if not args.archetype:
