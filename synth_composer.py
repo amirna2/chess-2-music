@@ -19,6 +19,7 @@ from synth_engine import SubtractiveSynth
 from synth_narrative import create_narrative_process
 from entropy_calculator import ChessEntropyCalculator
 from synth_composer import PatternCoordinator
+from layer3b import GestureCoordinator
 
 
 # === STEREO UTILITIES ===
@@ -185,6 +186,10 @@ class ChessSynthComposer:
             synth_engine=self.synth_layer2,
             rng=self.rng
         )
+
+        # Initialize gesture coordinator for Layer 3b
+        self.gesture_coordinator = GestureCoordinator(self.rng)
+        self.gesture_coordinator.set_synth_engine(self.synth_layer3)
 
     def _create_rng_from_eco(self, eco_code):
         """
@@ -1556,6 +1561,30 @@ class ChessSynthComposer:
 
         return self.config.MELODIC_PATTERNS[key]
 
+    def _map_event_to_archetype(self, event_type):
+        """
+        Map chess event type to gesture archetype.
+
+        Each chess event now has its own dedicated archetype configuration
+        in layer3b/archetype_configs.py with complete synthesis parameters
+        and spectromorphological metadata.
+
+        Args:
+            event_type: Chess moment event type string (e.g., 'BLUNDER', 'CASTLING', etc.)
+
+        Returns:
+            Archetype name (same as event_type) for GestureCoordinator
+        """
+        # Direct 1:1 mapping - each event has its own archetype config
+        from layer3b.archetype_configs import ARCHETYPES
+
+        if event_type in ARCHETYPES:
+            return event_type
+        else:
+            # Fallback for unknown event types
+            print(f"Warning: Unknown event type '{event_type}', falling back to MOVE archetype")
+            return 'MOVE'
+
     def compose_section(self, section, section_index, total_sections):
         """Compose a section using all three narrative layers"""
 
@@ -1740,9 +1769,7 @@ class ChessSynthComposer:
         filtered_sequence = np.zeros_like(samples)
 
         if self.config.LAYER_ENABLE['sequencer']:
-            amp_env = self.config.SEQUENCER_SYNTH['amp_env']
-            filter_env = self.config.SEQUENCER_SYNTH['filter_env']
-            print(f"  → Layer 3: Sequencer ({key_moments_count} key moments) | wave: supersaw | amp: {amp_env[0]:.3f} {amp_env[1]:.2f} {amp_env[2]:.2f} {amp_env[3]:.2f} | filter: {filter_env[0]:.3f} {filter_env[1]:.2f} {filter_env[2]:.2f} {filter_env[3]:.2f}")
+            print(f"  → Layer 3: Emotional gesture layer ({key_moments_count} key moments)")
             # Print entropy info if available
             if entropy_curve is not None and len(entropy_curve) > 0:
                 avg_entropy = np.mean(entropy_curve)
@@ -1861,26 +1888,21 @@ class ChessSynthComposer:
 
             moment_events = adjusted_events
 
-            # Debug: Print moment event timeline with synthesis info
+            # Debug: Print moment event timeline with archetype mapping
             if moment_events:
-                amp_env = self.config.SEQUENCER_SYNTH['amp_env']
-                filter_env = self.config.SEQUENCER_SYNTH['filter_env']
-                print(f"  → Moment events ({len(moment_events)}) | wave: supersaw | amp: {amp_env[0]:.3f} {amp_env[1]:.2f} {amp_env[2]:.2f} {amp_env[3]:.2f} | filter: {filter_env[0]:.3f} {filter_env[1]:.2f} {filter_env[2]:.2f} {filter_env[3]:.2f}")
+                print(f"  → Moment events ({len(moment_events)}) | Layer 3b gestures:")
                 for event in moment_events:
-                    pattern_name = event['type']
-                    pattern_preview = ""
-                    if pattern_name in self.config.SEQUENCER_PATTERNS:
-                        pat = self.config.SEQUENCER_PATTERNS[pattern_name]
-                        if isinstance(pat, dict):  # DEVELOPMENT has sub-patterns
-                            pattern_preview = "prog"
-                        else:
-                            # Show first 6 steps with zero-padded double digits
-                            preview = [f"{x:02d}" if x is not None else '__' for x in pat[:6]]
-                            pattern_preview = ','.join(preview)
+                    event_type = event['type']
+                    archetype = self._map_event_to_archetype(event_type)
 
-                    print(f"      {event['type']:<18} t={event['start_time']:05.1f}-{event['end_time']:05.1f}s "
-                          f"| dur={event['end_time']-event['start_time']:.1f}s score={event['score']} "
-                          f"mix={event['mix_amount']:.2f} flt={event['filter_mod']:.0f}Hz | pat:[{pattern_preview},...]")
+                    # Calculate gesture duration from config (approximate)
+                    from layer3b.archetype_configs import ARCHETYPES
+                    arch_config = ARCHETYPES.get(archetype, {})
+                    base_dur = arch_config.get('duration_base', 2.0)
+
+                    print(f"      {event_type:<18} t={event['start_time']:05.1f}s "
+                          f"→ {archetype:14s} | dur≈{base_dur:.1f}s | "
+                          f"phases: pre→impact→bloom→decay→residue")
 
             # === GENERATE HEARTBEAT SUB-LAYER (3a) ===
             # LUB-dub heartbeat pattern (from heartbeat_designer.py testing)
@@ -1969,15 +1991,54 @@ class ChessSynthComposer:
                 # Advance by entropy-varied cycle duration (sample-accurate)
                 current_sample += len(cycle_audio)
 
-            # === GENERATE MOMENT SEQUENCER SUB-LAYER (3b) ===
-            # Event-driven supersaw sequences for chess moments
-            if self.config.LAYER_ENABLE.get('moments', True):
-                print(f"  → Layer 3b: Moment sequencer | wave: supersaw")
-            else:
-                print(f"  → Layer 3b: Moment sequencer (muted)")
+            # === GENERATE EMOTIONAL GESTURES SUB-LAYER (3b) ===
+            # Event-driven gesture synthesis for chess moments
+            gesture_buffer = np.zeros_like(sequencer_layer)
 
-            # Generate sequence with event-based blending (only if moments enabled)
             if self.config.LAYER_ENABLE.get('moments', True):
+                print(f"  → Layer 3b: Emotional gestures ({len(moment_events)} moments)")
+
+                # Calculate average entropy for section context
+                avg_entropy = 0.5
+                if entropy_curve is not None and len(entropy_curve) > 0:
+                    avg_entropy = np.mean(entropy_curve)
+
+                # Build section context for gesture generation
+                section_context = {
+                    'tension': tension,
+                    'entropy': avg_entropy,
+                    'scale': scale
+                }
+
+                # Generate gesture for each moment event
+                for event in moment_events:
+                    event_type = event['type']
+                    archetype = self._map_event_to_archetype(event_type)
+
+                    try:
+                        # Generate gesture audio
+                        gesture_audio = self.gesture_coordinator.generate_gesture(
+                            archetype,
+                            event,
+                            section_context,
+                            self.sample_rate
+                        )
+
+                        # Mix into buffer at event's start position
+                        start_sample = event['start_sample']
+                        end_sample = min(start_sample + len(gesture_audio), len(gesture_buffer))
+                        gesture_buffer[start_sample:end_sample] += gesture_audio[:end_sample - start_sample]
+
+                    except Exception as e:
+                        print(f"    [WARNING] Failed to generate {archetype} for {event_type}: {e}")
+
+                sequencer_layer = gesture_buffer
+            else:
+                print(f"  → Layer 3b: Emotional gestures (muted)")
+                sequencer_layer = np.zeros_like(sequencer_layer)
+
+            # Skip old step sequencer code - replaced with gesture system above
+            if False:
                 samples_per_step = int(base_note_duration * self.sample_rate)
                 total_steps = int(section_duration / base_note_duration)
 
@@ -2219,6 +2280,7 @@ class ChessSynthComposer:
                             sequencer_layer[start_pos:harmony_end] += harmony_audio[:harmony_end-start_pos] * self.config.LAYER_MIXING['sequencer_note_level'] * 0.5
 
                     prev_freq = target_freq
+            # End of old step sequencer code (if False block)
 
             # Apply global filter sweep
             sweep_length = len(sequencer_layer)

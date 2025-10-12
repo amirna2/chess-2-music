@@ -41,6 +41,14 @@ def generate_pitch_curve(config: Dict[str, Any],
         return _pitch_oscillating_tremor(config, phases, section_context, total_samples, rng, sample_rate)
     elif trajectory_type == "cellular_sequence":
         return _pitch_cellular_sequence(config, phases, section_context, total_samples, rng, sample_rate)
+    elif trajectory_type == "weak_parabolic":
+        return _pitch_weak_parabolic(config, phases, section_context, total_samples, rng)
+    elif trajectory_type == "slow_drift":
+        return _pitch_slow_drift(config, phases, section_context, total_samples, rng)
+    elif trajectory_type == "impact_transient":
+        return _pitch_impact_transient(config, phases, section_context, total_samples, rng)
+    elif trajectory_type == "final_descent":
+        return _pitch_final_descent(config, phases, section_context, total_samples, rng)
     else:
         raise ValueError(f"Unknown pitch trajectory type: {trajectory_type}")
 
@@ -223,6 +231,182 @@ def _pitch_cellular_sequence(config: Dict[str, Any],
     return curve
 
 
+def _pitch_weak_parabolic(config: Dict[str, Any],
+                          phases: Dict[str, Any],
+                          section_context: Dict[str, Any],
+                          total_samples: int,
+                          rng: np.random.Generator) -> np.ndarray:
+    """
+    Weak parabolic pitch for INACCURACY archetype.
+
+    Creates a gentle rise and fall, suggesting hesitation or uncertainty.
+    Smaller pitch excursion than full parabolic gesture.
+    """
+    start_freq = config['start_freq_base']
+    rise_semitones = config['rise_semitones']
+    fall_semitones = config['fall_semitones']
+
+    # Calculate peak and end frequencies
+    peak_freq = start_freq * (2 ** (rise_semitones / 12))
+    end_freq = peak_freq / (2 ** (fall_semitones / 12))
+
+    # Phase boundaries
+    impact_start = phases['impact']['start_sample']
+    bloom_mid = phases['bloom']['start_sample'] + phases['bloom']['duration_samples'] // 2
+    decay_end = phases['decay']['end_sample']
+
+    curve = np.zeros(total_samples)
+
+    # Pre-impact: hold at start
+    curve[:impact_start] = start_freq
+
+    # Impact → bloom mid: rise to peak (quadratic for smooth arc)
+    rise_samples = bloom_mid - impact_start
+    if rise_samples > 0:
+        t = np.linspace(0, 1, rise_samples)
+        # Quadratic easing for parabolic feel
+        curve[impact_start:bloom_mid] = start_freq + (peak_freq - start_freq) * (t ** 2)
+
+    # Bloom mid → decay end: fall to end (inverse quadratic)
+    fall_samples = decay_end - bloom_mid
+    if fall_samples > 0:
+        t = np.linspace(0, 1, fall_samples)
+        # Inverse quadratic for symmetric fall
+        curve[bloom_mid:decay_end] = peak_freq - (peak_freq - end_freq) * (t ** 2)
+
+    # Residue: hold at end
+    curve[decay_end:] = end_freq
+
+    return curve
+
+
+def _pitch_slow_drift(config: Dict[str, Any],
+                     phases: Dict[str, Any],
+                     section_context: Dict[str, Any],
+                     total_samples: int,
+                     rng: np.random.Generator) -> np.ndarray:
+    """
+    Slow drift for SIGNIFICANT_SHIFT archetype.
+
+    Creates gradual pitch shift suggesting strategic repositioning.
+    Linear or sigmoidal drift over extended duration.
+    """
+    start_freq = config['start_freq_base']
+    drift_semitones = config['drift_semitones']
+    drift_direction = config['drift_direction']
+
+    # Calculate target frequency
+    if drift_direction == 'ascending':
+        end_freq = start_freq * (2 ** (drift_semitones / 12))
+    else:
+        end_freq = start_freq / (2 ** (drift_semitones / 12))
+
+    # Drift occurs during bloom phase primarily
+    bloom_start = phases['bloom']['start_sample']
+    bloom_end = phases['bloom']['end_sample']
+
+    curve = np.zeros(total_samples)
+
+    # Pre-bloom: hold at start
+    curve[:bloom_start] = start_freq
+
+    # Bloom: slow drift with sigmoid curve for smooth acceleration/deceleration
+    drift_samples = bloom_end - bloom_start
+    if drift_samples > 0:
+        t = np.linspace(-3, 3, drift_samples)  # Sigmoid range
+        sigmoid = 1 / (1 + np.exp(-t))  # 0 to 1
+        curve[bloom_start:bloom_end] = start_freq + (end_freq - start_freq) * sigmoid
+
+    # Post-bloom: hold at target
+    curve[bloom_end:] = end_freq
+
+    return curve
+
+
+def _pitch_impact_transient(config: Dict[str, Any],
+                            phases: Dict[str, Any],
+                            section_context: Dict[str, Any],
+                            total_samples: int,
+                            rng: np.random.Generator) -> np.ndarray:
+    """
+    Impact transient for FIRST_EXCHANGE archetype.
+
+    Creates sharp attack with rapid pitch decay, mimicking collision impact.
+    Brief high pitch that quickly settles to lower fundamental.
+    """
+    strike_freq = config['strike_freq_base']
+    decay_mult = config['decay_mult']
+    target_freq = strike_freq * decay_mult
+
+    # Impact occurs at impact phase
+    impact_start = phases['impact']['start_sample']
+    impact_end = phases['impact']['end_sample']
+    bloom_end = phases['bloom']['end_sample']
+
+    curve = np.zeros(total_samples)
+
+    # Pre-impact: silence or very low (we'll use low fundamental)
+    curve[:impact_start] = target_freq * 0.5
+
+    # Impact: sharp strike at high pitch
+    curve[impact_start:impact_end] = strike_freq
+
+    # Bloom: exponential decay to target
+    decay_samples = bloom_end - impact_end
+    if decay_samples > 0:
+        # Exponential decay curve
+        decay_curve = np.exp(np.linspace(0, -3, decay_samples))
+        curve[impact_end:bloom_end] = target_freq + (strike_freq - target_freq) * decay_curve
+
+    # Post-bloom: settle at target
+    curve[bloom_end:] = target_freq
+
+    return curve
+
+
+def _pitch_final_descent(config: Dict[str, Any],
+                        phases: Dict[str, Any],
+                        section_context: Dict[str, Any],
+                        total_samples: int,
+                        rng: np.random.Generator) -> np.ndarray:
+    """
+    Final descent for FINAL_RESOLUTION archetype.
+
+    Creates long, smooth descent to very low pitch, suggesting conclusion/resolution.
+    Logarithmic or exponential curve for natural pitch perception.
+    """
+    start_freq = config['start_freq']
+    end_freq = config['end_freq']
+    descent_curve_type = config.get('descent_curve', 'logarithmic')
+
+    # Descent spans bloom + decay phases
+    bloom_start = phases['bloom']['start_sample']
+    decay_end = phases['decay']['end_sample']
+
+    curve = np.zeros(total_samples)
+
+    # Pre-bloom: hold at start
+    curve[:bloom_start] = start_freq
+
+    # Bloom + decay: gradual descent
+    descent_samples = decay_end - bloom_start
+    if descent_samples > 0:
+        if descent_curve_type == 'logarithmic':
+            # Logarithmic descent (perceptually linear in pitch)
+            curve[bloom_start:decay_end] = np.exp(
+                np.linspace(np.log(start_freq), np.log(end_freq), descent_samples)
+            )
+        else:  # exponential
+            # Exponential descent (accelerating fall)
+            t = np.linspace(0, 1, descent_samples)
+            curve[bloom_start:decay_end] = start_freq - (start_freq - end_freq) * (t ** 3)
+
+    # Residue: hold at end (very low)
+    curve[decay_end:] = end_freq
+
+    return curve
+
+
 def generate_harmony(config: Dict[str, Any],
                     base_pitch_curve: np.ndarray,
                     phases: Dict[str, Any],
@@ -251,6 +435,14 @@ def generate_harmony(config: Dict[str, Any],
         return _harmony_dense_cluster(config, base_pitch_curve, phases, section_context, rng)
     elif harmony_type == "harmonic_stack":
         return _harmony_harmonic_stack(config, base_pitch_curve, phases, section_context, rng)
+    elif harmony_type == "minimal_dyad":
+        return _harmony_minimal_dyad(config, base_pitch_curve, phases, section_context, rng)
+    elif harmony_type == "collision_cluster":
+        return _harmony_collision_cluster(config, base_pitch_curve, phases, section_context, rng)
+    elif harmony_type == "shifting_voices":
+        return _harmony_shifting_voices(config, base_pitch_curve, phases, section_context, rng)
+    elif harmony_type == "resolving_to_root":
+        return _harmony_resolving_to_root(config, base_pitch_curve, phases, section_context, rng)
     else:
         raise ValueError(f"Unknown harmony type: {harmony_type}")
 
@@ -411,6 +603,157 @@ def _harmony_harmonic_stack(config: Dict[str, Any],
     return voices
 
 
+def _harmony_minimal_dyad(config: Dict[str, Any],
+                          base_pitch_curve: np.ndarray,
+                          phases: Dict[str, Any],
+                          section_context: Dict[str, Any],
+                          rng: np.random.Generator) -> List[np.ndarray]:
+    """
+    Minimal dyad for INACCURACY archetype.
+
+    Creates simple two-voice harmony with fixed interval.
+    Minimal harmonic complexity, suggesting hesitation or simplicity.
+    """
+    num_voices = config['num_voices']
+    interval_semitones = config['interval_semitones']
+
+    voices = []
+
+    # Voice 1: base pitch
+    voices.append(base_pitch_curve.copy())
+
+    # Voice 2: transposed by interval
+    if num_voices >= 2:
+        interval_mult = 2 ** (interval_semitones / 12)
+        voices.append(base_pitch_curve * interval_mult)
+
+    return voices
+
+
+def _harmony_collision_cluster(config: Dict[str, Any],
+                               base_pitch_curve: np.ndarray,
+                               phases: Dict[str, Any],
+                               section_context: Dict[str, Any],
+                               rng: np.random.Generator) -> List[np.ndarray]:
+    """
+    Collision cluster for FIRST_EXCHANGE archetype.
+
+    Creates tight, high-density cluster at impact moment.
+    Voices converge tightly, suggesting collision or confrontation.
+    """
+    num_voices = config['num_voices']
+    impact_density = config['impact_density']
+
+    # During impact phase, voices cluster tightly
+    impact_start = phases['impact']['start_sample']
+    impact_end = phases['impact']['end_sample']
+
+    voices = []
+    for i in range(num_voices):
+        voice_curve = base_pitch_curve.copy()
+
+        # Tight clustering during impact (±1 semitone spread)
+        cluster_offset = (i - num_voices // 2) * impact_density
+        cluster_mult = 2 ** (cluster_offset / 12)
+
+        # Apply clustering during impact only
+        voice_curve[impact_start:impact_end] *= cluster_mult
+
+        voices.append(voice_curve)
+
+    return voices
+
+
+def _harmony_shifting_voices(config: Dict[str, Any],
+                             base_pitch_curve: np.ndarray,
+                             phases: Dict[str, Any],
+                             section_context: Dict[str, Any],
+                             rng: np.random.Generator) -> List[np.ndarray]:
+    """
+    Shifting voices for SIGNIFICANT_SHIFT archetype.
+
+    Creates voices that gradually shift position relative to each other.
+    Suggests strategic repositioning or gradual change.
+    """
+    num_voices = config['num_voices']
+    shift_rate = config['shift_rate']
+
+    # Bloom phase is where shift occurs
+    bloom_start = phases['bloom']['start_sample']
+    bloom_end = phases['bloom']['end_sample']
+    bloom_samples = bloom_end - bloom_start
+
+    voices = []
+    for i in range(num_voices):
+        voice_curve = base_pitch_curve.copy()
+
+        # Each voice shifts at different rate during bloom
+        if bloom_samples > 0:
+            # Shift amount increases with voice index
+            shift_semitones = (i - num_voices // 2) * shift_rate * 7  # Up to ±3.5 semitones
+
+            # Gradual shift over bloom phase
+            shift_curve = np.linspace(0, shift_semitones, bloom_samples)
+            shift_mult = 2 ** (shift_curve / 12)
+
+            voice_curve[bloom_start:bloom_end] *= shift_mult
+
+        voices.append(voice_curve)
+
+    return voices
+
+
+def _harmony_resolving_to_root(config: Dict[str, Any],
+                               base_pitch_curve: np.ndarray,
+                               phases: Dict[str, Any],
+                               section_context: Dict[str, Any],
+                               rng: np.random.Generator) -> List[np.ndarray]:
+    """
+    Resolving to root for FINAL_RESOLUTION archetype.
+
+    Creates voices that converge from chord to single root note.
+    Suggests harmonic resolution and closure.
+    """
+    num_voices_start = config['num_voices_start']
+    resolution_chord = config.get('resolution_chord', 'tonic')
+
+    # Define chord intervals (before resolution)
+    if resolution_chord == 'tonic':
+        intervals = [0, 4, 7, 12, 16]  # Major chord with extensions
+    else:
+        intervals = [0, 3, 7, 10, 14]  # Minor chord with extensions
+
+    # Resolution occurs during decay phase
+    decay_start = phases['decay']['start_sample']
+    decay_end = phases['decay']['end_sample']
+    decay_samples = decay_end - decay_start
+
+    voices = []
+    for i in range(min(num_voices_start, len(intervals))):
+        voice_curve = base_pitch_curve.copy()
+        interval = intervals[i]
+
+        # Before decay: hold chord interval
+        if decay_start > 0:
+            interval_mult = 2 ** (interval / 12)
+            voice_curve[:decay_start] *= interval_mult
+
+        # During decay: converge to root
+        if decay_samples > 0:
+            # Linear convergence from interval to unison
+            start_mult = 2 ** (interval / 12)
+            convergence = np.linspace(start_mult, 1.0, decay_samples)
+            voice_curve[decay_start:decay_end] = base_pitch_curve[decay_start:decay_end] * convergence
+
+        # After decay: all at root (unison)
+        # Already at base_pitch_curve
+
+        voices.append(voice_curve)
+
+    # Return only one voice at the end (others fade in envelope)
+    return voices[:1] if decay_end < len(base_pitch_curve) else voices
+
+
 def generate_filter_curve(config: Dict[str, Any],
                           phases: Dict[str, Any],
                           section_context: Dict[str, Any],
@@ -441,6 +784,14 @@ def generate_filter_curve(config: Dict[str, Any],
         return _filter_bp_sweep(config, phases, section_context, total_samples, rng)
     elif filter_type == "rhythmic_gate":
         return _filter_rhythmic_gate(config, phases, section_context, total_samples, rng, sample_rate)
+    elif filter_type == "gentle_bandpass":
+        return _filter_gentle_bandpass(config, phases, section_context, total_samples, rng)
+    elif filter_type == "gradual_sweep":
+        return _filter_gradual_sweep(config, phases, section_context, total_samples, rng)
+    elif filter_type == "impact_spike":
+        return _filter_impact_spike(config, phases, section_context, total_samples, rng)
+    elif filter_type == "closing_focus":
+        return _filter_closing_focus(config, phases, section_context, total_samples, rng)
     else:
         raise ValueError(f"Unknown filter type: {filter_type}")
 
@@ -626,6 +977,179 @@ def _filter_rhythmic_gate(config: Dict[str, Any],
     }
 
 
+def _filter_gentle_bandpass(config: Dict[str, Any],
+                            phases: Dict[str, Any],
+                            section_context: Dict[str, Any],
+                            total_samples: int,
+                            rng: np.random.Generator) -> Dict[str, np.ndarray]:
+    """
+    Gentle bandpass for INACCURACY archetype.
+
+    Static bandpass filter with moderate Q, gentle character.
+    Creates subtle tonal focus without aggressive filtering.
+    """
+    bp_center = config['bp_center_base']
+    bp_bandwidth = config.get('bp_bandwidth', 500)
+    resonance_val = config.get('resonance', 0.35)
+
+    # Static filter - no modulation
+    cutoff = np.full(total_samples, bp_center)
+    resonance = np.full(total_samples, resonance_val)
+
+    return {
+        'cutoff': cutoff,
+        'resonance': resonance,
+        'type': 'bandpass'
+    }
+
+
+def _filter_gradual_sweep(config: Dict[str, Any],
+                         phases: Dict[str, Any],
+                         section_context: Dict[str, Any],
+                         total_samples: int,
+                         rng: np.random.Generator) -> Dict[str, np.ndarray]:
+    """
+    Gradual sweep for SIGNIFICANT_SHIFT archetype.
+
+    Slow lowpass sweep with sigmoid curve for smooth transition.
+    Suggests gradual opening or closing of tonal space.
+    """
+    lp_start = config['lp_start']
+    lp_end = config['lp_end']
+    sweep_curve_type = config.get('sweep_curve', 'sigmoid')
+
+    # Sweep occurs during bloom phase
+    bloom_start = phases['bloom']['start_sample']
+    bloom_end = phases['bloom']['end_sample']
+
+    cutoff = np.zeros(total_samples)
+
+    # Pre-bloom: hold at start
+    cutoff[:bloom_start] = lp_start
+
+    # Bloom: gradual sweep
+    sweep_samples = bloom_end - bloom_start
+    if sweep_samples > 0:
+        if sweep_curve_type == 'sigmoid':
+            # Sigmoid for smooth acceleration/deceleration
+            t = np.linspace(-3, 3, sweep_samples)
+            sigmoid = 1 / (1 + np.exp(-t))
+            cutoff[bloom_start:bloom_end] = lp_start + (lp_end - lp_start) * sigmoid
+        else:  # linear
+            cutoff[bloom_start:bloom_end] = np.linspace(lp_start, lp_end, sweep_samples)
+
+    # Post-bloom: hold at end
+    cutoff[bloom_end:] = lp_end
+
+    # Moderate resonance throughout
+    resonance = np.full(total_samples, 0.4)
+
+    return {
+        'cutoff': cutoff,
+        'resonance': resonance,
+        'type': 'lowpass'
+    }
+
+
+def _filter_impact_spike(config: Dict[str, Any],
+                        phases: Dict[str, Any],
+                        section_context: Dict[str, Any],
+                        total_samples: int,
+                        rng: np.random.Generator) -> Dict[str, np.ndarray]:
+    """
+    Impact spike for FIRST_EXCHANGE archetype.
+
+    Sharp bandpass spike at impact moment with high resonance.
+    Creates focused, resonant 'ping' at collision.
+    """
+    bp_center = config['bp_center']
+    bp_bandwidth = config.get('bp_bandwidth', 900)
+    impact_resonance = config['impact_resonance']
+
+    # Impact phase is where spike occurs
+    impact_start = phases['impact']['start_sample']
+    impact_end = phases['impact']['end_sample']
+    bloom_end = phases['bloom']['end_sample']
+
+    # Center frequency - stable at impact point
+    cutoff = np.full(total_samples, bp_center)
+
+    # Resonance curve: spike at impact, decay after
+    resonance = np.zeros(total_samples)
+
+    # Pre-impact: low resonance
+    resonance[:impact_start] = 0.2
+
+    # Impact: high resonance spike
+    resonance[impact_start:impact_end] = impact_resonance
+
+    # Bloom: exponential decay of resonance
+    decay_samples = bloom_end - impact_end
+    if decay_samples > 0:
+        decay_curve = np.exp(np.linspace(0, -3, decay_samples))
+        resonance[impact_end:bloom_end] = 0.2 + (impact_resonance - 0.2) * decay_curve
+
+    # Post-bloom: low resonance
+    resonance[bloom_end:] = 0.2
+
+    return {
+        'cutoff': cutoff,
+        'resonance': resonance,
+        'type': 'bandpass'
+    }
+
+
+def _filter_closing_focus(config: Dict[str, Any],
+                          phases: Dict[str, Any],
+                          section_context: Dict[str, Any],
+                          total_samples: int,
+                          rng: np.random.Generator) -> Dict[str, np.ndarray]:
+    """
+    Closing focus for FINAL_RESOLUTION archetype.
+
+    Lowpass filter that gradually closes down to very low frequency.
+    Final resonance peak adds subtle emphasis to conclusion.
+    """
+    lp_start = config['lp_start']
+    lp_end = config['lp_end']
+    final_resonance = config.get('final_resonance', 0.52)
+
+    # Closing occurs during bloom + decay
+    bloom_start = phases['bloom']['start_sample']
+    decay_end = phases['decay']['end_sample']
+
+    cutoff = np.zeros(total_samples)
+
+    # Pre-bloom: open filter
+    cutoff[:bloom_start] = lp_start
+
+    # Bloom + decay: gradual closing (logarithmic for perceptual linearity)
+    closing_samples = decay_end - bloom_start
+    if closing_samples > 0:
+        cutoff[bloom_start:decay_end] = np.exp(
+            np.linspace(np.log(lp_start), np.log(lp_end), closing_samples)
+        )
+
+    # Residue: hold at very low
+    cutoff[decay_end:] = lp_end
+
+    # Resonance: build slightly toward end for subtle emphasis
+    resonance = np.zeros(total_samples)
+    resonance[:bloom_start] = 0.3
+
+    if closing_samples > 0:
+        # Linear rise in resonance as filter closes
+        resonance[bloom_start:decay_end] = np.linspace(0.3, final_resonance, closing_samples)
+
+    resonance[decay_end:] = final_resonance
+
+    return {
+        'cutoff': cutoff,
+        'resonance': resonance,
+        'type': 'lowpass'
+    }
+
+
 def generate_envelope(config: Dict[str, Any],
                      phases: Dict[str, Any],
                      total_samples: int,
@@ -664,39 +1188,63 @@ def _envelope_sudden_short_tail(config: Dict[str, Any],
     """
     Sudden attack with short tail for BLUNDER and TIME_PRESSURE archetypes.
 
-    Creates sharp, immediate impact with rapid decay, suggesting
-    suddenness and finality.
+    Phase-aware envelope:
+    - pre_shadow: silent (0.0)
+    - impact: attack rise (0.0 → 1.0)
+    - bloom: sustain (1.0)
+    - decay: exponential fall (1.0 → decay_floor)
+    - residue: linear fade to silence (decay_floor → 0.0)
     """
-    # Use context-based variation for attack time
-    entropy_variation = rng.random()
-
-    # Calculate attack time with variation
-    attack_ms = config['attack_ms_base'] + (entropy_variation * config.get('attack_ms_entropy_scale', 0))
-    attack_samples = max(1, int(attack_ms * sample_rate / 1000))
-
-    # Calculate sustain and decay sections
-    sustain_ratio = config.get('sustain_phase_ratio', 0.15)
-    sustain_samples = int(sustain_ratio * total_samples)
-
-    decay_samples = total_samples - attack_samples - sustain_samples
-    decay_samples = max(0, decay_samples)
-
     envelope = np.zeros(total_samples)
 
-    # Attack: rapid rise
-    if attack_samples > 0:
-        # Use cosine curve for smoother attack
-        t = np.linspace(0, np.pi/2, attack_samples)
-        envelope[:attack_samples] = np.sin(t)
+    # Extract phase boundaries
+    pre_shadow = phases['pre_shadow']
+    impact = phases['impact']
+    bloom = phases['bloom']
+    decay = phases['decay']
+    residue = phases['residue']
 
-    # Sustain: hold at maximum
-    sustain_end = attack_samples + sustain_samples
-    envelope[attack_samples:sustain_end] = 1.0
+    # Pre-shadow: GENTLE FADE-IN (furtive entrance)
+    pre_samples = pre_shadow['duration_samples']
+    if pre_samples > 0:
+        # Exponential fade-in for smooth, gradual entrance
+        envelope[pre_shadow['start_sample']:pre_shadow['end_sample']] = (
+            0.1 * (1 - np.exp(-3 * np.linspace(0, 1, pre_samples)))
+        )
+        pre_end_level = envelope[pre_shadow['end_sample'] - 1]
+    else:
+        pre_end_level = 0.0
+
+    # Impact: ATTACK OVER ENTIRE IMPACT PHASE (not 5ms!)
+    # This prevents the plucky sound - the rise is gradual
+    impact_samples = impact['duration_samples']
+    if impact_samples > 0:
+        # Rise from pre_end_level to 1.0 over the entire impact phase
+        # Use power curve for impact feel while avoiding clicks
+        t = np.linspace(0, 1, impact_samples)
+        envelope[impact['start_sample']:impact['end_sample']] = (
+            pre_end_level + (1.0 - pre_end_level) * (t ** 2.5)  # Accelerating rise
+        )
+
+    # Bloom: sustain at maximum
+    envelope[bloom['start_sample']:bloom['end_sample']] = 1.0
 
     # Decay: exponential fall
+    decay_samples = decay['duration_samples']
     if decay_samples > 0:
         decay_coeff = config.get('decay_coefficient', -4)
-        envelope[sustain_end:] = np.exp(np.linspace(0, decay_coeff, decay_samples))
+        decay_curve = np.exp(np.linspace(0, decay_coeff, decay_samples))
+        envelope[decay['start_sample']:decay['end_sample']] = decay_curve
+        decay_floor = decay_curve[-1]  # Where decay ends
+    else:
+        decay_floor = 1.0
+
+    # Residue: LINEAR FADE TO SILENCE (critical for furtive exit)
+    residue_samples = residue['duration_samples']
+    if residue_samples > 0:
+        envelope[residue['start_sample']:residue['end_sample']] = np.linspace(
+            decay_floor, 0.0, residue_samples
+        )
 
     return envelope
 
@@ -709,37 +1257,65 @@ def _envelope_gradual_sustained(config: Dict[str, Any],
     """
     Gradual attack with sustained plateau for BRILLIANT archetype.
 
-    Creates smooth, expansive envelope that blooms and sustains,
-    suggesting growth and achievement.
+    Phase-aware envelope:
+    - pre_shadow: slow fade in (0.0 → 0.3)
+    - impact: continue rise (0.3 → 0.8)
+    - bloom: full sustain (0.8 → 1.0 → 1.0)
+    - decay: gentle fall (1.0 → decay_floor)
+    - residue: fade to silence (decay_floor → 0.0)
     """
-    attack_ms = config.get('attack_ms', 50)
-    attack_samples = int(attack_ms * sample_rate / 1000)
-
-    sustain_ratio = config.get('sustain_phase_ratio', 0.5)
-    sustain_samples = int(sustain_ratio * total_samples)
-
-    decay_samples = total_samples - attack_samples - sustain_samples
-    decay_samples = max(0, decay_samples)
-
     envelope = np.zeros(total_samples)
 
-    # Gradual attack with S-curve for smooth onset
-    if attack_samples > 0:
-        t = np.linspace(-3, 3, attack_samples)
-        # Sigmoid function for smooth S-curve
-        envelope[:attack_samples] = 1 / (1 + np.exp(-t))
+    # Extract phase boundaries
+    pre_shadow = phases['pre_shadow']
+    impact = phases['impact']
+    bloom = phases['bloom']
+    decay = phases['decay']
+    residue = phases['residue']
 
-    # Sustain at full level
-    sustain_end = attack_samples + sustain_samples
-    envelope[attack_samples:sustain_end] = 1.0
+    # Pre-shadow: gentle fade-in (furtive entrance)
+    pre_samples = pre_shadow['duration_samples']
+    if pre_samples > 0:
+        envelope[pre_shadow['start_sample']:pre_shadow['end_sample']] = np.linspace(
+            0.0, 0.3, pre_samples
+        )
 
-    # Linear or exponential decay based on config
+    # Impact: continue rising to near-full
+    impact_samples = impact['duration_samples']
+    if impact_samples > 0:
+        envelope[impact['start_sample']:impact['end_sample']] = np.linspace(
+            0.3, 0.8, impact_samples
+        )
+
+    # Bloom: reach full and sustain (S-curve for smooth bloom)
+    bloom_samples = bloom['duration_samples']
+    if bloom_samples > 0:
+        bloom_third = bloom_samples // 3
+        # First third: reach 1.0
+        envelope[bloom['start_sample']:bloom['start_sample'] + bloom_third] = np.linspace(
+            0.8, 1.0, bloom_third
+        )
+        # Rest: sustain
+        envelope[bloom['start_sample'] + bloom_third:bloom['end_sample']] = 1.0
+
+    # Decay: linear or exponential fall
+    decay_samples = decay['duration_samples']
     if decay_samples > 0:
         if config.get('decay_curve', 'linear') == 'linear':
-            envelope[sustain_end:] = np.linspace(1, 0, decay_samples)
+            decay_curve = np.linspace(1.0, 0.0, decay_samples)
         else:
-            # Gentle exponential decay
-            envelope[sustain_end:] = np.exp(np.linspace(0, -3, decay_samples))
+            decay_curve = np.exp(np.linspace(0, -3, decay_samples))
+        envelope[decay['start_sample']:decay['end_sample']] = decay_curve
+        decay_floor = decay_curve[-1]
+    else:
+        decay_floor = 1.0
+
+    # Residue: LINEAR FADE TO SILENCE
+    residue_samples = residue['duration_samples']
+    if residue_samples > 0:
+        envelope[residue['start_sample']:residue['end_sample']] = np.linspace(
+            decay_floor, 0.0, residue_samples
+        )
 
     return envelope
 
@@ -752,9 +1328,20 @@ def _envelope_gated_pulse(config: Dict[str, Any],
     """
     Gated pulses for TACTICAL_SEQUENCE archetype.
 
-    Creates rhythmic on/off gating that suggests mechanical,
-    calculated action.
+    Phase-aware envelope with rhythmic gates:
+    - pre_shadow: silent fade-in
+    - impact/bloom/decay: rhythmic gating at pulse_rate_hz
+    - residue: final fade to silence
     """
+    envelope = np.zeros(total_samples)
+
+    # Extract phase boundaries
+    pre_shadow = phases['pre_shadow']
+    impact = phases['impact']
+    bloom = phases['bloom']
+    decay = phases['decay']
+    residue = phases['residue']
+
     attack_ms = config.get('attack_ms', 5)
     attack_samples = max(1, int(attack_ms * sample_rate / 1000))
 
@@ -763,36 +1350,53 @@ def _envelope_gated_pulse(config: Dict[str, Any],
 
     pulse_hz = config['pulse_rate_hz']
 
-    # Generate base pulse train
-    t = np.arange(total_samples) / sample_rate
-    pulse_phase = (t * pulse_hz) % 1.0
+    # Pre-shadow: gentle fade-in (no gates yet)
+    pre_samples = pre_shadow['duration_samples']
+    if pre_samples > 0:
+        envelope[pre_shadow['start_sample']:pre_shadow['end_sample']] = np.linspace(
+            0.0, 0.2, pre_samples
+        )
 
-    # Create gate with duty cycle of 0.5
-    gate_on = pulse_phase < 0.5
-    envelope = np.zeros(total_samples)
-    envelope[gate_on] = 1.0
+    # Impact + Bloom + Decay: rhythmic gating
+    gate_start = impact['start_sample']
+    gate_end = decay['end_sample']
+    gate_duration = gate_end - gate_start
 
-    # Apply attack/release slopes to prevent clicks
-    # Find gate transitions
-    transitions = np.diff(envelope, prepend=0, append=0)
-    rise_edges = np.where(transitions > 0)[0]
-    fall_edges = np.where(transitions < 0)[0]
+    if gate_duration > 0:
+        # Generate pulse train for gated region
+        t = np.arange(gate_duration) / sample_rate
+        pulse_phase = (t * pulse_hz) % 1.0
+        gate_on = pulse_phase < 0.5
+        gate_envelope = np.zeros(gate_duration)
+        gate_envelope[gate_on] = 1.0
 
-    # Apply attack ramps
-    for edge in rise_edges:
-        ramp_end = min(edge + attack_samples, total_samples)
-        ramp_len = ramp_end - edge
-        if ramp_len > 0:
-            # Exponential attack for punch
-            envelope[edge:ramp_end] *= 1 - np.exp(-5 * np.linspace(0, 1, ramp_len))
+        # Apply attack/release to prevent clicks
+        transitions = np.diff(gate_envelope, prepend=0, append=0)
+        rise_edges = np.where(transitions > 0)[0]
+        fall_edges = np.where(transitions < 0)[0]
 
-    # Apply release ramps
-    for edge in fall_edges:
-        ramp_start = max(edge - release_samples, 0)
-        ramp_len = edge - ramp_start
-        if ramp_len > 0:
-            # Exponential release
-            envelope[ramp_start:edge] *= np.exp(-3 * np.linspace(0, 1, ramp_len))
+        for edge in rise_edges:
+            ramp_end = min(edge + attack_samples, gate_duration)
+            ramp_len = ramp_end - edge
+            if ramp_len > 0:
+                gate_envelope[edge:ramp_end] *= 1 - np.exp(-5 * np.linspace(0, 1, ramp_len))
+
+        for edge in fall_edges:
+            ramp_start = max(edge - release_samples, 0)
+            ramp_len = edge - ramp_start
+            if ramp_len > 0:
+                gate_envelope[ramp_start:edge] *= np.exp(-3 * np.linspace(0, 1, ramp_len))
+
+        # Apply to envelope
+        envelope[gate_start:gate_end] = gate_envelope
+
+    # Residue: FADE TO SILENCE (blend from last gate state to 0.0)
+    residue_samples = residue['duration_samples']
+    if residue_samples > 0:
+        residue_start_val = envelope[residue['start_sample'] - 1] if residue['start_sample'] > 0 else 0.0
+        envelope[residue['start_sample']:residue['end_sample']] = np.linspace(
+            residue_start_val, 0.0, residue_samples
+        )
 
     return envelope
 

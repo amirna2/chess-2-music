@@ -125,6 +125,7 @@ class GestureSynthesizer:
             Audio signal (same length as pitch_curve)
         """
         # Use sine wave (saw/square need per-sample PolyBLEP which is complex)
+        # No anti-click fade needed here - the phase-aware envelope handles fade-in/out
         return self.synth.oscillator_timevarying_pitch(pitch_curve, waveform='sine')
 
     def _generate_noise(self, num_samples: int, noise_type: str) -> np.ndarray:
