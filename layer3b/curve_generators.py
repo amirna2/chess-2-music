@@ -49,6 +49,8 @@ def generate_pitch_curve(config: Dict[str, Any],
         return _pitch_impact_transient(config, phases, section_context, total_samples, rng)
     elif trajectory_type == "final_descent":
         return _pitch_final_descent(config, phases, section_context, total_samples, rng)
+    elif trajectory_type == "discrete_chimes":
+        return _pitch_discrete_chimes(config, phases, section_context, total_samples, rng, sample_rate)
     else:
         raise ValueError(f"Unknown pitch trajectory type: {trajectory_type}")
 
@@ -403,6 +405,85 @@ def _pitch_final_descent(config: Dict[str, Any],
 
     # Residue: hold at end (very low)
     curve[decay_end:] = end_freq
+
+    return curve
+
+
+def _pitch_discrete_chimes(config: Dict[str, Any],
+                           phases: Dict[str, Any],
+                           section_context: Dict[str, Any],
+                           total_samples: int,
+                           rng: np.random.Generator,
+                           sample_rate: int) -> np.ndarray:
+    """
+    Discrete chime notes for INACCURACY archetype.
+
+    Creates separate struck notes like wind chimes or xylophone,
+    not continuous tones. Each note has instant attack with
+    sustain at constant pitch (no glide).
+
+    Like: "ting... ting... ting..." (discrete strikes)
+    Not: "wooooop" (continuous glide)
+    """
+    num_notes = config.get('num_notes', 3)
+    base_freq = config['start_freq_base']
+    pitch_variation_semitones = config.get('pitch_variation_semitones', 3)
+
+    curve = np.zeros(total_samples)
+    velocity_curve = np.ones(total_samples)  # Velocity multiplier for each sample
+
+    # Divide gesture into note segments
+    bloom_start = phases['bloom']['start_sample']
+    decay_end = phases['decay']['end_sample']
+    available_duration = decay_end - bloom_start
+
+    if available_duration <= 0 or num_notes == 0:
+        curve[:] = base_freq
+        return curve
+
+    # Calculate note timing
+    note_duration_samples = available_duration // num_notes
+    gap_ratio = 0.3  # 30% gap between notes
+
+    # Generate discrete notes
+    for i in range(num_notes):
+        note_start = bloom_start + i * note_duration_samples
+        note_length = int(note_duration_samples * (1 - gap_ratio))
+        note_end = min(note_start + note_length, total_samples)
+
+        if note_start >= total_samples:
+            break
+
+        # Pitch for this note (parabolic arc across sequence)
+        # First note: base
+        # Middle notes: rise
+        # Last note: fall back
+        progress = i / max(1, num_notes - 1)
+        if progress < 0.5:
+            # Rising phase
+            pitch_offset = pitch_variation_semitones * (progress * 2)
+        else:
+            # Falling phase
+            pitch_offset = pitch_variation_semitones * (2 - progress * 2)
+
+        note_freq = base_freq * (2 ** (pitch_offset / 12))
+
+        # Random velocity for this note (wind chime randomness)
+        # Some hits are loud and bright, others soft and muted
+        velocity = 0.3 + 0.7 * rng.random()  # Range 0.3 to 1.0
+
+        # Constant pitch for this note (like struck chime)
+        curve[note_start:note_end] = note_freq
+        velocity_curve[note_start:note_end] = velocity
+
+    # Pre-bloom and post-decay: silence (or very low)
+    curve[:bloom_start] = base_freq * 0.5
+    curve[decay_end:] = base_freq * 0.5
+    velocity_curve[:bloom_start] = 0.0
+    velocity_curve[decay_end:] = 0.0
+
+    # Store velocity curve in config for later use (hacky but works)
+    config['_velocity_curve'] = velocity_curve
 
     return curve
 
@@ -1215,16 +1296,25 @@ def _envelope_sudden_short_tail(config: Dict[str, Any],
     else:
         pre_end_level = 0.0
 
-    # Impact: ATTACK OVER ENTIRE IMPACT PHASE (not 5ms!)
-    # This prevents the plucky sound - the rise is gradual
+    # Impact: SHARP ATTACK using attack_ms parameter
     impact_samples = impact['duration_samples']
     if impact_samples > 0:
-        # Rise from pre_end_level to 1.0 over the entire impact phase
-        # Use power curve for impact feel while avoiding clicks
-        t = np.linspace(0, 1, impact_samples)
-        envelope[impact['start_sample']:impact['end_sample']] = (
-            pre_end_level + (1.0 - pre_end_level) * (t ** 2.5)  # Accelerating rise
-        )
+        # Use attack_ms from config for percussion-style sharp attacks
+        attack_ms = config.get('attack_ms_base', 5)
+        attack_samples = int((attack_ms / 1000) * sample_rate)
+        attack_samples = min(attack_samples, impact_samples)  # Don't exceed impact phase
+
+        if attack_samples > 0:
+            # SHARP attack: rise to 1.0 over attack_samples
+            t_attack = np.linspace(0, 1, attack_samples)
+            envelope[impact['start_sample']:impact['start_sample'] + attack_samples] = (
+                pre_end_level + (1.0 - pre_end_level) * (t_attack ** 1.5)  # Quick rise
+            )
+            # Rest of impact phase: hold at 1.0
+            envelope[impact['start_sample'] + attack_samples:impact['end_sample']] = 1.0
+        else:
+            # Instant attack if attack_ms is tiny
+            envelope[impact['start_sample']:impact['end_sample']] = 1.0
 
     # Bloom: sustain at maximum
     envelope[bloom['start_sample']:bloom['end_sample']] = 1.0
@@ -1429,7 +1519,8 @@ def generate_texture_curve(config: Dict[str, Any],
     texture = {
         'noise_ratio': noise_ratio,
         'noise_type': config.get('noise_type', 'pink'),
-        'shimmer_enable': config.get('shimmer_enable', False)
+        'shimmer_enable': config.get('shimmer_enable', False),
+        'waveform': config.get('waveform', 'sine')  # Pass through waveform selection
     }
 
     # Add shimmer parameters if enabled

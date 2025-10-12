@@ -84,8 +84,11 @@ class GestureSynthesizer:
         # Generate and mix oscillators for all voices
         audio = np.zeros(total_samples)
 
+        # Get waveform from texture config (default to sine for backward compatibility)
+        waveform = texture_curve.get('waveform', 'sine')
+
         for pitch_curve in pitch_voices:
-            voice_audio = self._generate_oscillator(pitch_curve)
+            voice_audio = self._generate_oscillator(pitch_curve, waveform=waveform)
             audio += voice_audio
 
         # Normalize multi-voice sum using equal-power summing
@@ -112,7 +115,7 @@ class GestureSynthesizer:
 
         return audio
 
-    def _generate_oscillator(self, pitch_curve: np.ndarray) -> np.ndarray:
+    def _generate_oscillator(self, pitch_curve: np.ndarray, waveform: str = 'sine') -> np.ndarray:
         """
         Generate oscillator with time-varying pitch.
 
@@ -120,13 +123,13 @@ class GestureSynthesizer:
 
         Args:
             pitch_curve: Frequency curve in Hz (numpy array)
+            waveform: 'sine', 'triangle'
 
         Returns:
             Audio signal (same length as pitch_curve)
         """
-        # Use sine wave (saw/square need per-sample PolyBLEP which is complex)
-        # No anti-click fade needed here - the phase-aware envelope handles fade-in/out
-        return self.synth.oscillator_timevarying_pitch(pitch_curve, waveform='sine')
+        # Generate with specified waveform for different timbres
+        return self.synth.oscillator_timevarying_pitch(pitch_curve, waveform=waveform)
 
     def _generate_noise(self, num_samples: int, noise_type: str) -> np.ndarray:
         """

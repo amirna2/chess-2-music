@@ -179,6 +179,11 @@ class GestureGenerator:
             sample_rate
         )
 
+        # Apply velocity curve if present (for discrete chimes with random dynamics)
+        if '_velocity_curve' in self.config['pitch']:
+            velocity_curve = self.config['pitch']['_velocity_curve']
+            envelope = envelope * velocity_curve
+
         # Step 7: Generate texture parameters (noise, shimmer)
         texture_curve = generate_texture_curve(
             self.config['texture'],

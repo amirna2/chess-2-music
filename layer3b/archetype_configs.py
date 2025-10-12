@@ -545,7 +545,7 @@ ARCHETYPES: Dict[str, Dict[str, Any]] = {
         }
     },
 
-    # 11. INACCURACY - Attack–Decay (weak) - Small parabolic gesture
+    # 11. INACCURACY - Attack–Decay (weak) - Wind chime gesture
     "INACCURACY": {
         "duration_base": 1.5,
         "duration_tension_scale": 0.4,
