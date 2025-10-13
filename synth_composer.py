@@ -219,13 +219,38 @@ class ChessSynthComposer:
     def interpolate_base_params(self, progress):
         """Get current base parameters based on progress through game"""
         base = self.base_params
+
+        # Extract from nested YAML structure
+        harmonic = base.get('harmonic', {})
+        spectral = base.get('spectral', {})
+        temporal = base.get('temporal', {})
+
+        scale_name = harmonic.get('scale', 'minor')
+        waveform = spectral.get('waveform', 'saw')
+
+        filter_cfg = spectral.get('filter', {})
+        filter_start = filter_cfg.get('start', 1500)
+        filter_end = filter_cfg.get('end', 2000)
+
+        resonance_cfg = spectral.get('resonance', {})
+        res_start = resonance_cfg.get('start', 0.5)
+        res_end = resonance_cfg.get('end', 1.5)
+
+        detune_cfg = spectral.get('detune', {})
+        detune_start = detune_cfg.get('start', 0)
+        detune_end = detune_cfg.get('end', 5)
+
+        tempo_cfg = temporal.get('tempo', {})
+        tempo_start = tempo_cfg.get('start', 1.0)
+        tempo_end = tempo_cfg.get('end', 1.0)
+
         return {
-            'waveform': base['base_waveform'],
-            'filter': base['filter_start'] + (base['filter_end'] - base['filter_start']) * progress,
-            'resonance': base['resonance_start'] + (base['resonance_end'] - base['resonance_start']) * progress,
-            'tempo': base['tempo_start'] + (base['tempo_end'] - base['tempo_start']) * progress,
-            'detune': base['detune_start'] + (base['detune_end'] - base['detune_start']) * progress,
-            'scale': self.config.SCALES[base['scale']],
+            'waveform': waveform,
+            'filter': filter_start + (filter_end - filter_start) * progress,
+            'resonance': res_start + (res_end - res_start) * progress,
+            'tempo': tempo_start + (tempo_end - tempo_start) * progress,
+            'detune': detune_start + (detune_end - detune_start) * progress,
+            'scale': self.config.SCALES[scale_name],
         }
 
     def _get_section_modulation(self, section_narrative, tension):
@@ -1424,7 +1449,7 @@ class ChessSynthComposer:
                 phrase_samples.append(note * dev_params['volume'])
 
             # Connect notes with gaps
-            gap_samples = int(self.config.TIMING['note_gap_sec'] * self.sample_rate)
+            gap_samples = int(self.config.TIMING['note_gap'] * self.sample_rate)
             combined = []
             for i, note_samples in enumerate(phrase_samples):
                 combined.append(note_samples)
@@ -1472,8 +1497,8 @@ class ChessSynthComposer:
                 answer_samples.append(note)
 
             # Combine with timing
-            gap_samples = int(self.config.TIMING['note_gap_sec'] * self.sample_rate)
-            pause_samples = int(self.config.TIMING['phrase_pause_sec'] * self.sample_rate)
+            gap_samples = int(self.config.TIMING['note_gap'] * self.sample_rate)
+            pause_samples = int(self.config.TIMING['phrase_gap'] * self.sample_rate)
 
             combined = []
             for i, note in enumerate(question_samples):
@@ -1718,6 +1743,13 @@ class ChessSynthComposer:
         else:
             print(f"  → Layer 2: (muted)")
 
+        # DIAGNOSTIC: Check for clipping in section_pattern buffer
+        pattern_peak = np.max(np.abs(section_pattern))
+        if pattern_peak > 1.0:
+            pattern_peak_db = 20 * np.log10(pattern_peak)
+            print(f"  ⚠️  WARNING: Pattern buffer clipping! Peak: {pattern_peak:.3f} ({pattern_peak_db:.1f} dBFS)")
+            print(f"      This causes distortion before normalization. Reduce pattern_note_level.")
+
         # Mix layers 1 and 2
         drone_contribution = base_drone * self.config.LAYER_MIXING['drone_in_supersaw']
         pattern_contribution = section_pattern * self.config.LAYER_MIXING['pattern_in_supersaw']
@@ -1725,7 +1757,7 @@ class ChessSynthComposer:
 
         # Apply section envelope
         section_envelope = np.ones(total_samples)
-        fade_samples = int(self.config.TIMING['section_fade_sec'] * self.sample_rate)
+        fade_samples = int(self.config.TIMING['section_fade'] * self.sample_rate)
         section_envelope[:fade_samples] = np.linspace(0, 1, fade_samples)
         section_envelope[-fade_samples:] = np.linspace(1, 0, fade_samples)
 
@@ -2374,15 +2406,24 @@ class ChessSynthComposer:
         """Create the full composition"""
         print("\n♫ CHESS TO MUSIC SYNTHESIS")
         print("━" * 50)
-        print(f"Game: {self.tags.get('game_result', '?')} | ECO: {self.eco} | Scale: {self.base_params['scale'].title()}")
+
+        # Extract from nested YAML structure for display
+        scale_name = self.base_params.get('harmonic', {}).get('scale', 'minor')
+        spectral = self.base_params.get('spectral', {})
+        waveform = spectral.get('waveform', 'saw')
+        detune_cfg = spectral.get('detune', {})
+        detune_start = detune_cfg.get('start', 0)
+        detune_end = detune_cfg.get('end', 5)
+
+        print(f"Game: {self.tags.get('game_result', '?')} | ECO: {self.eco} | Scale: {scale_name.title()}")
         print(f"Overall Narrative: {self.overall_narrative}")
-        print(f"Base Waveform: {self.base_params['base_waveform']} | Detune: {self.base_params['detune_start']}→{self.base_params['detune_end']} cents")
+        print(f"Base Waveform: {waveform} | Detune: {detune_start}→{detune_end} cents")
 
         sections = self.tags.get('sections', [])
         total_sections = len(sections)
         section_audios = []
 
-        print(f"\nSynthesizing {total_sections} sections with {self.config.TIMING['section_crossfade_sec']}s crossfades...")
+        print(f"\nSynthesizing {total_sections} sections with {self.config.TIMING['section_crossfade']}s crossfades...")
         for i, section in enumerate(sections):
             section_data = self.compose_section(section, i, total_sections)
             section_audios.append(section_data)
@@ -2393,7 +2434,7 @@ class ChessSynthComposer:
                 print(f"  ↓ Crossfading to {next_section_name}...")
 
         # Crossfade sections together (mono mix for now)
-        crossfade_samples = int(self.sample_rate * self.config.TIMING['section_crossfade_sec'])
+        crossfade_samples = int(self.sample_rate * self.config.TIMING['section_crossfade'])
 
         # Combine layers_1_2
         layers_1_2 = section_audios[0]['layers_1_2']

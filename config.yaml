@@ -1,0 +1,792 @@
+# ============================================================================
+# ALGORITHMIC CHESS MUSIC SYNTHESIS CONFIGURATION
+# ============================================================================
+# Organized by: Signal Flow → Temporal Hierarchy → Musical Function
+#
+# Structure:
+# 1. SYNTHESIS (signal chain: oscillators → filters → envelopes)
+# 2. COMPOSITION (temporal hierarchy: macro → meso → micro)
+# 3. MIXING (levels, stereo, mastering)
+# ============================================================================
+
+# === 1. SYNTHESIS: Signal Chain ===
+
+synthesis:
+
+  # Sample rate for all audio generation
+  sample_rate: 88200  # Hz (2x CD quality for anti-aliasing)
+
+  # --- OSCILLATORS ---
+  oscillators:
+    waveforms: [sine, triangle, saw, square, pulse, supersaw]
+
+    # Supersaw: Multiple detuned oscillators for thick sound
+    supersaw:
+      voice_counts: [2, 3, 6]
+      detune_presets:
+        tight: [-3.0, -1.5, -0.75, 0.75, 1.5, 3.0]
+        standard: [-7.0, -3.5, -1.75, 1.75, 3.5, 7.0]
+        wide: [-12.0, -7.0, -3.0, 3.0, 7.0, 12.0]
+        laser: [-15.0, -9.0, -4.5, 4.5, 9.0, 15.0]
+
+  # --- FILTERS ---
+  filters:
+    cutoff_range: [20, 20000]  # Hz
+    resonance_range: [0.1, 4.0]
+
+    # Filter envelopes (ADSR)
+    envelopes:
+      gentle: {a: 0.01, d: 0.15, s: 0.3, r: 0.2}
+      sweep: {a: 0.001, d: 0.2, s: 0.5, r: 0.1}
+      minimal: {a: 0.5, d: 0.0, s: 1.0, r: 0.5}
+      dramatic: {a: 0.01, d: 0.25, s: 0.4, r: 0.4}
+      closing: {a: 0.001, d: 0.5, s: 0.0, r: 0.4}
+      standard: {a: 0.01, d: 0.15, s: 0.3, r: 0.2}
+      smooth: {a: 0.001, d: 0.1, s: 0.2, r: 0.1}
+      sharp: {a: 0.001, d: 0.2, s: 0.7, r: 0.3}
+
+  # --- AMPLITUDE ENVELOPES ---
+  amplitude:
+    envelopes:
+      percussive: {a: 0.001, d: 0.02, s: 0.3, r: 0.05}
+      pluck: {a: 0.001, d: 0.05, s: 0.4, r: 0.1}
+      pad: {a: 0.5, d: 0.0, s: 1.0, r: 0.5}
+      stab: {a: 0.01, d: 0.05, s: 0.7, r: 0.1}
+      drone: {a: 0.5, d: 0.0, s: 1.0, r: 0.5}
+      laser: {a: 0.02, d: 0.1, s: 0.9, r: 0.8}
+      doom: {a: 0.5, d: 0.0, s: 1.0, r: 1.0}
+      short_pluck: {a: 0.001, d: 0.01, s: 0.5, r: 0.2}
+      medium_stab: {a: 0.001, d: 0.01, s: 0.5, r: 0.4}
+      gentle: {a: 0.02, d: 0.05, s: 0.7, r: 0.1}
+      soft: {a: 0.02, d: 0.06, s: 0.6, r: 0.1}
+      brief: {a: 0.001, d: 0.01, s: 0.3, r: 0.1}
+      quick: {a: 0.001, d: 0.02, s: 0.5, r: 0.05}
+      standard: {a: 0.001, d: 0.01, s: 0.8, r: 0.05}
+      sustained: {a: 0.001, d: 0.1, s: 0.8, r: 0.5}
+
+# === 2. COMPOSITION: Temporal Hierarchy ===
+
+composition:
+
+  # --- HARMONY ---
+  harmony:
+    root_frequency: 55.0  # A1 (110Hz = A2)
+
+    scales:
+      minor:
+        intervals: [0, 2, 3, 5, 7, 8, 10, 12]  # semitones from root
+        frequencies: [110.0, 123.47, 130.81, 146.83, 164.81, 174.61, 196.0, 220.0]
+
+      phrygian:
+        intervals: [0, 1, 3, 5, 7, 8, 10, 12]
+        frequencies: [110.0, 116.54, 130.81, 146.83, 164.81, 174.61, 196.0, 220.0]
+
+      dorian:
+        intervals: [0, 2, 3, 5, 7, 9, 10, 12]
+        frequencies: [110.0, 123.47, 130.81, 146.83, 164.81, 185.0, 196.0, 220.0]
+
+  # --- RHYTHM ---
+  rhythm:
+    base_duration: 0.5  # seconds
+    default_bpm: 120
+
+    timing:
+      note_gap: 0.02  # seconds between notes
+      phrase_gap: 0.15  # seconds between phrases
+      section_fade: 0.1  # fade in/out duration
+      section_crossfade: 2.0  # crossfade between sections
+
+      chunk_sizes:
+        audio: 512  # samples
+        filter: 64  # samples
+
+      lfo:
+        slow: 0.1  # Hz
+        sequencer: 0.25  # Hz
+
+  # --- MACRO: GAME ARC (entire game, 5-60 minutes) ---
+  macro_game_arc:
+
+    TUMBLING_DEFEAT:
+      description: "Collapsing position, inevitable defeat"
+      harmonic:
+        scale: phrygian  # Dark, descending scale
+      spectral:
+        waveform: supersaw
+        filter: {start: 2500, end: 300}  # Darkening
+        resonance: {start: 0.8, end: 3.5}  # Increasing harshness
+        detune: {start: 3, end: 20}  # Increasing chaos
+      temporal:
+        tempo: {start: 1.0, end: 0.7}  # Slowing down
+      voices: 3  # Default drone voices
+
+    FIGHTING_DEFEAT:
+      description: "Fighting back despite losing position"
+      harmonic:
+        scale: phrygian
+      spectral:
+        waveform: supersaw
+        filter: {start: 2500, end: 300}
+        resonance: {start: 0.8, end: 3.5}
+        detune: {start: 3, end: 20}
+      temporal:
+        tempo: {start: 1.0, end: 0.7}
+      voices: 3
+
+    ATTACKING_MASTERPIECE:
+      description: "Aggressive, winning attacking game"
+      harmonic:
+        scale: dorian  # Brighter, modal
+      spectral:
+        waveform: pulse
+        filter: {start: 500, end: 5000}  # Brightening
+        resonance: {start: 0.5, end: 1.8}
+        detune: {start: 0, end: 7}
+      temporal:
+        tempo: {start: 0.8, end: 1.2}  # Accelerating
+      voices: 3
+
+    TACTICAL_MASTERPIECE:
+      description: "Precise, tactical winning game"
+      harmonic:
+        scale: dorian
+      spectral:
+        waveform: pulse
+        filter: {start: 800, end: 3000}
+        resonance: {start: 0.5, end: 1.3}
+        detune: {start: 0, end: 7}
+      temporal:
+        tempo: {start: 0.8, end: 1.2}
+      voices: 3
+
+    PEACEFUL_DRAW:
+      description: "Balanced, calm drawn position"
+      harmonic:
+        scale: dorian
+      spectral:
+        waveform: triangle
+        filter: {start: 1500, end: 1500}  # Static
+        resonance: {start: 0.3, end: 0.3}  # Static
+        detune: {start: 0, end: 0}  # Pure
+      temporal:
+        tempo: {start: 1.0, end: 1.0}  # Steady
+      voices: 3
+
+    QUIET_PRECISION:
+      description: "Subtle, precise maneuvering"
+      harmonic:
+        scale: dorian
+      spectral:
+        waveform: triangle
+        filter: {start: 600, end: 2500}  # Gradual brightening
+        resonance: {start: 0.8, end: 1.2}
+        detune: {start: 2, end: 5}
+      temporal:
+        tempo: {start: 0.9, end: 1.0}
+      voices: 3
+
+    DEATH_SPIRAL:
+      description: "Rapid collapse, catastrophic defeat"
+      harmonic:
+        scale: phrygian
+      spectral:
+        waveform: saw
+        filter: {start: 1800, end: 400}  # Rapid darkening
+        resonance: {start: 1.5, end: 3.0}  # Harsh
+        detune: {start: 5, end: 18}  # Maximum chaos
+      temporal:
+        tempo: {start: 1.0, end: 0.6}  # Slowing dramatically
+      voices: 3
+
+    DEFAULT:
+      description: "Neutral, balanced game"
+      harmonic:
+        scale: minor
+      spectral:
+        waveform: saw
+        filter: {start: 1500, end: 2000}
+        resonance: {start: 1.0, end: 1.5}
+        detune: {start: 0, end: 5}
+      temporal:
+        tempo: {start: 1.0, end: 1.0}
+      voices: 3
+
+  # --- MESO: SECTION MODULATION (30s - 2min sections) ---
+  meso_section_modulation:
+
+    DESPERATE_DEFENSE:
+      description: "Under pressure, defending difficult position"
+      filter_mult: 1.1  # Slightly brighter
+      resonance_add: 1.5  # More tense
+      tempo_mult: 0.85  # Slightly slower
+      note_density: 0.7  # Fewer notes
+      filter_env_amount: 2000
+
+    KING_HUNT:
+      description: "Chasing the enemy king"
+      filter_mult: 1.3  # Bright, open
+      resonance_add: 1.0  # Aggressive
+      tempo_mult: 1.2  # Faster
+      note_density: 1.5  # More notes
+      filter_env_amount: 2000
+
+    MATING_ATTACK:
+      description: "Forcing checkmate"
+      filter_mult: 1.3
+      resonance_add: 1.0
+      tempo_mult: 1.2
+      note_density: 1.5
+      filter_env_amount: 6000  # Dramatic filter sweeps
+
+    TACTICAL_CHAOS:
+      description: "Complex tactical situation"
+      filter_mult: 0.8  # Darker
+      resonance_add: 2.0  # Very tense
+      tempo_mult: 1.3  # Fast
+      note_density: 2.0  # Many notes
+      filter_env_amount: 5000
+
+    TACTICAL_BATTLE:
+      description: "Trading pieces, calculating lines"
+      filter_mult: 0.8
+      resonance_add: 2.0
+      tempo_mult: 1.3
+      note_density: 2.0
+      filter_env_amount: 5000
+
+    QUIET:
+      description: "Calm, positional play"
+      filter_mult: 1.1
+      resonance_add: -0.3  # Less tense
+      tempo_mult: 0.9  # Slower
+      note_density: 0.5  # Sparse
+      filter_env_amount: 1500
+
+    POSITIONAL:
+      description: "Strategic maneuvering"
+      filter_mult: 1.1
+      resonance_add: -0.3
+      tempo_mult: 0.9
+      note_density: 0.5
+      filter_env_amount: 1500
+
+    SACRIFICIAL_ATTACK:
+      description: "Sacrificing material for attack"
+      filter_mult: 0.7  # Dark
+      resonance_add: 1.5  # Tense
+      tempo_mult: 1.1  # Faster
+      note_density: 1.3  # More notes
+      filter_env_amount: 8000  # Extreme filter sweeps
+
+    CRUSHING_ATTACK:
+      description: "Overwhelming attacking position"
+      filter_mult: 0.7
+      resonance_add: 1.5
+      tempo_mult: 1.1
+      note_density: 1.3
+      filter_env_amount: 8000
+
+    ENDGAME_PRECISION:
+      description: "Technical endgame"
+      filter_mult: 1.0
+      resonance_add: 0.3
+      tempo_mult: 0.8  # Slower, calculated
+      note_density: 0.8  # Sparse
+      filter_env_amount: 2000
+
+    COMPLEX_STRUGGLE:
+      description: "Double-edged, unclear position"
+      filter_mult: 0.9
+      resonance_add: 0.5
+      tempo_mult: 1.0
+      note_density: 1.0
+      filter_env_amount: 1200
+
+    FLAWLESS_CONVERSION:
+      description: "Converting advantage smoothly"
+      filter_mult: 1.0
+      resonance_add: 0.3
+      tempo_mult: 0.85
+      note_density: 0.9
+      filter_env_amount: 1800
+
+    DECISIVE_ENDING:
+      description: "Final winning moves"
+      filter_mult: 0.6  # Very dark
+      resonance_add: 2.5  # Maximum tension
+      tempo_mult: 0.7  # Slow
+      note_density: 0.5  # Sparse
+      filter_env_amount: 3000
+
+    DEFAULT:
+      filter_mult: 1.0
+      resonance_add: 0.0
+      tempo_mult: 1.0
+      note_density: 1.0
+      filter_env_amount: 2500
+
+  # --- MELODIC PATTERNS (scale degree sequences) ---
+  melodic_patterns:
+
+    DEFEAT_HIGH_TENSION:
+      description: "Descending, collapsing melodic line"
+      indices: [7, 5, 6, 4, 5, 3, 4, 2]  # Scale degrees
+      octave_up_mod: 4  # Every 4th note octave up
+      octave_down_mod: 7  # Every 7th note octave down
+
+    DEFEAT_LOW_TENSION:
+      description: "Slow descent"
+      indices: [4, 3, 3, 2, 2, 1, 1, 0]
+      octave_up_mod: 4
+      octave_down_mod: 7
+
+    MASTERPIECE_HIGH_TENSION:
+      description: "Ascending, triumphant line"
+      indices: [0, 2, 1, 3, 2, 5, 4, 7]
+      octave_up_mod: 4
+      octave_down_mod: 7
+
+    MASTERPIECE_LOW_TENSION:
+      description: "Gradual ascent"
+      indices: [0, 1, 2, 3, 3, 4, 5, 6]
+      octave_up_mod: 4
+      octave_down_mod: 7
+
+    NEUTRAL_HIGH_TENSION:
+      description: "Jagged, unpredictable line"
+      indices: [0, 4, 2, 5, 1, 4, 3, 7]
+      octave_up_mod: 4
+      octave_down_mod: 7
+
+    NEUTRAL_MEDIUM_TENSION:
+      description: "Undulating motion"
+      indices: [0, 2, 3, 2, 4, 3, 2, 1]
+      octave_up_mod: 4
+      octave_down_mod: 7
+
+    NEUTRAL_LOW_TENSION:
+      description: "Gentle wave"
+      indices: [0, 1, 2, 1, 3, 2, 1, 0]
+      octave_up_mod: 4
+      octave_down_mod: 7
+
+  # --- MICRO: GESTURES (individual chess events) ---
+  micro_gestures:
+
+    # Context-aware gestures (same event sounds different in different games)
+    BLUNDER:
+      in_defeat:
+        description: "Catastrophic error in losing position"
+        pitch: 55  # Low doom
+        duration: 1.0
+        waveform: saw
+        filter_base: 200
+        filter_env_amount: -150  # Closing
+        resonance: 4.0
+        amp_env: doom
+        filter_env: closing
+
+      in_masterpiece:
+        description: "Brief error in winning position"
+        pitch: 110  # Higher, shorter
+        duration: 0.3
+        waveform: pulse
+        filter_base: 3000
+        filter_env_amount: -2500
+        resonance: 2.0
+        amp_env: brief
+
+      neutral:
+        description: "Error in balanced position"
+        pitch: 82.5
+        duration: 0.5
+        waveform: saw
+        filter_base: 1000
+        filter_env_amount: -800
+        resonance: 3.0
+        amp_env: short_pluck
+
+    MISTAKE:
+      in_defeat:
+        pitch: 55
+        duration: 1.0
+        waveform: saw
+        filter_base: 200
+        filter_env_amount: -150
+        resonance: 4.0
+        amp_env: doom
+        filter_env: closing
+
+      in_masterpiece:
+        pitch: 110
+        duration: 0.3
+        waveform: pulse
+        filter_base: 3000
+        filter_env_amount: -2500
+        resonance: 2.0
+        amp_env: brief
+
+      neutral:
+        pitch: 82.5
+        duration: 0.5
+        waveform: saw
+        filter_base: 1000
+        filter_env_amount: -800
+        resonance: 3.0
+        amp_env: short_pluck
+
+    BRILLIANT:
+      in_masterpiece:
+        description: "Brilliant move in winning attack"
+        pitch: 220
+        duration: 0.5
+        waveform: pulse
+        filter_base: 500
+        filter_env_amount: 4000  # Opening sweep
+        resonance: 2.0
+        amp_env: stab
+        filter_env: sweep
+
+      in_defeat:
+        description: "Good move in bad position (too late)"
+        pitch: 220
+        duration: 0.2
+        waveform: triangle
+        filter_base: 2000
+        filter_env_amount: 500
+        resonance: 0.5
+        amp_env: brief
+
+      neutral:
+        pitch: 330
+        duration: 0.3
+        waveform: square
+        filter_base: 1500
+        filter_env_amount: 2000
+        resonance: 1.5
+        amp_env: standard
+
+    STRONG:
+      in_masterpiece:
+        pitch: 220
+        duration: 0.5
+        waveform: pulse
+        filter_base: 500
+        filter_env_amount: 4000
+        resonance: 2.0
+        amp_env: stab
+        filter_env: sweep
+
+      in_defeat:
+        pitch: 220
+        duration: 0.2
+        waveform: triangle
+        filter_base: 2000
+        filter_env_amount: 500
+        resonance: 0.5
+        amp_env: brief
+
+      neutral:
+        pitch: 330
+        duration: 0.3
+        waveform: square
+        filter_base: 1500
+        filter_env_amount: 2000
+        resonance: 1.5
+        amp_env: standard
+
+    TACTICAL_SEQUENCE:
+      description: "Series of forcing moves"
+      pitches: [220, 275, 330, 275]
+      total_duration: 1.2
+      note_duration: 0.2
+      waveform: square
+      filter_base: 1500
+      filter_env_amount: 1500
+      resonance: 1.5
+      amp_env: quick
+      overlap_factor: 0.15
+      volume: 0.7
+
+    CHECKMATE:
+      in_defeat:
+        description: "Receiving checkmate"
+        pitch: 27.5  # Very low
+        duration: 2.0
+        waveform: saw
+        filter_base: 100
+        filter_env_amount: 0
+        resonance: 4.0
+        amp_env: doom
+
+      in_masterpiece:
+        description: "Delivering checkmate"
+        pitch: 440
+        duration: 1.0
+        waveform: pulse
+        filter_base: 300
+        filter_env_amount: 5000
+        resonance: 2.5
+        amp_env: sustained
+
+    DEFAULT:
+      pitch: 330
+      duration: 0.3
+      waveform: triangle
+      filter_base: 1000
+      filter_env_amount: 500
+      resonance: 0.5
+      amp_env: gentle
+
+    FINAL_RESOLUTION:
+      use_sequencer_envelope: true  # Special case - fade out with section
+
+  # --- SEQUENCER PATTERNS (heartbeat / continuous bass) ---
+  sequencer:
+
+    # Semitone offsets from root (null = rest)
+    patterns:
+      DEVELOPMENT:
+        early: [0, 0, 7, 0, 0, 0, 7, 0, 0, 0, 7, 0, 0, 0, 7, 0]
+        mid: [0, 3, 7, 0, 3, 7, 12, 0, 3, 7, 12, 15, 0, 7, 12, 15]
+        full: [0, 3, 5, 7, 10, 12, 15, 17, 19, 17, 15, 12, 10, 7, 5, 3]
+
+      PULSE: [0, null, -2, null, null, null, null, null, 0, null, -2, null, null, null, null, null]
+      ASYMMETRY: [0, null, 2, null, 0, null, -2, null, 0, 3, null, -3, 0, null, null, null]
+      CRITICAL_SWING: [0, 7, 12, 19, 12, 7, 0, -5, 0, 5, 12, 7, 0, -7, -12, null]
+      GAME_CHANGING: [0, 12, 0, 12, 24, 12, 0, 12, 24, 36, 24, 12, 0, null, null, null]
+      TACTICAL_SEQUENCE: [0, 5, 7, null, 5, 10, 12, null, 7, 12, 15, null, 12, 7, 5, 0]
+      KING_ATTACK: [0, 0, 0, 12, 0, 0, 0, 12, 0, 0, 0, 12, 0, 0, 0, 12]
+      BLUNDER: [0, -1, -3, -6, -10, -15, null, null, -19, -22, -24, null, -27, -29, -31, -36]
+      MISTAKE: [0, 2, 3, 2, 0, -2, -3, -5, -7, -5, -3, -2, 0, null, -2, 0]
+      INACCURACY: [0, 1, -1, 2, 0, null, 3, 2, 1, 0, -2, -1, 0, null, 1, 0]
+      FIRST_EXCHANGE: [0, 3, 5, 8, 10, 8, 5, 3, 0, -3, -5, -8, -10, -8, -5, -3]
+      MATE_SEQUENCE: [0, null, null, null, -12, null, null, null, 0, null, null, null, -24, null, null, null]
+      BRILLIANT: [0, 7, 12, 16, 19, 24, 28, 31, 36, 31, 28, 24, 19, 16, 12, 7]
+      TIME_PRESSURE: [0, 12, 0, 12, 0, 12, 0, 12, 0, 12, 0, 12, 0, 12, 0, 12]
+      TIME_SCRAMBLE: [0, 12, 0, 12, 0, 12, 0, 12, 0, 12, 0, 12, 0, 12, 0, 12]
+      SIGNIFICANT_SHIFT: [0, 4, 7, 11, 12, 11, 7, 3, 0, -1, 3, 6, 7, 6, 3, 0]
+
+    # Synthesis parameters for sequencer
+    synth:
+      detune_cents: [-15, -9, -4.5, 4.5, 9, 15]
+      filter_base_start: 800
+      filter_increment_per_step: 150
+      filter_env_amount: 2000
+      resonance: 1.2
+      amp_env: [0.1, 0.05, 0.9, 0.3]  # Legato
+      filter_env: [0.02, 0.2, 0.7, 0.3]
+      global_filter_base: 2000
+      global_filter_lfo_amount: 1500
+      global_filter_sweep_amount: 1000
+      global_filter_resonance: 2.0
+      smoothing_window_sec: 0.005
+      sequencer_overlap: 1.5  # Overlap for legato
+
+    # Heartbeat-specific parameters
+    heartbeat:
+      filter: 220  # Hz - muffled but audible
+      resonance: 0.0  # Natural
+      bpm: 70
+      lub_dub_gap: 0.080  # 80ms between LUB and dub
+      root_midi: 36  # Low C (~65Hz)
+      dub_offset: -2  # semitones lower than LUB
+      dub_volume: 0.7  # 70% of LUB volume
+      amp_env: [0.003, 0.06, 0.03, 0.20]
+      filter_env: [0.01, 0.1, 0.0, 0.1]
+
+  # --- SPECIAL MOMENTS ---
+  special_moments:
+
+    DEVELOPMENT:
+      in_defeat:
+        melody_indices: [0, 1, 2, 1]
+        note_duration: 0.3
+        waveform: triangle
+        filter_mult: 0.8
+        base_filter_env: 800
+        filter_env_step: 200
+        resonance: 0.8
+        amp_env: pluck
+        volume: 0.6
+
+      default:
+        melody_indices: [0, 1, 2, 4]
+        note_duration: 0.25
+        waveform: pulse
+        filter_mult: 0.8
+        base_filter_env: 800
+        filter_env_step: 200
+        resonance: 0.8
+        amp_env: pluck
+        volume: 0.6
+
+    FIRST_EXCHANGE:
+      in_defeat:
+        question_indices: [0, 2, 4]
+        answer_indices: [3, 1, 0]
+        question_waveform: pulse
+        answer_waveform: triangle
+        note_duration: 0.65
+        filter_mult: 0.9
+        question_filter_env_base: 600
+        answer_filter_env_base: 500
+        question_resonance: 1.0
+        answer_resonance: 0.8
+        answer_brightness: 0.7
+        question_volume: 0.7
+        answer_volume: 0.6
+
+      default:
+        question_indices: [0, 2, 4]
+        answer_indices: [4, 2, 0]
+        question_waveform: square
+        answer_waveform: pulse
+        note_duration: 0.22
+        filter_mult: 0.9
+        question_filter_env_base: 600
+        answer_filter_env_base: 500
+        question_resonance: 1.0
+        answer_resonance: 1.0
+        answer_brightness: 0.9
+        question_volume: 0.7
+        answer_volume: 0.7
+
+  # --- GESTURE EVENT PARAMETERS ---
+  gesture_events:
+    base_duration_sec: 2.5
+    min_duration_sec: 1.5
+    max_duration_sec: 4.0
+    score_duration_mult: 0.3
+    base_mix_amount: 0.3
+    max_mix_amount: 0.9
+    score_mix_mult: 0.06
+    filter_mod_base: 500
+    filter_mod_per_score: 200
+    crossfade_duration_sec: 0.5
+    base_pattern_level: 0.4
+    moment_spacing_sec: 1.0
+
+# --- PROCESS TRANSFORMATION (narrative arc evolution) ---
+process_transformation:
+
+  TUMBLING_DEFEAT:
+    description: "System degrades over time"
+    mistake_weights:
+      INACCURACY: 0.05
+      MISTAKE: 0.1
+      BLUNDER: 0.2
+    base_decay: 0.3
+    chaos_factor: 0.02
+    tempo_drift_clamp: 0.3
+    pitch_drift_multiplier: 20
+    volume_decay_rate: 0.3
+
+  ATTACKING_MASTERPIECE:
+    description: "System builds momentum"
+    brilliance_weights:
+      STRONG: 0.15
+      BRILLIANT: 0.25
+    crescendo_exponent: 1.5
+    max_momentum: 1.2
+    tempo_base: 0.8
+    tempo_range: 0.5
+    filter_brightness_base: 0.3
+    filter_brightness_range: 0.7
+
+  QUIET_PRECISION:
+    description: "System breathes subtly"
+    disturbance: 0.05
+    balance_decay: 0.95
+    breathing_increment: 0.1
+    breathing_amplitude: 0.08
+
+# --- ENTROPY (complexity-driven modulation) ---
+entropy:
+  description: "Musical complexity driven by positional complexity"
+
+  calculation:
+    weights:
+      eval: 0.5  # Evaluation volatility
+      tactical: 0.4  # Tactical density
+      time: 0.1  # Thinking time
+
+    windows:
+      eval: 5  # plies
+      tactical: 5  # plies
+
+    smoothing_sigma: 2.0
+
+  thresholds:
+    low: 0.3  # Below = simple
+    high: 0.7  # Above = complex
+
+  musical_mapping:
+    note_pools:
+      low: [0, 4]  # Simple: root-fifth
+      medium: [0, 2, 4, 5, 7]  # Moderate: diatonic
+      high: [0, 1, 2, 3, 4, 5, 6, 7]  # Complex: chromatic
+
+    rhythm_variation_max: 0.5  # ±50% timing at high entropy
+    filter_lfo_range: [0.02, 0.12]  # Hz (slow to fast)
+    glide_reduction_max: 0.5  # Less portamento at high entropy
+    harmony_probability_threshold: 0.7  # Add harmonies above this
+
+# === 3. MIXING & MASTERING ===
+
+mixing:
+
+  # --- LAYER LEVELS ---
+  layers:
+    drone: 0.15  # Layer 1: Base drone
+    patterns: 0.6  # Layer 2: Melodic patterns
+    sequencer: 0.4  # Layer 3a: Heartbeat/bass
+    gestures: 0.5  # Layer 3b: Key moments
+    section: 0.7  # Section envelope
+
+  # --- LAYER ENABLE/DISABLE ---
+  layer_enable:
+    drone: false
+    patterns: true
+    sequencer: false
+    gestures: false
+
+  # --- LAYER INTERACTION ---
+  layer_interaction:
+    drone_in_supersaw: 0.3  # Drone contribution to mixed signal
+    pattern_in_supersaw: 0.7  # Pattern contribution to mixed signal
+    pattern_note_level: 0.08 # Reduced to prevent additive clipping when notes overlap
+    sequencer_note_level: 0.8
+    lfo_modulation_depth: 0.1
+
+  # --- DYNAMICS ---
+  dynamics:
+    master_limiter: 0.9
+    sidechain_amount: 0.3
+    ducking_amount: 0.3
+    soft_clip_pre: 0.9
+    soft_clip_post: 0.95
+
+  # --- COMPRESSION ---
+  compression:
+    supersaw_compression: 0.8
+    supersaw_gain: 1.25
+
+  # --- SPECIAL ---
+  filtered_sequence_level: 0.04  # Background gesture texture
+
+  # --- STEREO ---
+  stereo:
+    white_pan: -0.7  # White pieces left
+    black_pan: 0.7  # Black pieces right
+    drone_pan: 0.0  # Drone centered
+    width_range: [0.0, 0.8]  # Narrow to wide based on tension
+    entropy_pan_amount: 0.6  # Max pan deviation
+
+  # --- OUTPUT ---
+  output:
+    sample_width: 2  # bytes
+    channels: 2  # stereo
+    amplitude_multiplier: 30000
+    clamp_range: [-32000, 32000]
+    normalization_threshold: 0.9

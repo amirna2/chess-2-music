@@ -1,6 +1,10 @@
 """
-SYNTH_CONFIG - Centralized Configuration for Chess Music Synthesis
-All musical parameters, presets, and mappings in one place
+SYNTH_CONFIG - Backward Compatibility Layer for Chess Music Synthesis
+
+DEPRECATED: This module provides backward compatibility for existing code.
+New code should import from config_service instead:
+    from config_service import get_config
+    config = get_config()
 
 IMPORTANT: Tagger Moment Types vs. Internal Voice Mappings
 -----------------------------------------------------------
@@ -21,792 +25,397 @@ Example: A blunder in a defeat sounds like doom, but in a masterpiece it's a bri
 
 from dataclasses import dataclass, field
 from typing import Dict, List, Tuple, Optional
+from config_service import get_config
+
+
+# === YAML LOADER HELPERS ===
+# These functions load configuration sections from config.yaml
+
+def _load_scales() -> Dict[str, List[float]]:
+    """Load scales from YAML config"""
+    cfg = get_config()
+    scales = {}
+    scales_config = cfg.get('composition.harmony.scales', {})
+    for name, scale_data in scales_config.items():
+        scales[name] = scale_data.get('frequencies', [])
+    return scales
+
+
+def _load_envelopes() -> Dict[str, Tuple[float, float, float, float]]:
+    """Load amplitude envelopes from YAML config"""
+    cfg = get_config()
+    envelopes = {}
+    env_config = cfg.get('synthesis.amplitude.envelopes', {})
+    for name, env in env_config.items():
+        envelopes[name] = (env.get('a', 0.01), env.get('d', 0.1),
+                          env.get('s', 0.7), env.get('r', 0.2))
+    return envelopes
+
+
+def _load_filter_envelopes() -> Dict[str, Tuple[float, float, float, float]]:
+    """Load filter envelopes from YAML config"""
+    cfg = get_config()
+    envelopes = {}
+    env_config = cfg.get('synthesis.filters.envelopes', {})
+    for name, env in env_config.items():
+        envelopes[name] = (env.get('a', 0.01), env.get('d', 0.15),
+                          env.get('s', 0.3), env.get('r', 0.2))
+    return envelopes
+
+
+def _load_narrative_params() -> Dict[str, Dict]:
+    """
+    Load macro game arc parameters from YAML.
+    Returns nested structure as defined in YAML.
+    """
+    cfg = get_config()
+    return cfg.get('composition.macro_game_arc', {})
+
+
+def _load_section_modulations() -> Dict[str, Dict]:
+    """Load section modulation parameters from YAML"""
+    cfg = get_config()
+    return cfg.get('composition.meso_section_modulation', {})
+
+
+def _load_moment_voices() -> Dict[str, Dict]:
+    """
+    Load gesture moment voices from YAML.
+    Transforms nested structure to flat keys for backward compatibility.
+    YAML: BLUNDER: {in_defeat: {...}, in_masterpiece: {...}}
+    Code expects: BLUNDER_IN_DEFEAT: {...}, BLUNDER_IN_MASTERPIECE: {...}
+    """
+    cfg = get_config()
+    gestures = cfg.get('composition.micro_gestures', {})
+    voices = {}
+
+    for gesture_type, contexts in gestures.items():
+        if isinstance(contexts, dict):
+            # Check if this has context sub-keys
+            if 'in_defeat' in contexts or 'in_masterpiece' in contexts or 'neutral' in contexts:
+                # Context-aware gesture
+                if 'in_defeat' in contexts:
+                    voices[f'{gesture_type}_IN_DEFEAT'] = contexts['in_defeat']
+                if 'in_masterpiece' in contexts:
+                    voices[f'{gesture_type}_IN_MASTERPIECE'] = contexts['in_masterpiece']
+                if 'neutral' in contexts:
+                    voices[f'{gesture_type}_NEUTRAL'] = contexts['neutral']
+            else:
+                # Simple gesture
+                voices[gesture_type] = contexts
+
+    return voices
+
+
+def _load_development_params() -> Dict[str, Dict]:
+    """Load development moment parameters from YAML"""
+    cfg = get_config()
+    return cfg.get('composition.special_moments.DEVELOPMENT', {})
+
+
+def _load_first_exchange_params() -> Dict[str, Dict]:
+    """Load first exchange parameters from YAML"""
+    cfg = get_config()
+    return cfg.get('composition.special_moments.FIRST_EXCHANGE', {})
+
+
+def _load_sequencer_patterns() -> Dict:
+    """Load sequencer patterns from YAML"""
+    cfg = get_config()
+    return cfg.get('composition.sequencer.patterns', {})
+
+
+def _load_supersaw_detune() -> Dict[str, List[float]]:
+    """Load supersaw detune presets from YAML"""
+    cfg = get_config()
+    return cfg.get('synthesis.oscillators.supersaw.detune_presets', {})
+
+
+def _load_timing() -> Dict[str, float]:
+    """Load timing parameters from YAML"""
+    cfg = get_config()
+    return cfg.get('composition.rhythm.timing', {})
+
+
+def _load_layer_enable() -> Dict[str, bool]:
+    """Load layer enable flags from YAML"""
+    cfg = get_config()
+    return cfg.get('mixing.layer_enable', {})
+
+
+def _load_mixing() -> Dict[str, float]:
+    """
+    Load mixing levels from YAML.
+    Combines all mixing parameters and adds _level suffix for layer levels.
+    """
+    cfg = get_config()
+    mixing = {}
+
+    # Layer levels - add _level suffix for backward compatibility
+    layers = cfg.get('mixing.layers', {})
+    for key, value in layers.items():
+        mixing[f'{key}_level'] = value
+
+    # Dynamics
+    mixing.update(cfg.get('mixing.dynamics', {}))
+
+    # Compression
+    mixing.update(cfg.get('mixing.compression', {}))
+
+    # Special
+    filtered_seq_level = cfg.get('mixing.filtered_sequence_level')
+    if filtered_seq_level is not None:
+        mixing['filtered_sequence_level'] = filtered_seq_level
+
+    return mixing
+
+
+def _load_layer_mixing() -> Dict[str, float]:
+    """Load layer interaction parameters from YAML"""
+    cfg = get_config()
+    # Load layer_interaction section
+    return cfg.get('mixing.layer_interaction', {})
+
+
+def _load_melodic_patterns() -> Dict[str, Dict]:
+    """Load melodic patterns from YAML"""
+    cfg = get_config()
+    return cfg.get('composition.melodic_patterns', {})
+
+
+def _load_sequencer_synth() -> Dict:
+    """Load sequencer synthesis parameters from YAML"""
+    cfg = get_config()
+    return cfg.get('composition.sequencer.synth', {})
+
+
+def _load_moment_event_params() -> Dict:
+    """Load gesture event parameters from YAML"""
+    cfg = get_config()
+    return cfg.get('composition.gesture_events', {})
+
+
+def _load_process_params() -> Dict[str, Dict]:
+    """Load process transformation parameters from YAML"""
+    cfg = get_config()
+    return cfg.get('process_transformation', {})
+
+
+def _load_wav_output() -> Dict:
+    """
+    Load WAV output parameters from YAML.
+    Expands clamp_range to clamp_min/clamp_max for backward compatibility.
+    """
+    cfg = get_config()
+    wav = cfg.get('mixing.output', {}).copy()
+
+    # Expand clamp_range to clamp_min/clamp_max
+    if 'clamp_range' in wav:
+        clamp_range = wav.pop('clamp_range')
+        if isinstance(clamp_range, list) and len(clamp_range) >= 2:
+            wav['clamp_min'] = clamp_range[0]
+            wav['clamp_max'] = clamp_range[1]
+
+    return wav
+
+
+def _load_stereo_config() -> Dict:
+    """
+    Load stereo configuration from YAML.
+    Expands width_range array to min_width/max_width for backward compatibility.
+    """
+    cfg = get_config()
+    stereo = cfg.get('mixing.stereo', {}).copy()
+
+    # Expand width_range to min_width/max_width
+    if 'width_range' in stereo:
+        width_range = stereo.pop('width_range')
+        if isinstance(width_range, list) and len(width_range) >= 2:
+            stereo['min_width'] = width_range[0]
+            stereo['max_width'] = width_range[1]
+
+    return stereo
+
+
+def _load_entropy_config() -> Dict:
+    """Load entropy configuration from YAML"""
+    cfg = get_config()
+    return cfg.get('entropy', {})
 
 
 @dataclass
 class SynthConfig:
     """
     Centralized configuration for all synthesis parameters.
-    Modify values here to change the musical output without touching code logic.
+    Loads from config.yaml via config_service.
     """
 
     # === MUSICAL SCALES ===
-    SCALES: Dict[str, List[float]] = field(default_factory=lambda: {
-        'minor': [110, 123.47, 130.81, 146.83, 164.81, 174.61, 196, 220],
-        'phrygian': [110, 116.54, 130.81, 146.83, 164.81, 174.61, 196, 220],
-        'dorian': [110, 123.47, 130.81, 146.83, 164.81, 185, 196, 220],
-    })
+    SCALES: Dict[str, List[float]] = field(default_factory=_load_scales)
 
     # === ENVELOPE PRESETS (attack, decay, sustain, release) ===
-    ENVELOPES: Dict[str, Tuple[float, float, float, float]] = field(default_factory=lambda: {
-        'percussive': (0.001, 0.02, 0.3, 0.05),
-        'pluck': (0.001, 0.05, 0.4, 0.1),
-        'pad': (0.5, 0.0, 1.0, 0.5),
-        'stab': (0.01, 0.05, 0.7, 0.1),
-        'drone': (0.5, 0.0, 1.0, 0.5),
-        'laser': (0.02, 0.1, 0.9, 0.8),
-        'doom': (0.5, 0.0, 1.0, 1.0),
-        'short_pluck': (0.001, 0.01, 0.5, 0.2),
-        'medium_stab': (0.001, 0.01, 0.5, 0.4),
-        'gentle': (0.02, 0.05, 0.7, 0.1),
-        'soft': (0.02, 0.06, 0.6, 0.1),
-        'brief': (0.001, 0.01, 0.3, 0.1),
-        'quick': (0.001, 0.02, 0.5, 0.05),
-        'standard': (0.001, 0.01, 0.8, 0.05),
-        'sustained': (0.001, 0.1, 0.8, 0.5),
-    })
+    ENVELOPES: Dict[str, Tuple[float, float, float, float]] = field(default_factory=_load_envelopes)
 
-    FILTER_ENVELOPES: Dict[str, Tuple[float, float, float, float]] = field(default_factory=lambda: {
-        'gentle': (0.01, 0.15, 0.3, 0.2),
-        'sweep': (0.001, 0.2, 0.5, 0.1),
-        'minimal': (0.5, 0.0, 1.0, 0.5),
-        'dramatic': (0.01, 0.25, 0.4, 0.4),
-        'closing': (0.001, 0.5, 0.0, 0.4),
-        'standard': (0.01, 0.15, 0.3, 0.2),
-        'smooth': (0.001, 0.1, 0.2, 0.1),
-        'sharp': (0.001, 0.2, 0.7, 0.3),
-    })
+    FILTER_ENVELOPES: Dict[str, Tuple[float, float, float, float]] = field(default_factory=_load_filter_envelopes)
 
     # === OVERALL NARRATIVE BASE PARAMETERS ===
     # These define the fundamental character of the entire piece
-    NARRATIVE_BASE_PARAMS: Dict[str, Dict] = field(default_factory=lambda: {
-        'TUMBLING_DEFEAT': {
-            'base_waveform': 'supersaw',
-            'filter_start': 2500,
-            'filter_end': 300,
-            'resonance_start': 0.8,
-            'resonance_end': 3.5,
-            'tempo_start': 1.0,
-            'tempo_end': 0.7,
-            'detune_start': 3,
-            'detune_end': 20,
-            'scale': 'phrygian',
-        },
-        'FIGHTING_DEFEAT': {
-            'base_waveform': 'supersaw',
-            'filter_start': 2500,
-            'filter_end': 300,
-            'resonance_start': 0.8,
-            'resonance_end': 3.5,
-            'tempo_start': 1.0,
-            'tempo_end': 0.7,
-            'detune_start': 3,
-            'detune_end': 20,
-            'scale': 'phrygian',
-        },
-        'ATTACKING_MASTERPIECE': {
-            'base_waveform': 'pulse',
-            'filter_start': 500,
-            'filter_end': 5000,
-            'resonance_start': 0.5,
-            'resonance_end': 1.8,
-            'tempo_start': 0.8,
-            'tempo_end': 1.2,
-            'detune_start': 0,
-            'detune_end': 7,
-            'scale': 'dorian',
-        },
-        'TACTICAL_MASTERPIECE': {
-            'base_waveform': 'pulse',
-            'filter_start': 800,
-            'filter_end': 3000,
-            'resonance_start': 0.5,
-            'resonance_end': 1.3,
-            'tempo_start': 0.8,
-            'tempo_end': 1.2,
-            'detune_start': 0,
-            'detune_end': 7,
-            'scale': 'dorian',
-            'drone_voices': 3
-        },
-        'PEACEFUL_DRAW': {
-            'base_waveform': 'triangle',
-            'filter_start': 1500,
-            'filter_end': 1500,
-            'resonance_start': 0.3,
-            'resonance_end': 0.3,
-            'tempo_start': 1.0,
-            'tempo_end': 1.0,
-            'detune_start': 0,
-            'detune_end': 0,
-            'scale': 'dorian',
-        },
-        'QUIET_PRECISION': {
-            'base_waveform': 'triangle',
-            'filter_start': 600,
-            'filter_end': 2500,
-            'resonance_start': 0.8,
-            'resonance_end': 1.2,
-            'tempo_start': 0.9,
-            'tempo_end': 1.0,
-            'detune_start': 2,
-            'detune_end': 5,
-            'scale': 'dorian',
-        },
-        'DEATH_SPIRAL': {
-            'base_waveform': 'saw',
-            'filter_start': 1800,
-            'filter_end': 400,
-            'resonance_start': 1.5,
-            'resonance_end': 3.0,
-            'tempo_start': 1.0,
-            'tempo_end': 0.6,
-            'detune_start': 5,
-            'detune_end': 18,
-            'scale': 'phrygian',
-        },
-        'DEFAULT': {
-            'base_waveform': 'saw',
-            'filter_start': 1500,
-            'filter_end': 2000,
-            'resonance_start': 1.0,
-            'resonance_end': 1.5,
-            'tempo_start': 1.0,
-            'tempo_end': 1.0,
-            'detune_start': 0,
-            'detune_end': 5,
-            'scale': 'minor',
-        },
-    })
+    NARRATIVE_BASE_PARAMS: Dict[str, Dict] = field(default_factory=_load_narrative_params)
 
     # === SECTION NARRATIVE MODULATION PARAMETERS ===
     # These modulate the base parameters for specific game sections
-    SECTION_MODULATIONS: Dict[str, Dict] = field(default_factory=lambda: {
-        'DESPERATE_DEFENSE': {
-            'filter_mult': 1.1,
-            'resonance_add': 1.5,
-            'tempo_mult': 0.85,
-            'note_density': 0.7,
-            'filter_env_amount': 2000,
-        },
-        'KING_HUNT': {
-            'filter_mult': 1.3,
-            'resonance_add': 1.0,
-            'tempo_mult': 1.2,
-            'note_density': 1.5,
-            'filter_env_amount': 2000,
-        },
-        'MATING_ATTACK': {
-            'filter_mult': 1.3,
-            'resonance_add': 1.0,
-            'tempo_mult': 1.2,
-            'note_density': 1.5,
-            'filter_env_amount': 6000,
-        },
-        'TACTICAL_CHAOS': {
-            'filter_mult': 0.8,
-            'resonance_add': 2.0,
-            'tempo_mult': 1.3,
-            'note_density': 2.0,
-            'filter_env_amount': 5000,
-        },
-        'TACTICAL_BATTLE': {
-            'filter_mult': 0.8,
-            'resonance_add': 2.0,
-            'tempo_mult': 1.3,
-            'note_density': 2.0,
-            'filter_env_amount': 5000,
-        },
-        'QUIET': {
-            'filter_mult': 1.1,
-            'resonance_add': -0.3,
-            'tempo_mult': 0.9,
-            'note_density': 0.5,
-            'filter_env_amount': 1500,
-        },
-        'POSITIONAL': {
-            'filter_mult': 1.1,
-            'resonance_add': -0.3,
-            'tempo_mult': 0.9,
-            'note_density': 0.5,
-            'filter_env_amount': 1500,
-        },
-        'SACRIFICIAL_ATTACK': {
-            'filter_mult': 0.7,
-            'resonance_add': 1.5,
-            'tempo_mult': 1.1,
-            'note_density': 1.3,
-            'filter_env_amount': 8000,
-        },
-        'CRUSHING_ATTACK': {
-            'filter_mult': 0.7,
-            'resonance_add': 1.5,
-            'tempo_mult': 1.1,
-            'note_density': 1.3,
-            'filter_env_amount': 8000,
-        },
-        'ENDGAME_PRECISION': {
-            'filter_mult': 1.0,
-            'resonance_add': 0.3,
-            'tempo_mult': 0.8,
-            'note_density': 0.8,
-            'filter_env_amount': 2000,
-        },
-        'COMPLEX_STRUGGLE': {
-            'filter_mult': 0.9,
-            'resonance_add': 0.5,
-            'tempo_mult': 1.0,
-            'note_density': 1.0,
-            'filter_env_amount': 1200,
-        },
-        'FLAWLESS_CONVERSION': {
-            'filter_mult': 1.0,
-            'resonance_add': 0.3,
-            'tempo_mult': 0.85,
-            'note_density': 0.9,
-            'filter_env_amount': 1800,
-        },
-        'DECISIVE_ENDING': {
-            'filter_mult': 0.6,
-            'resonance_add': 2.5,
-            'tempo_mult': 0.7,
-            'note_density': 0.5,
-            'filter_env_amount': 3000,
-        },
-        'DEFAULT': {
-            'filter_mult': 1.0,
-            'resonance_add': 0.0,
-            'tempo_mult': 1.0,
-            'note_density': 1.0,
-            'filter_env_amount': 2500,
-        },
-    })
+    SECTION_MODULATIONS: Dict[str, Dict] = field(default_factory=_load_section_modulations)
 
     # === KEY MOMENT VOICE PARAMETERS ===
     # NOTE: These are INTERNAL mappings used by the composer
     # The tagger produces simple types (BLUNDER, BRILLIANT, etc.)
     # The composer maps them to context-aware voices based on overall_narrative
     # Example: BLUNDER + TUMBLING_DEFEAT context → BLUNDER_IN_DEFEAT voice
-    MOMENT_VOICES: Dict[str, Dict] = field(default_factory=lambda: {
-        'BLUNDER_IN_DEFEAT': {
-            'freq': 55,
-            'duration': 1.0,
-            'waveform': 'saw',
-            'filter_base': 200,
-            'filter_env_amount': -150,
-            'resonance': 4.0,
-            'amp_env': 'doom',
-            'filter_env': 'closing',
-        },
-        'BLUNDER_IN_MASTERPIECE': {
-            'freq': 110,
-            'duration': 0.3,
-            'waveform': 'pulse',
-            'filter_base': 3000,
-            'filter_env_amount': -2500,
-            'resonance': 2.0,
-            'amp_env': 'brief',
-        },
-        'BLUNDER_NEUTRAL': {
-            'freq': 82.5,
-            'duration': 0.5,
-            'waveform': 'saw',
-            'filter_base': 1000,
-            'filter_env_amount': -800,
-            'resonance': 3.0,
-            'amp_env': 'short_pluck',
-        },
-        'MISTAKE_IN_DEFEAT': {
-            'freq': 55,
-            'duration': 1.0,
-            'waveform': 'saw',
-            'filter_base': 200,
-            'filter_env_amount': -150,
-            'resonance': 4.0,
-            'amp_env': 'doom',
-            'filter_env': 'closing',
-        },
-        'MISTAKE_IN_MASTERPIECE': {
-            'freq': 110,
-            'duration': 0.3,
-            'waveform': 'pulse',
-            'filter_base': 3000,
-            'filter_env_amount': -2500,
-            'resonance': 2.0,
-            'amp_env': 'brief',
-        },
-        'MISTAKE_NEUTRAL': {
-            'freq': 82.5,
-            'duration': 0.5,
-            'waveform': 'saw',
-            'filter_base': 1000,
-            'filter_env_amount': -800,
-            'resonance': 3.0,
-            'amp_env': 'short_pluck',
-        },
-        'BRILLIANT_IN_MASTERPIECE': {
-            'freq': 220,  # Modified by progress in code
-            'duration': 0.5,
-            'waveform': 'pulse',
-            'filter_base': 500,
-            'filter_env_amount': 4000,  # Modified by progress in code
-            'resonance': 2.0,
-            'amp_env': 'stab',
-            'filter_env': 'sweep',
-        },
-        'BRILLIANT_IN_DEFEAT': {
-            'freq': 220,
-            'duration': 0.2,
-            'waveform': 'triangle',
-            'filter_base': 2000,
-            'filter_env_amount': 500,
-            'resonance': 0.5,
-            'amp_env': 'brief',
-        },
-        'BRILLIANT_NEUTRAL': {
-            'freq': 330,
-            'duration': 0.3,
-            'waveform': 'square',
-            'filter_base': 1500,
-            'filter_env_amount': 2000,
-            'resonance': 1.5,
-            'amp_env': 'standard',
-        },
-        'STRONG_IN_MASTERPIECE': {
-            'freq': 220,
-            'duration': 0.5,
-            'waveform': 'pulse',
-            'filter_base': 500,
-            'filter_env_amount': 4000,
-            'resonance': 2.0,
-            'amp_env': 'stab',
-            'filter_env': 'sweep',
-        },
-        'STRONG_IN_DEFEAT': {
-            'freq': 220,
-            'duration': 0.2,
-            'waveform': 'triangle',
-            'filter_base': 2000,
-            'filter_env_amount': 500,
-            'resonance': 0.5,
-            'amp_env': 'brief',
-        },
-        'STRONG_NEUTRAL': {
-            'freq': 330,
-            'duration': 0.3,
-            'waveform': 'square',
-            'filter_base': 1500,
-            'filter_env_amount': 2000,
-            'resonance': 1.5,
-            'amp_env': 'standard',
-        },
-        'TACTICAL_SEQUENCE': {
-            'freqs': [220, 275, 330, 275],
-            'total_duration': 1.2,
-            'note_duration': 0.2,
-            'waveform': 'square',
-            'filter_base': 1500,
-            'filter_env_amount': 1500,
-            'resonance': 1.5,
-            'amp_env': 'quick',
-            'overlap_factor': 0.15,
-            'volume': 0.7,
-        },
-        'MATE_IN_DEFEAT': {
-            'freq': 27.5,
-            'duration': 2.0,
-            'waveform': 'saw',
-            'filter_base': 100,
-            'filter_env_amount': 0,
-            'resonance': 4.0,
-            'amp_env': 'doom',
-        },
-        'MATE_IN_MASTERPIECE': {
-            'freq': 440,
-            'duration': 1.0,
-            'waveform': 'pulse',
-            'filter_base': 300,
-            'filter_env_amount': 5000,
-            'resonance': 2.5,
-            'amp_env': 'sustained',
-        },
-        'DEFAULT_MOMENT': {
-            'freq': 330,
-            'duration': 0.3,
-            'waveform': 'triangle',
-            'filter_base': 1000,
-            'filter_env_amount': 500,
-            'resonance': 0.5,
-            'amp_env': 'gentle',
-        },
-        'FINAL_RESOLUTION': {
-            # Uses Layer 3 sequencer settings - will inherit from last section
-            # This is a placeholder that tells the system to use sequencer envelope
-            'use_sequencer_envelope': True,
-        },
-    })
+    MOMENT_VOICES: Dict[str, Dict] = field(default_factory=_load_moment_voices)
 
     # === DEVELOPMENT MOMENT PARAMETERS ===
-    DEVELOPMENT_PARAMS: Dict[str, Dict] = field(default_factory=lambda: {
-        'IN_DEFEAT': {
-            'melody_indices': [0, 1, 2, 1],
-            'note_duration': 0.3,
-            'waveform': 'triangle',
-            'filter_mult': 0.8,
-            'base_filter_env': 800,
-            'filter_env_step': 200,
-            'resonance': 0.8,
-            'amp_env': 'pluck',
-            'volume': 0.6,
-        },
-        'DEFAULT': {
-            'melody_indices': [0, 1, 2, 4],
-            'note_duration': 0.25,
-            'waveform': 'pulse',
-            'filter_mult': 0.8,
-            'base_filter_env': 800,
-            'filter_env_step': 200,
-            'resonance': 0.8,
-            'amp_env': 'pluck',
-            'volume': 0.6,
-        },
-    })
+    DEVELOPMENT_PARAMS: Dict[str, Dict] = field(default_factory=_load_development_params)
 
     # === FIRST EXCHANGE MOMENT PARAMETERS ===
-    FIRST_EXCHANGE_PARAMS: Dict[str, Dict] = field(default_factory=lambda: {
-        'IN_DEFEAT': {
-            'question_indices': [0, 2, 4],
-            'answer_indices': [3, 1, 0],
-            'question_waveform': 'pulse',
-            'answer_waveform': 'triangle',
-            'note_duration': 0.65,
-            'filter_mult': 0.9,
-            'question_filter_env_base': 600,
-            'answer_filter_env_base': 500,
-            'question_resonance': 1.0,
-            'answer_resonance': 0.8,
-            'answer_brightness': 0.7,
-            'question_volume': 0.7,
-            'answer_volume': 0.6,
-        },
-        'DEFAULT': {
-            'question_indices': [0, 2, 4],
-            'answer_indices': [4, 2, 0],
-            'question_waveform': 'square',
-            'answer_waveform': 'pulse',
-            'note_duration': 0.22,
-            'filter_mult': 0.9,
-            'question_filter_env_base': 600,
-            'answer_filter_env_base': 500,
-            'question_resonance': 1.0,
-            'answer_resonance': 1.0,
-            'answer_brightness': 0.9,
-            'question_volume': 0.7,
-            'answer_volume': 0.7,
-        },
-    })
+    FIRST_EXCHANGE_PARAMS: Dict[str, Dict] = field(default_factory=_load_first_exchange_params)
 
     # === SEQUENCER PATTERNS ===
-    SEQUENCER_PATTERNS: Dict = field(default_factory=lambda: {
-        'DEVELOPMENT': {
-            'early': [0, 0, 7, 0, 0, 0, 7, 0, 0, 0, 7, 0, 0, 0, 7, 0],
-            'mid': [0, 3, 7, 0, 3, 7, 12, 0, 3, 7, 12, 15, 0, 7, 12, 15],
-            'full': [0, 3, 5, 7, 10, 12, 15, 17, 19, 17, 15, 12, 10, 7, 5, 3],
-        },
-        'ASYMMETRY': [0, None, 2, None, 0, None, -2, None, 0, 3, None, -3, 0, None, None, None],
-        'CRITICAL_SWING': [0, 7, 12, 19, 12, 7, 0, -5, 0, 5, 12, 7, 0, -7, -12, None],
-        'GAME_CHANGING': [0, 12, 0, 12, 24, 12, 0, 12, 24, 36, 24, 12, 0, None, None, None],
-        'TACTICAL_SEQUENCE': [0, 5, 7, None, 5, 10, 12, None, 7, 12, 15, None, 12, 7, 5, 0],  # Bach sequences - tactical precision
-        'KING_ATTACK': [0, 0, 0, 12, 0, 0, 0, 12, 0, 0, 0, 12, 0, 0, 0, 12],
-        'BLUNDER': [0, -1, -3, -6, -10, -15, None, None, -19, -22, -24, None, -27, -29, -31, -36],  # Accelerating fall - collapse
-        'MISTAKE': [0, 2, 3, 2, 0, -2, -3, -5, -7, -5, -3, -2, 0, None, -2, 0],  # Controlled descent - error recovery
-        'INACCURACY': [0, 1, -1, 2, 0, None, 3, 2, 1, 0, -2, -1, 0, None, 1, 0],  # Chromatic neighbor tones - uncertainty
-        'FIRST_EXCHANGE': [0, 3, 5, 8, 10, 8, 5, 3, 0, -3, -5, -8, -10, -8, -5, -3],  # Mirror symmetry - balanced dialogue
-        'MATE_SEQUENCE': [0, None, None, None, -12, None, None, None, 0, None, None, None, -24, None, None, None],
-        'BRILLIANT': [0, 7, 12, 16, 19, 24, 28, 31, 36, 31, 28, 24, 19, 16, 12, 7],  # Harmonic series - ascending triumph
-        'TIME_PRESSURE': [0, 12, 0, 12, 0, 12, 0, 12, 0, 12, 0, 12, 0, 12, 0, 12],
-        'TIME_SCRAMBLE': [0, 12, 0, 12, 0, 12, 0, 12, 0, 12, 0, 12, 0, 12, 0, 12],
-        'SIGNIFICANT_SHIFT': [0, 4, 7, 11, 12, 11, 7, 3, 0, -1, 3, 6, 7, 6, 3, 0],  # Modal interchange - transformation
-        'PULSE': [0, None, -2, None, None, None, None, None, 0, None, -2, None, None, None, None, None],  # Heartbeat: LUB-dub (first loud/low, second quiet/lower)
-    })
+    SEQUENCER_PATTERNS: Dict = field(default_factory=_load_sequencer_patterns)
 
     # === SUPERSAW DETUNE PRESETS ===
-    SUPERSAW_DETUNE: Dict[str, List[float]] = field(default_factory=lambda: {
-        'tight': [-3, -1.5, -0.75, 0.75, 1.5, 3],
-        'standard': [-7, -3.5, -1.75, 1.75, 3.5, 7],
-        'wide': [-12, -7, -3, 3, 7, 12],
-        'laser': [-15, -9, -4.5, 4.5, 9, 15],
-    })
+    SUPERSAW_DETUNE: Dict[str, List[float]] = field(default_factory=_load_supersaw_detune)
 
     # === TIMING PARAMETERS (in seconds or milliseconds) ===
-    TIMING: Dict[str, float] = field(default_factory=lambda: {
-        'section_fade_sec': 0.1,
-        'section_gap_sec': 0.0,
-        'section_crossfade_sec': 2.0,
-        'note_gap_sec': 0.02,
-        'phrase_pause_sec': 0.15,
-        'chunk_size_samples': 512,
-        'filter_chunk_size_samples': 64,
-        'sequencer_overlap': 1.5,  # 150% overlap for smooth legato blending
-        'lfo_frequency': 0.1,
-        'sequencer_lfo_frequency': 0.25,
-    })
+    TIMING: Dict[str, float] = field(default_factory=_load_timing)
 
     # === LAYER MUTING (True = enabled, False = muted) ===
-    LAYER_ENABLE: Dict[str, bool] = field(default_factory=lambda: {
-        'drone': True,      # Layer 1: Base drone (overall narrative)
-        'patterns': True,  # Layer 2: Rhythmic patterns (section narrative)
-        'sequencer': True,  # Layer 3: Continuous sequencer (heartbeat)
-        'moments': True,    # Key moment punctuation
-    })
+    LAYER_ENABLE: Dict[str, bool] = field(default_factory=_load_layer_enable)
 
     # === MIXING LEVELS ===
-    MIXING: Dict[str, float] = field(default_factory=lambda: {
-        'drone_level': 0.15,   # Reduced drone for less dark ambience
-        'pattern_level': 0.6,   # Boosted patterns for more melody
-        'sequencer_level': 0.4, # Slightly reduced heartbeat
-        'moment_level': 0.5,    # REDUCED Layer3b - they were too loud!
-        'section_level': 0.7,
-        'master_limiter': 0.9,
-        'sidechain_amount': 0.3,
-        'supersaw_compression': 0.8,
-        'supersaw_gain': 1.25,
-        'filtered_sequence_level': 0.04,  # Furtive gesture level - gestures are background texture
-        'ducking_amount': 0.3,
-        'soft_clip_pre': 0.9,
-        'soft_clip_post': 0.95,
-    })
+    MIXING: Dict[str, float] = field(default_factory=_load_mixing)
 
     # === LAYER MIXING ===
-    LAYER_MIXING: Dict[str, float] = field(default_factory=lambda: {
-        'drone_in_supersaw': 0.3,
-        'pattern_in_supersaw': 0.7,
-        'pattern_note_level': 0.2,
-        'sequencer_note_level': 0.8,  # Boosted for audible moments
-        'lfo_modulation_depth': 0.1,
-    })
+    LAYER_MIXING: Dict[str, float] = field(default_factory=_load_layer_mixing)
 
     # === MELODIC PATTERN PARAMETERS ===
-    MELODIC_PATTERNS: Dict[str, Dict] = field(default_factory=lambda: {
-        'DEFEAT_HIGH_TENSION': {
-            'indices': [7, 5, 6, 4, 5, 3, 4, 2],
-            'octave_up_mod': 4,
-            'octave_down_mod': 7,
-        },
-        'DEFEAT_LOW_TENSION': {
-            'indices': [4, 3, 3, 2, 2, 1, 1, 0],
-            'octave_up_mod': 4,
-            'octave_down_mod': 7,
-        },
-        'MASTERPIECE_HIGH_TENSION': {
-            'indices': [0, 2, 1, 3, 2, 5, 4, 7],
-            'octave_up_mod': 4,
-            'octave_down_mod': 7,
-        },
-        'MASTERPIECE_LOW_TENSION': {
-            'indices': [0, 1, 2, 3, 3, 4, 5, 6],
-            'octave_up_mod': 4,
-            'octave_down_mod': 7,
-        },
-        'NEUTRAL_HIGH_TENSION': {
-            'indices': [0, 4, 2, 5, 1, 4, 3, 7],
-            'octave_up_mod': 4,
-            'octave_down_mod': 7,
-        },
-        'NEUTRAL_MEDIUM_TENSION': {
-            'indices': [0, 2, 3, 2, 4, 3, 2, 1],
-            'octave_up_mod': 4,
-            'octave_down_mod': 7,
-        },
-        'NEUTRAL_LOW_TENSION': {
-            'indices': [0, 1, 2, 1, 3, 2, 1, 0],
-            'octave_up_mod': 4,
-            'octave_down_mod': 7,
-        },
-    })
+    MELODIC_PATTERNS: Dict[str, Dict] = field(default_factory=_load_melodic_patterns)
 
     # === SEQUENCER SYNTHESIS PARAMETERS ===
-    SEQUENCER_SYNTH: Dict = field(default_factory=lambda: {
-        'detune_cents': [-15, -9, -4.5, 4.5, 9, 15],
-        'filter_base_start': 800,
-        'filter_increment_per_step': 150,
-        'filter_env_amount': 2000,
-        'resonance': 1.2,
-        'amp_env': (0.1, 0.05, 0.9, 0.3),      # Legato envelope - soft attack for smooth melodic lines
-        'filter_env': (0.02, 0.2, 0.7, 0.3),   # MOMENTS filter envelope (restored from 8343de4)
-        'global_filter_base': 2000,
-        'global_filter_lfo_amount': 1500,
-        'global_filter_sweep_amount': 1000,
-        'global_filter_resonance': 2.0,
-        'smoothing_window_sec': 0.005,
-        # Heartbeat-specific (from heartbeat_designer.py testing)
-        'heartbeat_filter': 220,                      # Tested value - muffled but audible
-        'heartbeat_resonance': 0.0,                   # Minimal, natural
-        'heartbeat_bpm': 70,                          # Heartbeat rate
-        'heartbeat_lub_dub_gap': 0.080,               # 80ms gap between LUB and dub
-        'heartbeat_root_midi': 36,                    # Low C (~65Hz sub-bass)
-        'heartbeat_dub_offset': -2,                   # dub is 2 semitones lower than LUB
-        'heartbeat_dub_volume': 0.7,                  # dub is 70% volume of LUB
-        'heartbeat_amp_env': (0.003, 0.06, 0.03, 0.20),  # Heartbeat-only ADSR
-        'heartbeat_filter_env': (0.01, 0.1, 0.0, 0.1),   # Heartbeat-only filter envelope
-    })
+    SEQUENCER_SYNTH: Dict = field(default_factory=_load_sequencer_synth)
 
     # === MOMENT EVENT PARAMETERS ===
     # Controls how key moments are rendered as events with duration and emphasis
-    MOMENT_EVENT_PARAMS: Dict = field(default_factory=lambda: {
-        'base_duration_sec': 2.5,          # Base duration for a moment (shorter to leave heartbeat room)
-        'min_duration_sec': 1.5,           # Minimum audible duration
-        'max_duration_sec': 4.0,           # Maximum duration (reduced to prevent overlap)
-        'score_duration_mult': 0.3,        # Reduced multiplier to keep moments shorter
-        'base_mix_amount': 0.3,            # Base mix amount for moment pattern
-        'max_mix_amount': 0.9,             # Maximum mix for highest score moments
-        'score_mix_mult': 0.06,            # Score multiplier for mix: mix = base + (score * mult)
-        'filter_mod_base': 500,            # Base filter modulation amount
-        'filter_mod_per_score': 200,       # Additional filter modulation per score point
-        'crossfade_duration_sec': 0.5,     # Duration of crossfade between patterns
-        'base_pattern_level': 0.4,         # Volume of base PULSE pattern during moments
-        'moment_spacing_sec': 1.0,         # Minimum gap between moments for heartbeat breathing
-    })
+    MOMENT_EVENT_PARAMS: Dict = field(default_factory=_load_moment_event_params)
 
     # === PROCESS TRANSFORMATION PARAMETERS ===
-    PROCESS_PARAMS: Dict[str, Dict] = field(default_factory=lambda: {
-        'TUMBLING_DEFEAT': {
-            'mistake_weights': {
-                'INACCURACY': 0.05,
-                'MISTAKE': 0.1,
-                'BLUNDER': 0.2,
-            },
-            'base_decay': 0.3,
-            'chaos_factor': 0.02,
-            'tempo_drift_clamp': 0.3,
-            'pitch_drift_multiplier': 20,
-            'volume_decay_rate': 0.3,
-        },
-        'ATTACKING_MASTERPIECE': {
-            'brilliance_weights': {
-                'STRONG': 0.15,
-                'BRILLIANT': 0.25,
-            },
-            'crescendo_exponent': 1.5,
-            'max_momentum': 1.2,
-            'tempo_base': 0.8,
-            'tempo_range': 0.5,
-            'filter_brightness_base': 0.3,
-            'filter_brightness_range': 0.7,
-        },
-        'QUIET_PRECISION': {
-            'disturbance': 0.05,
-            'balance_decay': 0.95,
-            'breathing_increment': 0.1,
-            'breathing_amplitude': 0.08,
-        },
-    })
+    PROCESS_PARAMS: Dict[str, Dict] = field(default_factory=_load_process_params)
 
     # === BASE NOTE DURATION ===
-    BASE_NOTE_DURATION: float = 0.5
+    BASE_NOTE_DURATION: float = field(default_factory=lambda: get_config().get('composition.rhythm.base_duration', 0.5))
 
     # === DEFAULT BPM ===
-    DEFAULT_BPM: int = 120
+    DEFAULT_BPM: int = field(default_factory=lambda: get_config().get('composition.rhythm.default_bpm', 120))
 
     # === SAMPLE RATE ===
-    SAMPLE_RATE: int = 88200  # 2x 44.1kHz - reduces PolyBLEP aliasing at high frequencies
+    SAMPLE_RATE: int = field(default_factory=lambda: get_config().get('synthesis.sample_rate', 88200))
 
     # === WAV OUTPUT PARAMETERS ===
-    WAV_OUTPUT: Dict = field(default_factory=lambda: {
-        'sample_width': 2,
-        'channels': 2,  # Stereo output
-        'amplitude_multiplier': 30000,
-        'clamp_min': -32000,
-        'clamp_max': 32000,
-        'normalization_threshold': 0.9,
-    })
+    WAV_OUTPUT: Dict = field(default_factory=_load_wav_output)
 
     # === STEREO PANNING ===
-    STEREO_CONFIG: Dict = field(default_factory=lambda: {
-        'white_pan': -0.7,  # White pieces pan left (-1.0 = full left)
-        'black_pan': 0.7,   # Black pieces pan right (1.0 = full right)
-        'drone_pan': 0.0,   # Drone centered
-        'min_width': 0.0,   # Low tension = narrow stereo
-        'max_width': 0.8,   # High tension = wide stereo
-        'entropy_pan_amount': 0.6,  # Max pan deviation for entropy
-    })
+    STEREO_CONFIG: Dict = field(default_factory=_load_stereo_config)
 
     # === ENTROPY CONFIGURATION (Laurie Spiegel-inspired) ===
-    ENTROPY_CONFIG: Dict = field(default_factory=lambda: {
-        # Calculation weights
-        'weights': {
-            'eval': 0.5,      # Evaluation volatility (primary)
-            'tactical': 0.4,  # Tactical density
-            'time': 0.1,      # Thinking time (if available)
-        },
-
-        # Window sizes for local calculations
-        'eval_window': 5,      # Plies for eval volatility
-        'tactical_window': 5,  # Plies for tactical density
-
-        # Smoothing
-        'smoothing_sigma': 2.0,  # Gaussian filter sigma
-
-        # Musical thresholds
-        'low_threshold': 0.3,   # Below = simple
-        'high_threshold': 0.7,  # Above = complex
-
-        # Parameter ranges for note pools
-        'note_pools': {
-            'low': [0, 4],                    # Simple: root-fifth
-            'medium': [0, 2, 4, 5, 7],        # Moderate: diatonic
-            'high': [0, 1, 2, 3, 4, 5, 6, 7], # Complex: chromatic
-        },
-
-        # Musical parameter modulation ranges
-        'rhythm_variation_max': 0.5,  # Max ±50% timing variation at high entropy
-        'filter_lfo_range': (0.02, 0.12),  # Hz (slow to fast)
-        'glide_reduction_max': 0.5,  # Max 50% reduction of portamento at high entropy
-        'harmony_probability_threshold': 0.7,  # Start adding harmonies above this entropy
-    })
+    ENTROPY_CONFIG: Dict = field(default_factory=_load_entropy_config)
 
 
 # Global default config instance
 DEFAULT_CONFIG = SynthConfig()
 
 
-def get_narrative_params(narrative: str, config: SynthConfig = None) -> Dict:
-    """Helper to get narrative parameters with fallback"""
-    if config is None:
-        config = DEFAULT_CONFIG
+def get_narrative_params(narrative: str, config: Optional[SynthConfig] = None) -> Dict:
+    """
+    Helper to get narrative parameters with fallback.
 
-    # Check for exact match
-    if narrative in config.NARRATIVE_BASE_PARAMS:
-        return config.NARRATIVE_BASE_PARAMS[narrative]
+    NOTE: Config parameter is deprecated and ignored.
+    Now reads from YAML via config_service.
 
-    # Check for partial matches
-    for key in config.NARRATIVE_BASE_PARAMS:
+    Args:
+        narrative: Narrative type (e.g., 'TUMBLING_DEFEAT')
+        config: DEPRECATED - ignored for backward compatibility
+
+    Returns:
+        Dictionary of narrative parameters
+    """
+    # Try exact match
+    if narrative in DEFAULT_CONFIG.NARRATIVE_BASE_PARAMS:
+        return DEFAULT_CONFIG.NARRATIVE_BASE_PARAMS[narrative]
+
+    # Try partial match
+    for key in DEFAULT_CONFIG.NARRATIVE_BASE_PARAMS:
         if key in narrative:
-            return config.NARRATIVE_BASE_PARAMS[key]
+            return DEFAULT_CONFIG.NARRATIVE_BASE_PARAMS[key]
 
     # Return default
-    return config.NARRATIVE_BASE_PARAMS['DEFAULT']
+    return DEFAULT_CONFIG.NARRATIVE_BASE_PARAMS['DEFAULT']
 
 
-def get_section_modulation(narrative: str, config: SynthConfig = None) -> Dict:
-    """Helper to get section modulation with fallback"""
-    if config is None:
-        config = DEFAULT_CONFIG
+def get_section_modulation(narrative: str, config: Optional[SynthConfig] = None) -> Dict:
+    """
+    Helper to get section modulation with fallback.
 
-    # Check for exact match
-    if narrative in config.SECTION_MODULATIONS:
-        return config.SECTION_MODULATIONS[narrative]
+    NOTE: Config parameter is deprecated and ignored.
+    Now reads from YAML via config_service.
 
-    # Check for partial matches
-    for key in config.SECTION_MODULATIONS:
+    Args:
+        narrative: Section narrative (e.g., 'KING_HUNT')
+        config: DEPRECATED - ignored for backward compatibility
+
+    Returns:
+        Dictionary of modulation parameters
+    """
+    # Try exact match
+    if narrative in DEFAULT_CONFIG.SECTION_MODULATIONS:
+        return DEFAULT_CONFIG.SECTION_MODULATIONS[narrative]
+
+    # Try partial match
+    for key in DEFAULT_CONFIG.SECTION_MODULATIONS:
         if key in narrative:
-            return config.SECTION_MODULATIONS[key]
+            return DEFAULT_CONFIG.SECTION_MODULATIONS[key]
 
     # Return default
-    return config.SECTION_MODULATIONS['DEFAULT']
+    return DEFAULT_CONFIG.SECTION_MODULATIONS['DEFAULT']
 
 
-def get_envelope(name: str, config: SynthConfig = None) -> Tuple[float, float, float, float]:
-    """Helper to get envelope by name"""
-    if config is None:
-        config = DEFAULT_CONFIG
+def get_envelope(name: str, config: Optional[SynthConfig] = None) -> Tuple[float, float, float, float]:
+    """
+    Helper to get envelope by name.
 
-    return config.ENVELOPES.get(name, config.ENVELOPES['stab'])
+    NOTE: Config parameter is deprecated and ignored.
+    Now reads from YAML via config_service.
+
+    Args:
+        name: Envelope name (e.g., 'percussive', 'drone')
+        config: DEPRECATED - ignored for backward compatibility
+
+    Returns:
+        ADSR tuple (attack, decay, sustain, release)
+    """
+    return DEFAULT_CONFIG.ENVELOPES.get(name, DEFAULT_CONFIG.ENVELOPES['stab'])
 
 
-def get_filter_envelope(name: str, config: SynthConfig = None) -> Tuple[float, float, float, float]:
-    """Helper to get filter envelope by name"""
-    if config is None:
-        config = DEFAULT_CONFIG
+def get_filter_envelope(name: str, config: Optional[SynthConfig] = None) -> Tuple[float, float, float, float]:
+    """
+    Helper to get filter envelope by name.
 
-    return config.FILTER_ENVELOPES.get(name, config.FILTER_ENVELOPES['gentle'])
+    NOTE: Config parameter is deprecated and ignored.
+    Now reads from YAML via config_service.
+
+    Args:
+        name: Filter envelope name (e.g., 'gentle', 'sweep')
+        config: DEPRECATED - ignored for backward compatibility
+
+    Returns:
+        ADSR tuple (attack, decay, sustain, release)
+    """
+    return DEFAULT_CONFIG.FILTER_ENVELOPES.get(name, DEFAULT_CONFIG.FILTER_ENVELOPES['gentle'])
