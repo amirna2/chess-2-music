@@ -10,6 +10,7 @@ from typing import Dict, Any
 ARCHETYPES: Dict[str, Dict[str, Any]] = {
     # 1. MOVE - Attack–Decay (neutral) - Simple transitional gesture
     "MOVE": {
+        "system": "curve",
         "duration_base": 1.2,
         "duration_tension_scale": 0.3,
         "duration_entropy_scale": 0.0,
@@ -53,6 +54,7 @@ ARCHETYPES: Dict[str, Dict[str, Any]] = {
 
     # 2. GAME_CHANGING - Graduated Continuant - Transformative expansion
     "GAME_CHANGING": {
+        "system": "curve",
         "duration_base": 3.5,
         "duration_tension_scale": 1.0,
         "duration_entropy_scale": 0.0,
@@ -102,6 +104,7 @@ ARCHETYPES: Dict[str, Dict[str, Any]] = {
 
     # 3. CRITICAL_SWING - Attack–Decay (accented) - Dynamic parabolic gesture
     "CRITICAL_SWING": {
+        "system": "curve",
         "duration_base": 2.8,
         "duration_tension_scale": 0.9,
         "duration_entropy_scale": 0.0,
@@ -153,6 +156,7 @@ ARCHETYPES: Dict[str, Dict[str, Any]] = {
 
     # 4. SIGNIFICANT_SHIFT - Particle System - Sparse drifting particles
     "SIGNIFICANT_SHIFT": {
+        "system": "particle",
         "duration_base": 3.6,
         "duration_tension_scale": 0.3,
         "duration_entropy_scale": 0.0,
@@ -177,6 +181,7 @@ ARCHETYPES: Dict[str, Dict[str, Any]] = {
 
     # 5. MATE_SEQUENCE - Composite Chain - Convergent resolution
     "MATE_SEQUENCE": {
+        "system": "curve",
         "duration_base": 3.8,
         "duration_tension_scale": 1.0,
         "duration_entropy_scale": 0.0,
@@ -221,6 +226,7 @@ ARCHETYPES: Dict[str, Dict[str, Any]] = {
 
     # 6. DEEP_THINK - Sustained Continuant - Static plateau
     "DEEP_THINK": {
+        "system": "curve",
         "duration_base": 4.5,
         "duration_tension_scale": 1.8,
         "duration_entropy_scale": 0.0,
@@ -264,6 +270,7 @@ ARCHETYPES: Dict[str, Dict[str, Any]] = {
 
     # 7. TIME_PRESSURE - Iterative - Oscillatory tremor
     "TIME_PRESSURE": {
+        "system": "curve",
         "duration_base": 1.8,
         "duration_tension_scale": 0.5,
         "duration_entropy_scale": 0.3,
@@ -316,6 +323,7 @@ ARCHETYPES: Dict[str, Dict[str, Any]] = {
 
     # 8. BLUNDER - Attack–Decay - Impulsive collapse
     "BLUNDER": {
+        "system": "curve",
         "duration_base": 2.5,
         "duration_tension_scale": 1.2,
         "duration_entropy_scale": 0.0,
@@ -372,6 +380,7 @@ ARCHETYPES: Dict[str, Dict[str, Any]] = {
 
     # 9. BRILLIANT - Graduated Continuant - Expansive ascending gesture
     "BRILLIANT": {
+        "system": "curve",
         "duration_base": 3.3,
         "duration_tension_scale": 0.8,
         "duration_entropy_scale": -0.5,
@@ -421,6 +430,7 @@ ARCHETYPES: Dict[str, Dict[str, Any]] = {
 
     # 10. MISTAKE - Attack–Decay (damped) - Weak impulsive collapse
     "MISTAKE": {
+        "system": "curve",
         "duration_base": 2.0,
         "duration_tension_scale": 0.9,
         "duration_entropy_scale": 0.0,
@@ -477,6 +487,7 @@ ARCHETYPES: Dict[str, Dict[str, Any]] = {
 
     # 11. INACCURACY - Particle System - Sparse stochastic wind chime strikes
     "INACCURACY": {
+        "system": "particle",
         "duration_base": 4.5,
         "duration_tension_scale": 0.0,
         "duration_entropy_scale": 0.0,
@@ -500,6 +511,7 @@ ARCHETYPES: Dict[str, Dict[str, Any]] = {
     },
     # 13. STRONG - Graduated Continuant (firm) - Stable controlled flow
     "STRONG": {
+        "system": "curve",
         "duration_base": 2.9,
         "duration_tension_scale": 0.5,
         "duration_entropy_scale": -0.25,
@@ -543,6 +555,7 @@ ARCHETYPES: Dict[str, Dict[str, Any]] = {
 
     # 14. KING_ATTACK - Graduated Continuant (high-energy) - Forceful agglomeration
     "KING_ATTACK": {
+        "system": "curve",
         "duration_base": 3.3,
         "duration_tension_scale": 1.1,
         "duration_entropy_scale": 0.2,
@@ -586,6 +599,7 @@ ARCHETYPES: Dict[str, Dict[str, Any]] = {
 
     # 15. TACTICAL_SEQUENCE - Particle System - Calculation clicks in rhythmic clusters
     "TACTICAL_SEQUENCE": {
+        "system": "particle",
         "duration_base": 2.2,
         "duration_tension_scale": 0.5,
         "duration_entropy_scale": 0.3,
@@ -611,6 +625,7 @@ ARCHETYPES: Dict[str, Dict[str, Any]] = {
 
     # 16. CHECKMATE - Attack–Decay Chain - Terminal resolution
     "CHECKMATE": {
+        "system": "curve",
         "duration_base": 3.0,
         "duration_tension_scale": 0.7,
         "duration_entropy_scale": 0.0,
@@ -655,6 +670,7 @@ ARCHETYPES: Dict[str, Dict[str, Any]] = {
 
     # 17. CASTLING - Composite Dual - Balanced mirrored gesture
     "CASTLING": {
+        "system": "curve",
         "duration_base": 1.7,
         "duration_tension_scale": 0.25,
         "duration_entropy_scale": 0.0,
@@ -697,6 +713,7 @@ ARCHETYPES: Dict[str, Dict[str, Any]] = {
 
     # 18. PROMOTION - Graduated Continuant - Ascending transformation
     "PROMOTION": {
+        "system": "curve",
         "duration_base": 2.6,
         "duration_tension_scale": 0.6,
         "duration_entropy_scale": 0.0,
@@ -744,6 +761,7 @@ ARCHETYPES: Dict[str, Dict[str, Any]] = {
 
     # 19. PAWN_ADVANCE - Attack–Decay (elongated) - Grounded progressive push
     "PAWN_ADVANCE": {
+        "system": "curve",
         "duration_base": 1.7,
         "duration_tension_scale": 0.35,
         "duration_entropy_scale": 0.0,
@@ -788,6 +806,7 @@ ARCHETYPES: Dict[str, Dict[str, Any]] = {
 
     # 20. CENTER_CONTROL - Continuant - Stable balanced centric motion
     "CENTER_CONTROL": {
+        "system": "curve",
         "duration_base": 2.5,
         "duration_tension_scale": 0.45,
         "duration_entropy_scale": 0.0,
@@ -831,6 +850,7 @@ ARCHETYPES: Dict[str, Dict[str, Any]] = {
 
     # 21. PIECE_MANEUVER - Graduated Continuant - Curved graceful arc
     "PIECE_MANEUVER": {
+        "system": "curve",
         "duration_base": 2.1,
         "duration_tension_scale": 0.4,
         "duration_entropy_scale": 0.0,
@@ -876,6 +896,7 @@ ARCHETYPES: Dict[str, Dict[str, Any]] = {
 
     # 22. DEVELOPMENT - Continuant Growth - Emergent formation
     "DEVELOPMENT": {
+        "system": "curve",
         "duration_base": 2.7,
         "duration_tension_scale": 0.5,
         "duration_entropy_scale": 0.0,
@@ -920,6 +941,7 @@ ARCHETYPES: Dict[str, Dict[str, Any]] = {
 
     # 23. ROOK_ACTIVATION - Attack–Continuant - Forceful directed expansion
     "ROOK_ACTIVATION": {
+        "system": "curve",
         "duration_base": 2.3,
         "duration_tension_scale": 0.65,
         "duration_entropy_scale": 0.0,
@@ -965,6 +987,7 @@ ARCHETYPES: Dict[str, Dict[str, Any]] = {
 
     # 24. ROOKS_DOUBLED - Composite Dual - Coupled reinforcing resonance
     "ROOKS_DOUBLED": {
+        "system": "curve",
         "duration_base": 2.5,
         "duration_tension_scale": 0.5,
         "duration_entropy_scale": 0.0,
@@ -1010,6 +1033,7 @@ ARCHETYPES: Dict[str, Dict[str, Any]] = {
 
     # 25. QUEEN_CENTRALIZED - Continuant - Focused stable centric fixation
     "QUEEN_CENTRALIZED": {
+        "system": "curve",
         "duration_base": 2.8,
         "duration_tension_scale": 0.6,
         "duration_entropy_scale": 0.0,
@@ -1053,6 +1077,7 @@ ARCHETYPES: Dict[str, Dict[str, Any]] = {
 
     # 26. FIRST_EXCHANGE - Particle System - Metallic collision scatter
     "FIRST_EXCHANGE": {
+        "system": "particle",
         "duration_base": 1.4,
         "duration_tension_scale": 0.35,
         "duration_entropy_scale": 0.0,
@@ -1078,6 +1103,7 @@ ARCHETYPES: Dict[str, Dict[str, Any]] = {
 
     # 27. ASYMMETRY - Continuant - Distorted divergent fragmentation
     "ASYMMETRY": {
+        "system": "curve",
         "duration_base": 2.4,
         "duration_tension_scale": 0.6,
         "duration_entropy_scale": 0.42,
@@ -1124,6 +1150,7 @@ ARCHETYPES: Dict[str, Dict[str, Any]] = {
 
     # 28. TIME_MILESTONE - Continuant - Transitional checkpoint marker
     "TIME_MILESTONE": {
+        "system": "curve",
         "duration_base": 1.9,
         "duration_tension_scale": 0.3,
         "duration_entropy_scale": 0.0,
@@ -1166,6 +1193,7 @@ ARCHETYPES: Dict[str, Dict[str, Any]] = {
 
     # 29. TIME_SCRAMBLE - Iterative - Turbulent chaotic rapid oscillation
     "TIME_SCRAMBLE": {
+        "system": "curve",
         "duration_base": 1.7,
         "duration_tension_scale": 0.45,
         "duration_entropy_scale": 0.55,
@@ -1213,6 +1241,7 @@ ARCHETYPES: Dict[str, Dict[str, Any]] = {
 
     # 30. QUEENS_TRADED - Dual Attack–Decay - Symmetrical convergent dissipation
     "QUEENS_TRADED": {
+        "system": "curve",
         "duration_base": 2.9,
         "duration_tension_scale": 0.55,
         "duration_entropy_scale": 0.0,
@@ -1259,6 +1288,7 @@ ARCHETYPES: Dict[str, Dict[str, Any]] = {
 
     # 31. FINAL_RESOLUTION - Particle System - Dissolving particles fade to silence
     "FINAL_RESOLUTION": {
+        "system": "particle",
         "duration_base": 4.7,
         "duration_tension_scale": 0.5,
         "duration_entropy_scale": 0.0,

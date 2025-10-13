@@ -61,30 +61,46 @@ class GestureCoordinator:
         Build gesture registry mapping archetype names to generators.
 
         Creates a GestureGenerator or ParticleGestureGenerator instance for
-        each archetype defined in ARCHETYPES configuration. Particle-based
-        archetypes (those with 'particle' config key) use ParticleGestureGenerator.
+        each archetype defined in ARCHETYPES configuration. System type is
+        determined by the explicit 'system' field in archetype config.
         All generators share the same RNG and synth_engine for consistency.
 
         Returns:
             Dict mapping archetype name → generator instance
+
+        Raises:
+            ValueError: If system type is unknown or missing
         """
         registry = {}
 
         for archetype_name, archetype_config in ARCHETYPES.items():
-            # Detect particle-based archetype by presence of 'particle' config key
-            if 'particle' in archetype_config:
+            # Get explicit system type (required field as of refactor)
+            system_type = archetype_config.get('system')
+
+            if system_type is None:
+                raise ValueError(
+                    f"Archetype '{archetype_name}' missing required 'system' field. "
+                    f"Must be 'curve' or 'particle'."
+                )
+
+            if system_type == 'particle':
                 # Particle-based gesture
                 registry[archetype_name] = ParticleGestureGenerator(
                     archetype_config,
                     self.rng,
                     synth_engine=self.synth_engine
                 )
-            else:
-                # Traditional continuous gesture
+            elif system_type == 'curve':
+                # Traditional curve-based gesture
                 registry[archetype_name] = GestureGenerator(
                     archetype_config,
                     self.rng,
                     synth_engine=self.synth_engine
+                )
+            else:
+                raise ValueError(
+                    f"Archetype '{archetype_name}' has unknown system type: '{system_type}'. "
+                    f"Must be 'curve' or 'particle'."
                 )
 
         return registry

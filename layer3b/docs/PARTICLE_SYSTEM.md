@@ -1,253 +1,430 @@
-# Particle System for Sound Gestures
+# Particle-Based Gesture System
 
 ## Overview
 
-The particle system enables stochastic, polyphonic sound textures like wind chimes, rain, cricket swarms, and other natural phenomena that traditional monolithic gestures cannot simulate.
+Particle-based gestures use stochastic spawning of independent sound events to create polyphonic textures that traditional curve-based gestures cannot achieve. Think wind chimes, rain, cricket swarms, or metallic collisions.
+
+**5 archetypes** use this system: INACCURACY, FIRST_EXCHANGE, TACTICAL_SEQUENCE, SIGNIFICANT_SHIFT, FINAL_RESOLUTION
+
+## When to Use Particles vs Curves
+
+| Use Particles When... | Use Curves When... |
+|-----------------------|--------------------|
+| Sparse, discrete events | Continuous, evolving sound |
+| Stochastic/unpredictable timing | Precise temporal control |
+| Polyphonic independence needed | Monophonic or synchronized voices |
+| Natural/organic textures | Musical/harmonic structures |
+| Wind chimes, rain, clicks | Glissandi, drones, sweeps |
 
 ## Architecture
 
-### Key Components
+```
+Archetype Config
+       ↓
+Emission Pattern Config
+  (gusts, bursts, rhythmic_clusters, dissolve, etc.)
+       ↓
+ParticleEmitter
+  ├─ Generate emission curve (temporal density [0-1])
+  └─ Stochastic spawning (Poisson-style per-sample)
+       ↓
+List[Particle]
+  Each particle:
+    - birth_sample: when it spawns
+    - lifetime_samples: how long it rings
+    - pitch_hz: frequency
+    - velocity: amplitude (0-1)
+    - detune_cents: pitch variation
+    - decay_rate: exponential decay speed
+    - waveform: 'sine', 'triangle', etc.
+       ↓
+ParticleRenderer
+  ├─ Synthesize each particle independently (SubtractiveSynth)
+  └─ Equal-power mixing: sum / sqrt(N)
+       ↓
+Audio
+```
 
-1. **`Particle`** - Individual sound event with independent properties:
-   - `birth_sample`: When particle spawns
-   - `lifetime_samples`: How long it rings
-   - `pitch_hz`: Base frequency
-   - `velocity`: Amplitude (0-1)
-   - `detune_cents`: Pitch micro-variation (±50¢ typical)
-   - `decay_rate`: Exponential decay speed (negative, e.g., -2.5)
-   - `waveform`: Oscillator type ('sine', 'triangle')
+## Components
 
-2. **`ParticleEmitter`** - Spawns particles using density curves + Poisson randomness:
-   - Density curve controls spawn probability over time [0-1]
-   - Random Poisson-style timing within probability field
-   - Result: Artistic control (when events happen) + natural chaos (exact timing)
+### 1. Particle
 
-3. **`ParticleRenderer`** - Synthesizes and mixes independent particle audio:
-   - Each particle rendered independently with SubtractiveSynth
-   - Equal-power mixing prevents volume increase with particle count
-   - Particles overlap naturally with independent lifetimes
+Individual sound event (dataclass):
 
-4. **`ParticleGestureGenerator`** - High-level API matching `GestureGenerator`:
-   - Uses same archetype config pattern
-   - Compatible with existing Layer3b coordinator
-   - Mono output (stereo panning handled upstream)
+```python
+@dataclass
+class Particle:
+    birth_sample: int         # When particle spawns (sample index)
+    lifetime_samples: int     # How long particle rings (samples)
+    pitch_hz: float           # Base frequency
+    velocity: float           # Amplitude (0-1)
+    detune_cents: float       # Pitch micro-variation (±50¢ typical)
+    decay_rate: float         # Exponential decay (negative, e.g., -2.5)
+    waveform: str             # 'sine', 'triangle', 'sawtooth'
+
+    @property
+    def death_sample(self) -> int:
+        return self.birth_sample + self.lifetime_samples
+```
+
+Particles are independent - they don't know about each other and have completely separate lifetimes.
+
+### 2. ParticleEmitter
+
+Spawns particles using **density curves + Poisson randomness**:
+
+**Key Concept:** Artistic control (when events happen) + natural chaos (exact timing)
+
+```python
+for sample_idx in range(total_samples):
+    current_density = emission_curve[sample_idx]  # [0-1]
+    spawn_probability = current_density * base_spawn_rate
+
+    if random() < spawn_probability:
+        spawn_particle_at(sample_idx)
+```
+
+This creates:
+- **Predictable patterns** (emission curve shape)
+- **Unpredictable micro-timing** (Poisson randomness)
+- **Natural feel** (like real physical phenomena)
+
+### 3. ParticleRenderer
+
+Synthesizes and mixes all particles:
+
+1. For each particle:
+   - Generate envelope: exponential decay from birth to death
+   - Generate oscillator: time-varying pitch (SubtractiveSynth)
+   - Apply envelope
+   - Insert into audio buffer at birth_sample
+
+2. Equal-power mixing:
+   ```python
+   final_audio = sum(all_particles) / sqrt(num_particles)
+   ```
+   This prevents volume increase when many particles overlap.
+
+### 4. ParticleGestureGenerator
+
+High-level API matching `GestureGenerator`:
+- Uses same archetype config pattern
+- Compatible with GestureCoordinator
+- Returns mono audio buffer
 
 ## Emission Patterns
 
+Emission patterns define the **temporal density curve** that controls spawning probability over time.
+
 ### 1. Gusts (Wind Chimes)
+
 ```python
 "emission": {
     "type": "gusts",
     "num_gusts": 2,           # Number of gust cycles
-    "base_density": 0.05,     # Calm density
-    "peak_density": 0.3       # Gust peak density
+    "base_density": 0.015,    # Calm density (sparse)
+    "peak_density": 0.06      # Gust peak density
 }
 ```
-Creates wind-like bursts of activity with calm periods between.
 
-### 2. Constant (Rain)
+**Behavior:**
+- Starts at base_density
+- Rises to peak_density
+- Falls back to base
+- Repeats for num_gusts cycles
+- Creates wind-like bursts with calm between
+
+**Used by:** INACCURACY
+
+**Sound:** Sparse wind chime strikes with occasional gusts of activity
+
+---
+
+### 2. Impact Burst (Metallic Collision)
+
 ```python
 "emission": {
-    "type": "constant",
-    "density": 0.2            # Constant spawn rate
+    "type": "impact_burst",
+    "impact_time_ratio": 0.15,     # When impact occurs (15% into gesture)
+    "burst_density": 0.95,         # Very dense burst
+    "burst_duration_ratio": 0.08,  # Short burst (8% of duration)
+    "tail_density": 0.05           # Sparse tail after
 }
 ```
-Steady, uniform particle spawning (like rainfall).
 
-### 3. Swell (Crescendo)
+**Behavior:**
+- Low density at start
+- Sharp spike to burst_density at impact_time
+- Rapid decay to tail_density
+- Sparse tail continues
+
+**Used by:** FIRST_EXCHANGE
+
+**Sound:** Sudden metallic collision scatter with long tail
+
+---
+
+### 3. Rhythmic Clusters (Calculation Clicks)
+
 ```python
 "emission": {
-    "type": "swell",
-    "start_density": 0.05,    # Initial density
-    "end_density": 0.9        # Final density
+    "type": "rhythmic_clusters",
+    "num_clusters": 4,             # Number of click clusters
+    "cluster_duration_ratio": 0.15, # Each cluster is 15% of duration
+    "cluster_density": 0.7,        # Dense during cluster
+    "gap_density": 0.05            # Sparse between clusters
 }
 ```
-Gradual increase in particle density over time.
 
-### 4. Decay Scatter (Falling Debris)
+**Behavior:**
+- Alternates between high-density clusters and low-density gaps
+- Regular rhythm: cluster → gap → cluster → gap → ...
+- num_clusters determines rhythm subdivision
+
+**Used by:** TACTICAL_SEQUENCE
+
+**Sound:** Rhythmic bursts of clicks (like abacus or calculation)
+
+---
+
+### 4. Drift Scatter (Sparse Wandering)
+
 ```python
 "emission": {
-    "type": "decay_scatter",
-    "start_density": 0.9,     # Initial burst
-    "decay_rate": -2.5        # Exponential decay rate
+    "type": "drift_scatter",
+    "start_density": 0.08,
+    "end_density": 0.15,
+    "drift_rate": 0.3
 }
 ```
-High initial density that exponentially decays (like objects settling).
 
-## Creating Particle Archetypes
+**Behavior:**
+- Slowly increases density from start to end
+- Gradual accumulation of events
+- Smooth transition
 
-Add to `archetype_configs.py`:
+**Used by:** SIGNIFICANT_SHIFT
+
+**Sound:** Sparse particles gradually increasing in frequency
+
+---
+
+### 5. Dissolve (Fading Away)
 
 ```python
-"MY_PARTICLE_GESTURE": {
-    "duration_base": 4.0,
-    "duration_tension_scale": 0.5,
+"emission": {
+    "type": "dissolve",
+    "start_density": 0.6,
+    "decay_rate": -1.8
+}
+```
+
+**Behavior:**
+- Starts with high density
+- Exponential decay toward zero
+- Fading/dissolving effect
+
+**Used by:** FINAL_RESOLUTION
+
+**Sound:** Dense texture gradually dissolving to silence
+
+---
+
+## Particle Configuration
+
+Each archetype specifies particle properties (sampled randomly within ranges):
+
+```python
+"particle": {
+    "emission": {...},                  # Emission pattern (see above)
+    "base_spawn_rate": 0.001,          # Spawn probability multiplier
+    "pitch_range_hz": [880, 1760],     # Random pitch range
+    "lifetime_range_s": [1.2, 2.5],    # Random lifetime range
+    "velocity_range": [0.35, 0.55],    # Random amplitude range
+    "detune_range_cents": [-30, 30],   # Random pitch detune
+    "decay_rate_range": [-2.5, -1.5],  # Random decay speed
+    "waveform": "triangle"             # Oscillator waveform
+}
+```
+
+Each spawned particle randomly samples within these ranges, creating natural variation.
+
+## Example: INACCURACY Archetype
+
+```python
+"INACCURACY": {
+    "duration_base": 4.5,
+    "duration_tension_scale": 0.0,
     "duration_entropy_scale": 0.0,
-
-    # Particle-specific config
     "particle": {
-        # Emission pattern
         "emission": {
             "type": "gusts",
             "num_gusts": 2,
-            "base_density": 0.05,
-            "peak_density": 0.3
+            "base_density": 0.015,
+            "peak_density": 0.06
         },
-
-        # Spawning parameters
-        "base_spawn_rate": 0.001,          # Base probability multiplier
-
-        # Particle property ranges (randomized per particle)
-        "pitch_range_hz": [440, 880],      # Pitch range
-        "lifetime_range_s": [1.0, 2.5],    # Lifetime range (seconds)
-        "velocity_range": [0.2, 0.8],      # Amplitude range
-        "detune_range_cents": [-30, 30],   # Pitch variation (cents)
-        "decay_rate_range": [-3.0, -1.0],  # Decay speed range
-        "waveform": "triangle"             # Oscillator waveform
+        "base_spawn_rate": 0.001,
+        "pitch_range_hz": [880, 1760],      # High metallic range
+        "lifetime_range_s": [1.2, 2.5],     # Long ringing
+        "velocity_range": [0.35, 0.55],     # Moderate volume
+        "detune_range_cents": [-30, 30],    # Subtle pitch variation
+        "decay_rate_range": [-2.5, -1.5],   # Medium decay
+        "waveform": "triangle"              # Warm timbre
     },
-
-    # Audio finalization
-    "peak_limit": 0.4,
-    "rms_target": -28.0,
-
-    # Metadata
-    "morphology": {
-        "spectromorphological_archetype": "Particle System",
-        "gesture_class": "Stochastic / Polyphonic",
-        "motion_type": "Independent discrete events"
-    }
+    "peak_limit": 0.6,
+    "rms_target": -20.0
 }
 ```
 
-## Usage Examples
+**Result:**
+- 4.5 second duration
+- ~9 particles total (sparse)
+- Two gusts of activity with calm between
+- High-pitched metallic strikes (880-1760 Hz)
+- Long ringing tails (1.2-2.5s)
+- Natural pitch micro-variation (±30¢)
+- Triangle wave for warm timbre
 
-### Basic Usage
-```python
-from layer3b.particle_system import ParticleGestureGenerator
-from layer3b.archetype_configs import ARCHETYPES
-from synth_engine import SubtractiveSynth
-import numpy as np
+## Testing Particle Archetypes
 
-# Setup
-sample_rate = 88200
-rng = np.random.default_rng(seed=42)
-synth = SubtractiveSynth(sample_rate=sample_rate)
+```bash
+# Analyze particle behavior (no audio)
+python3 tools/particle_test.py INACCURACY
 
-# Create generator
-archetype_config = ARCHETYPES['WIND_CHIMES']
-generator = ParticleGestureGenerator(archetype_config, rng, synth)
+# Analyze and generate audio
+python3 tools/particle_test.py FIRST_EXCHANGE --audio
 
-# Generate gesture
-moment_event = {'event_type': 'WIND_CHIMES', 'timestamp': 0.0}
-section_context = {'tension': 0.5, 'entropy': 0.5}
-audio = generator.generate_gesture(moment_event, section_context, sample_rate)
+# Custom output
+python3 tools/particle_test.py TACTICAL_SEQUENCE --audio -o test.wav
 ```
 
-### Testing Different Patterns
-See `demo_particle_patterns.py` for examples of all emission types.
+Output shows:
+- Total particles spawned
+- Spawning timeline
+- Pitch/velocity/lifetime statistics
+- Emission curve visualization
+- Temporal distribution histogram
 
-### Visualizing Behavior
-Use `visualize_particles.py` to see particle spawning timeline and emission curves.
+## Creating New Emission Patterns
 
-## Design Philosophy
+### 1. Add Pattern Generator
 
-### Why Particle System?
-
-Traditional gesture generation creates a **single monolithic sound** with pre-computed parameters. This works for continuous gestures (sweeps, drones, swooshes) but fails for:
-
-- **Stochastic textures**: Wind chimes, rain, crickets
-- **Polyphonic independence**: Each sound event needs its own lifetime
-- **Natural randomness**: Real-world phenomena have unpredictable timing
-- **Temporal evolution**: Density changes over time (gusts, swells)
-
-### Inspiration
-
-Inspired by game engine particle systems (Unity, Unreal) adapted for audio:
-- Video game particles: Visual effects (fire, smoke, sparks)
-- Audio particles: Sound events (chimes, raindrops, chirps)
-
-### Key Differences from Traditional Gestures
-
-| Aspect | Traditional Gesture | Particle System |
-|--------|-------------------|-----------------|
-| Structure | Monolithic | Independent events |
-| Timing | Pre-computed | Stochastic spawning |
-| Parameters | Global curves | Per-particle random |
-| Polyphony | Harmony voices | Overlapping lifetimes |
-| Control | Deterministic | Curve-based + random |
-
-## Technical Details
-
-### Spawning Algorithm
-```python
-for sample_idx in range(total_samples):
-    current_density = emission_curve[sample_idx]  # 0.0 to 1.0
-    spawn_probability = current_density * base_spawn_rate
-
-    if rng.random() < spawn_probability:
-        spawn_particle(birth_time=sample_idx, ...)
-```
-
-### Rendering Pipeline
-1. For each particle:
-   - Generate oscillator audio (constant pitch, no glide)
-   - Apply exponential decay envelope
-   - Apply velocity scaling
-2. Place particle audio at birth_sample position
-3. Mix all overlapping particles (equal-power summing)
-4. Finalize with peak limiting
-
-### Performance Considerations
-- Particles rendered sequentially (not real-time)
-- Memory scales with particle count (typical: 10-100 particles)
-- CPU scales linearly with total particle lifetime
-- Equal-power normalization prevents clipping with many particles
-
-## Future Enhancements
-
-### Potential Additions
-1. **LFO Modulation**: Per-particle pitch/amplitude wobble
-2. **FM Synthesis**: Metallic timbres for realistic chimes
-3. **Spatial Panning**: Per-particle stereo positioning
-4. **Physical Behaviors**: Gravity, damping, collision metaphors
-5. **Burst Events**: Manual particle bursts at specific times
-6. **Scale Quantization**: Snap particles to musical scales
-
-### Adding New Emission Types
-
-Add to `ParticleGestureGenerator._generate_emission_curve()`:
+File: `particle_system.py`
 
 ```python
-elif emission_type == 'my_custom_pattern':
-    # Your custom emission logic here
-    # Return np.ndarray of shape (total_samples,) with values [0-1]
-    curve = ...
-    return curve.astype(np.float32)
+def _generate_emission_my_pattern(
+    config: Dict[str, Any],
+    total_samples: int,
+    section_context: Dict[str, Any]
+) -> np.ndarray:
+    """
+    My custom emission pattern.
+
+    Returns:
+        Emission curve [0-1] of length total_samples
+    """
+    # Extract config
+    start_density = config.get('start_density', 0.1)
+    end_density = config.get('end_density', 0.5)
+
+    # Generate curve
+    t = np.linspace(0, 1, total_samples)
+    emission_curve = start_density + (end_density - start_density) * t
+
+    return emission_curve
 ```
 
-## Troubleshooting
+### 2. Register in Generator
 
-### Too Many/Few Particles
-- Adjust `base_spawn_rate` (higher = more particles)
-- Adjust emission curve density values
+```python
+def _generate_emission_curve(self, emission_config, total_samples, section_context):
+    emission_type = emission_config['type']
 
-### Particles Too Loud/Quiet
-- Adjust `velocity_range`
-- Adjust `peak_limit` and `rms_target`
+    if emission_type == "my_pattern":
+        return _generate_emission_my_pattern(emission_config, total_samples, section_context)
+    # ... other patterns
+```
 
-### Particles Sound Unnatural
-- Increase `detune_range_cents` for more variation
-- Vary `lifetime_range_s` for irregular decay timing
-- Add more randomness to emission curve
+### 3. Use in Archetype
 
-### No Particles Spawning
-- Check `base_spawn_rate` is not too low
-- Check emission curve has non-zero density
-- Verify duration is sufficient for spawning window
+```python
+"MY_ARCHETYPE": {
+    "duration_base": 3.0,
+    "particle": {
+        "emission": {
+            "type": "my_pattern",
+            "start_density": 0.1,
+            "end_density": 0.5
+        },
+        "base_spawn_rate": 0.002,
+        "pitch_range_hz": [440, 880],
+        "lifetime_range_s": [0.5, 1.5],
+        "velocity_range": [0.3, 0.7],
+        "detune_range_cents": [-20, 20],
+        "decay_rate_range": [-3.0, -1.5],
+        "waveform": "sine"
+    },
+    "peak_limit": 0.7,
+    "rms_target": -18.0
+}
+```
 
-## References
+## Design Considerations
 
-- **Spectromorphology**: Denis Smalley's gesture theory
-- **Particle Systems**: William T. Reeves (1983) - Original computer graphics paper
-- **Algorithmic Composition**: Laurie Spiegel's work on generative music
-- **Game Engine Particles**: Unity/Unreal particle system documentation
+### Density Tuning
+
+Emission curve values [0-1] are **multiplied** by `base_spawn_rate` to get per-sample spawn probability:
+
+```python
+spawn_probability = emission_curve[i] * base_spawn_rate
+```
+
+Typical values:
+- **base_spawn_rate**: 0.0005 - 0.005
+- **emission peak**: 0.05 - 0.95
+- **Result**: ~0.0001 - 0.005 per-sample probability
+
+Higher values → denser textures (more particles)
+
+### Pitch Range
+
+Consider timbre and register:
+- **Low (110-440 Hz)**: Warm, mellow, drone-like
+- **Mid (440-880 Hz)**: Balanced, musical
+- **High (880-2200 Hz)**: Bright, metallic, bell-like
+- **Very high (2200+ Hz)**: Harsh, crystalline, glassy
+
+### Lifetime vs Decay
+
+Two parameters control how long particles are audible:
+
+1. **lifetime_range_s**: Physical duration
+2. **decay_rate_range**: Exponential decay speed (-5.0 = fast, -1.0 = slow)
+
+Short lifetime + slow decay = truncated sustain
+Long lifetime + fast decay = long ringing tail
+
+Typical combinations:
+- **Chimes**: Long lifetime (1-3s) + medium decay (-2 to -1.5)
+- **Clicks**: Short lifetime (0.2-0.5s) + fast decay (-5 to -3)
+- **Rain**: Medium lifetime (0.5-1s) + medium decay (-3 to -2)
+
+### Waveform Choice
+
+- **sine**: Pure, mellow, drone-like
+- **triangle**: Warm, soft harmonics
+- **sawtooth**: Bright, buzzy, more harmonics
+- **square**: Hollow, reedy, odd harmonics
+
+## Implementation Status
+
+✅ **All 5 particle archetypes work fully**
+
+Particle system is complete and production-ready. All emission patterns implemented:
+- gusts (INACCURACY)
+- impact_burst (FIRST_EXCHANGE)
+- rhythmic_clusters (TACTICAL_SEQUENCE)
+- drift_scatter (SIGNIFICANT_SHIFT)
+- dissolve (FINAL_RESOLUTION)
+
+Unlike curve-based system, **no missing implementations**.

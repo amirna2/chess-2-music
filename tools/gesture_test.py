@@ -98,11 +98,12 @@ def test_gesture(archetype_name, tension=0.7, entropy=0.5, sample_rate=88200, ou
 
     config = ARCHETYPES[archetype_name]
 
-    # Check if this is a particle-based archetype
-    if 'particle' in config:
+    # Check if this is a particle-based archetype (use explicit system field)
+    system_type = config.get('system', 'curve')  # Default to curve for backward compat
+    if system_type == 'particle':
         print(f"❌ {archetype_name} is a particle-based archetype.")
-        print(f"   Use visualize_particles.py with --audio flag for particle archetypes.")
-        print(f"\n   Example: python3 visualize_particles.py {archetype_name} --audio")
+        print(f"   Use particle_test.py with --audio flag for particle archetypes.")
+        print(f"\n   Example: python3 tools/particle_test.py {archetype_name} --audio")
         return 1
 
     print("=" * 80)

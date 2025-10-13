@@ -60,11 +60,12 @@ def analyze_particles(archetype_name, seed=42, generate_audio=False, output_file
 
     archetype_config = ARCHETYPES[archetype_name]
 
-    # Check if this is a particle archetype
-    if 'particle' not in archetype_config:
+    # Check if this is a particle archetype (use explicit system field)
+    system_type = archetype_config.get('system', 'curve')
+    if system_type != 'particle':
         print(f"❌ Error: {archetype_name} is not a particle-based archetype.")
-        print(f"   This tool only works with particle archetypes.")
-        print(f"\n   Use test_gesture_sound.py for curve-based archetypes.")
+        print(f"   This tool only works with particle archetypes (system: 'particle').")
+        print(f"\n   Use gesture_test.py for curve-based archetypes.")
         sys.exit(1)
 
     sample_rate = 88200
@@ -279,7 +280,8 @@ def list_archetypes():
     particle_archetypes = []
     for name in sorted(ARCHETYPES.keys()):
         config = ARCHETYPES[name]
-        if 'particle' in config:
+        # Use explicit system field
+        if config.get('system') == 'particle':
             particle_archetypes.append(name)
             print(f"  {name}")
 
