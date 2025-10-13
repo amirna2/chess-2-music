@@ -132,17 +132,19 @@ def mix_stereo(layers):
 
 
 class ChessSynthComposer:
-    def __init__(self, chess_tags, config=None):
+    def __init__(self, chess_tags, config=None, style='spiegel'):
         """
-        Initialize chess music composer
+        Initialize chess music composer with style renderer
 
         Args:
             chess_tags: Dictionary with game data and narratives
             config: Optional SynthConfig instance for parameter overrides
+            style: Musical style ('spiegel' or 'jarre') - default 'spiegel'
         """
         self.tags = chess_tags
         self.config = config or SynthConfig()
         self.sample_rate = self.config.SAMPLE_RATE
+        self.style = style
 
         # Create dedicated RNG seeded with ECO code for reproducibility
         self.rng = self._create_rng_from_eco(chess_tags.get('eco', 'A00'))
@@ -190,6 +192,26 @@ class ChessSynthComposer:
         # Initialize gesture coordinator for Layer 3b
         self.gesture_coordinator = GestureCoordinator(self.rng)
         self.gesture_coordinator.set_synth_engine(self.synth_layer3)
+
+        # Initialize style renderer (NEW)
+        from synth_renderer import StyleRendererFactory
+
+        self.renderer = StyleRendererFactory.create(
+            style=style,
+            config=self.config,
+            synth_engines={
+                'drone': self.synth_layer1,
+                'pattern': self.synth_layer2,
+                'gesture': self.synth_layer3,
+            },
+            pattern_coordinator=self.pattern_coordinator,
+            gesture_coordinator=self.gesture_coordinator,
+            rng=self.rng
+        )
+
+        # For SpiegelRenderer delegation pattern: give renderer access to composer
+        if hasattr(self.renderer, 'set_composer'):
+            self.renderer.set_composer(self)
 
     def _create_rng_from_eco(self, eco_code):
         """
@@ -2384,7 +2406,12 @@ class ChessSynthComposer:
 
         print(f"\nSynthesizing {total_sections} sections with {self.config.TIMING['section_crossfade_sec']}s crossfades...")
         for i, section in enumerate(sections):
-            section_data = self.compose_section(section, i, total_sections)
+            # Use renderer to apply style-specific parameters
+            context = {
+                'section_index': i,
+                'total_sections': total_sections,
+            }
+            section_data = self.renderer.render_section(section, context)
             section_audios.append(section_data)
 
             # Show crossfade indicator for next section
@@ -2490,8 +2517,20 @@ class ChessSynthComposer:
             avg_entropy = np.mean(entropy_resampled)
             print(f"  Layer 3b (moments): Entropy-driven panning (avg={avg_entropy:.3f}, complexity→position)")
 
-            # Mix stereo layers
-            composition = mix_stereo([stereo_12, stereo_3a, stereo_3b])
+            # Apply mixing levels from config
+            drone_level = self.config.MIXING.get('drone_level', 0.15)
+            pattern_level = self.config.MIXING.get('pattern_level', 0.6)
+            sequencer_level = self.config.MIXING.get('sequencer_level', 0.4)
+            moment_level = self.config.MIXING.get('moment_level', 0.5)
+
+            print(f"  MIXING LEVELS: drone={drone_level}, pattern={pattern_level}, sequencer={sequencer_level}, moment={moment_level}")
+
+            # Mix stereo layers with levels
+            composition = mix_stereo([
+                stereo_12 * (drone_level + pattern_level) / 2,  # layers_1_2 contains both drone and pattern
+                stereo_3a * sequencer_level,
+                stereo_3b * moment_level
+            ])
             print(f"  Result: Heartbeat centered, moments travel dynamically!")
 
         # Master bus processing - AFTER stereo conversion
@@ -2580,6 +2619,7 @@ def main():
     parser.add_argument('--only-section', nargs='+',
                         help='Only render specific sections by name. Example: --only-section OPENING MIDDLEGAME_1')
     parser.add_argument('-o', '--output', default='chess_synth.wav', help='Output filename')
+    parser.add_argument('--style', default='spiegel', help='Musical style (default: spiegel)')
 
     args = parser.parse_args()
 
@@ -2604,7 +2644,7 @@ def main():
         tags['sections'] = filtered_sections
         print(f"Rendering {len(filtered_sections)} section(s): {[s.get('name') for s in filtered_sections]}")
 
-    composer = ChessSynthComposer(tags, config=config)
+    composer = ChessSynthComposer(tags, config=config, style=args.style)
     composer.save(args.output)
 
 

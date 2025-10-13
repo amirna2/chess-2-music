@@ -755,6 +755,70 @@ class SynthConfig:
         'harmony_probability_threshold': 0.7,  # Start adding harmonies above this entropy
     })
 
+    # === STYLE PROFILES ===
+    STYLE_PROFILES: Dict[str, Dict] = field(default_factory=lambda: {
+        'spiegel': {
+            'description': 'Process-based, non-metric, just-intonation, generative minimalism inspired by The Expanding Universe.',
+
+            # === MIXING ===
+            'mixing': {
+                'drone_level': 0.3,
+                'pattern_level': 0.4,
+                'sequencer_level': 0.25,
+                'moment_level': 0.15,
+            },
+
+            # === LAYER 1: DRONE ===
+            'layer1_drone': {
+                'waveform': 'triangle',
+                'detune_cents': 5,
+                'filter_base_hz': 800,
+                'filter_range_hz': -300,
+                'resonance': 0.5,
+                'amp_env': (2.0, 0.0, 1.0, 2.0),
+                'lfo': {
+                    'amp_hz': 0.4,
+                    'filter_hz': 0.02,
+                },
+                'voices': 2,
+                'stereo_width': 0.3,
+            },
+
+            # === LAYER 2: PATTERN ===
+            'layer2_pattern': {
+                'pattern_type': 'cellular_automaton',
+                'density': 0.6,
+                'amp_env': (0.01, 0.05, 0.6, 0.05),
+                'filter_base_hz': 2400,
+                'filter_range_hz': 0,
+                'resonance': 0.3,
+                'pan_random_width': 0.25,
+            },
+
+            # === LAYER 3a: HEARTBEAT ===
+            'layer3a_heartbeat': {
+                'base_hz': 0.7,
+                'filter_hz': 400,
+                'thump_gain': 0.6,
+                'stereo_width': 0.2,
+            },
+
+            # === LAYER 3b: GESTURE ===
+            'layer3b_gesture': {
+                'curve_bias': 0.2,
+                'reverb_send_db': 2.0,
+            },
+
+            # === FX ===
+            'fx': {
+                'chorus': {'depth': 0.15, 'rate_hz': 0.05, 'mix': 0.2},
+                'delay': {'time_ms': 620, 'feedback': 0.3, 'mix': 0.25},
+                'reverb': {'time_s': 6.0, 'mix': 0.45},
+                'saturation': {'drive': 0.8},
+            },
+        },
+    })
+
 
 # Global default config instance
 DEFAULT_CONFIG = SynthConfig()

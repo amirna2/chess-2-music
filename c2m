@@ -20,11 +20,16 @@ SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 # Parse arguments
 OUTPUT_WAV=""
 INPUT_PGN=""
+STYLE="spiegel"
 
 while [[ $# -gt 0 ]]; do
     case $1 in
         -o|--output)
             OUTPUT_WAV="$2"
+            shift 2
+            ;;
+        --style)
+            STYLE="$2"
             shift 2
             ;;
         *)
@@ -140,7 +145,7 @@ fi
 # Step 4: Synthesize music
 echo ""
 echo "Step 4: Synthesizing music..."
-python3 "${SCRIPT_DIR}/synth_composer.py" "$TAGS_JSON" -o "$OUTPUT_WAV"
+python3 "${SCRIPT_DIR}/synth_composer.py" "$TAGS_JSON" -o "$OUTPUT_WAV" --style "$STYLE"
 if [ $? -eq 0 ]; then
     echo "✓ Audio synthesis completed: $OUTPUT_WAV"
 else
