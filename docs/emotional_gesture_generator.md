@@ -30,7 +30,6 @@ All parameters derived from moment archetype + entropy snapshot + local tension.
 | TACTICAL_SEQUENCE | Interlocking clockwork | Fixed pitch cells | Perfect intervals + augmentations | Narrow → comb-like partial highlights | Even, precise pulses |
 | TIME_PRESSURE | Accelerating tremor | Narrow oscillation rising microtonally | Sparse, thinned | High-pass swell + tremolo | Tempo acceleration curve |
 | BRILLIANT | Ascending bloom | Rising 2–3 octave glide | Expanding chord (add 9, 13) | Opening filter + shimmer noise | Smooth arch |
-| INACCURACY | Stumble flicker | Tiny upward then slip | Dyad w/ slight detune | Brief notch sweep | Very short, asymmetrical |
 
 ---
 

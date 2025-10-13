@@ -1,8 +1,12 @@
-# SYNTH_COMPOSER ARCHITECTURE (REFACTORED)
+# SYNTH_COMPOSER ARCHITECTURE
 
 ## Overview
 
-The synthesis system has been **completely refactored** from a 1,627-line monolith into a clean, modular architecture with clear separation of concerns.
+The synthesis system uses a modular architecture with clear separation of concerns:
+- **Pattern generation** (Layer 2) via synth_composer/ package
+- **Gesture archetypes** (Layer 3b) via layer3b/ package
+- **Centralized configuration** via synth_config.py
+- **Pure synthesis engine** via synth_engine.py
 
 ## Architecture Diagram
 
@@ -11,53 +15,56 @@ The synthesis system has been **completely refactored** from a 1,627-line monoli
 │                      ChessSynthComposer                             │
 │                    (synth_composer.py)                              │
 │                                                                     │
-│  Three-layer composition system orchestration:                      │
+│  Four-layer composition system orchestration:                       │
 │  • Layer 1: Evolving drone (overall narrative)                      │
 │  • Layer 2: Generative patterns (section narrative)                 │
-│  • Layer 3: Sequencer (key moments)                                 │
+│  • Layer 3a: Heartbeat (rhythmic pulse)                             │
+│  • Layer 3b: Gestures (key moment archetypes)                       │
 │                                                                     │
 │  ECO-seeded randomness for reproducibility                          │
 │  Section crossfading for smooth transitions                         │
 └─────────────────────────────────────────────────────────────────────┘
                               │
-              ┌───────────────┼───────────────┐
-              │               │               │
-              ▼               ▼               ▼
-┌──────────────────┐ ┌─────────────────┐ ┌───────────────────────┐
-│  SynthConfig     │ │ SubtractiveSynth│ │ Narrative Processes   │
-│  (config.py)     │ │  (engine.py)    │ │  (narrative.py)       │
-│                  │ │                 │ │                       │
-│ Config-driven:   │ │ Pure DSP:       │ │ Generative:           │
-│ • Scales         │ │ • Oscillators   │ │ • Markov chains       │
-│ • Envelopes      │ │ • Moog filters  │ │ • State machines      │
-│ • Narratives     │ │ • ADSR          │ │ • Evolution rules     │
-│ • Patterns       │ │ • Supersaw      │ │ • Spiegel-inspired    │
-│ • Mixing levels  │ │ • Anti-aliasing │ │ • Probabilistic       │
-└──────────────────┘ └─────────────────┘ └───────────────────────┘
+              ┌───────────────┼───────────────┬───────────────┐
+              │               │               │               │
+              ▼               ▼               ▼               ▼
+┌──────────────────┐ ┌─────────────────┐ ┌───────────────┐ ┌─────────────────┐
+│  SynthConfig     │ │ SubtractiveSynth│ │ synth_composer│ │ layer3b/        │
+│  (config.py)     │ │  (engine.py)    │ │ (patterns/)   │ │ (gestures/)     │
+│                  │ │                 │ │               │ │                 │
+│ Config-driven:   │ │ Pure DSP:       │ │ Layer 2:      │ │ Layer 3b:       │
+│ • Scales         │ │ • Oscillators   │ │ • Markov      │ │ • Curve-based   │
+│ • Envelopes      │ │ • Moog filters  │ │ • State mach  │ │ • Particle-based│
+│ • Narratives     │ │ • ADSR          │ │ • Theory      │ │ • Archetypes    │
+│ • Archetypes     │ │ • Supersaw      │ │ • Outro       │ │ • Phase struct  │
+│ • Mixing levels  │ │ • Anti-aliasing │ │ • NoteSynth*  │ │ • GestureSynth* │
+└──────────────────┘ └─────────────────┘ └───────────────┘ └─────────────────┘
+                              ▲                   │                   │
+                              │                   │                   │
+                              └───────────────────┴───────────────────┘
+                                  * Both wrap SubtractiveSynth
 ```
 
 ## Module Breakdown
 
-### 1. synth_composer.py (687 lines)
+### 1. synth_composer.py
 **Main composition logic - orchestrates everything**
 
 ```python
 class ChessSynthComposer:
     def __init__(self, chess_tags, config=None)
         # Accepts optional config for parameter overrides
+        # Initializes PatternCoordinator and GestureCoordinator
 
     def compose_section(self, section, section_index, total_sections)
-        # Three-layer composition:
+        # Four-layer composition:
         # Layer 1: Base drone (overall narrative)
-        # Layer 2: Rhythmic patterns (section narrative)
-        # Layer 3: Sequencer (key moments)
-
-    def create_moment_voice(self, moment, current_params, progress)
-        # Context-aware moment synthesis
-        # Looks up parameters from config
+        # Layer 2: Generative patterns (section narrative via PatternCoordinator)
+        # Layer 3a: Heartbeat (rhythmic pulse)
+        # Layer 3b: Gestures (key moments via GestureCoordinator)
 
     def compose()
-        # Iterate all sections, normalize, return audio
+        # Iterate all sections, crossfade, normalize, return audio
 
     def save(filename)
         # Write to WAV file
@@ -65,11 +72,12 @@ class ChessSynthComposer:
 
 **Key Responsibilities:**
 - Parse narrative tags from JSON
-- Coordinate three synthesis layers
+- Coordinate four synthesis layers
 - Apply narrative processes
+- Interface with PatternCoordinator and GestureCoordinator
 - Mix and normalize final output
 
-**No Hard-Coded Parameters** - All lookups go through `self.config`
+**Configuration-Driven** - All parameters through `self.config` and archetype configs
 
 ---
 
@@ -168,7 +176,7 @@ class SubtractiveSynth:
 ---
 
 ### 4. synth_narrative.py (199 lines)
-**Narrative process classes - Spiegel-inspired evolution**
+**Narrative process classes - Spiegel-inspired evolution (Legacy)**
 
 ```python
 class NarrativeProcess(ABC):
@@ -204,6 +212,193 @@ def create_narrative_process(narrative, duration, plies):
     # Maps narrative string to appropriate process class
     return ProcessClass(duration, plies)
 ```
+
+---
+
+### 5. synth_composer/ Package
+**Modular pattern generation system for Layer 2**
+
+```
+synth_composer/
+├── __init__.py              # Package exports
+├── coordinator.py           # PatternCoordinator (main interface)
+├── core/                    # Core synthesis components
+│   ├── note_event.py        # NoteEvent dataclass
+│   ├── timing_engine.py     # Rhythm and timing calculations
+│   ├── audio_buffer.py      # Audio buffer management
+│   └── synthesizer.py       # NoteSynthesizer (wraps SubtractiveSynth)
+└── patterns/                # Pattern generators
+    ├── base.py              # PatternGenerator ABC
+    ├── markov.py            # MarkovPatternGenerator
+    ├── state_machine.py     # StateMachinePatternGenerator
+    ├── theory.py            # TheoryPatternGenerator
+    ├── outro.py             # OutroPatternGenerator
+    └── conversion.py        # Helper utilities
+```
+
+**Key Components:**
+
+**PatternCoordinator:**
+```python
+class PatternCoordinator:
+    """Main interface for generating Layer 2 patterns"""
+
+    def generate_pattern(self, section, context) -> np.ndarray:
+        # 1. Select pattern generator based on section narrative
+        # 2. Generate note events
+        # 3. Synthesize audio via NoteSynthesizer
+        # 4. Return mixed audio array
+```
+
+**NoteSynthesizer (synth_composer/core/synthesizer.py):**
+```python
+class NoteSynthesizer:
+    """
+    Wrapper around SubtractiveSynth for NoteEvent objects.
+
+    Converts NoteEvent → SubtractiveSynth parameters
+    Does NOT implement its own DSP - delegates to SubtractiveSynth
+    """
+    def synthesize(self, event: NoteEvent) -> np.ndarray:
+        return self.synth.create_synth_note(
+            freq=event.freq,
+            duration=event.duration,
+            waveform=event.waveform,
+            # ... all other synth parameters
+        )
+```
+
+**Pattern Generators:**
+- **MarkovPatternGenerator**: Probabilistic note sequences with transition matrices
+- **StateMachinePatternGenerator**: Multi-state patterns (ADVANCE → STRIKE → OVERWHELM)
+- **TheoryPatternGenerator**: Opening theory, methodical development
+- **OutroPatternGenerator**: Final resolution and fadeout
+
+**Key Features:**
+- **Modular**: Each pattern type is independent
+- **Extensible**: Easy to add new pattern generators
+- **ECO-seeded**: Reproducible random generation
+- **Context-aware**: Responds to entropy, tension, section characteristics
+- **Shared synthesis**: Uses SubtractiveSynth for all DSP
+
+---
+
+### 6. layer3b/ Package
+**Gesture archetype system for Layer 3b**
+
+**See:** `docs/LAYER3B_COMPLETE_REFERENCE.md` and `docs/layer3b_implementation.md`
+
+```
+layer3b/
+├── __init__.py              # Package exports
+├── archetype_configs.py     # CURVE_ARCHETYPES and PARTICLE_ARCHETYPES
+├── base.py                  # GestureGenerator base class
+├── coordinator.py           # GestureCoordinator (archetype registry)
+├── curve_generators.py      # Pitch/harmony/filter/envelope curve functions
+├── particle_system.py       # ParticleEmitter for stochastic gestures
+├── synthesizer.py           # GestureSynthesizer (wraps SubtractiveSynth)
+└── utils.py                 # Phase computation, normalization
+```
+
+**GestureSynthesizer (layer3b/synthesizer.py):**
+```python
+class GestureSynthesizer:
+    """
+    High-level wrapper around SubtractiveSynth for gesture synthesis.
+
+    Orchestrates time-varying multi-voice synthesis:
+    - Time-varying pitch (via SubtractiveSynth oscillators)
+    - Time-varying filters (via SubtractiveSynth.moog_filter_timevarying)
+    - Amplitude envelopes (direct multiplication)
+    - Noise texture (via SubtractiveSynth.generate_noise)
+    - Shimmer effects (amplitude modulation)
+
+    Does NOT implement its own DSP - delegates to SubtractiveSynth
+    """
+    def synthesize(self, pitch_voices, filter_curve, envelope, texture_curve):
+        # Orchestrates time-varying synthesis using SubtractiveSynth primitives
+```
+
+**Two Gesture Approaches:**
+
+**Curve-Based Gestures** (Deterministic, expressive):
+- Full parameter control via curves
+- Examples: MOVE, BRILLIANT, BLUNDER, CHECKMATE, GAME_CHANGING
+- Phase structure: pre_shadow → impact → bloom → decay → residue
+- Pitch/harmony/filter/envelope/texture curves
+
+**Particle-Based Gestures** (Stochastic, emergent):
+- Emission-controlled polyphonic gestures
+- Examples: INACCURACY, FIRST_EXCHANGE, TACTICAL_SEQUENCE, FINAL_RESOLUTION
+- Particle properties: independent pitch, velocity, lifetime, detune
+- Emission patterns: gusts, bursts, drifts, clusters, dissolves
+
+**Key Features:**
+- **Spectromorphological**: Uses electroacoustic music theory classifications
+- **Context-responsive**: Scales with tension and entropy
+- **Configuration-driven**: All archetypes defined in archetype_configs.py
+- **Unified pipeline**: Both approaches share same synthesis infrastructure
+- **Shared synthesis**: Uses SubtractiveSynth for all DSP primitives
+
+---
+
+## Synthesizer Architecture
+
+### Single Source of DSP Truth: SubtractiveSynth
+
+All audio synthesis in the system uses **synth_engine.SubtractiveSynth** as the foundation. There are no duplicate DSP implementations.
+
+**SubtractiveSynth (synth_engine.py):**
+- Pure DSP primitives
+- Oscillators (sine, triangle, saw, square, supersaw)
+- Moog-style 4-pole low-pass filter
+- Time-varying filter support
+- ADSR envelopes
+- Noise generators (white, pink, brown)
+- PolyBLEP anti-aliasing
+
+### High-Level Wrappers
+
+Different layers use **wrapper classes** that delegate to SubtractiveSynth:
+
+**Layer 2 → NoteSynthesizer (synth_composer/core/synthesizer.py):**
+```python
+class NoteSynthesizer:
+    """Wraps SubtractiveSynth for discrete note events"""
+    def __init__(self, synth_engine):
+        self.synth = synth_engine  # SubtractiveSynth instance
+
+    def synthesize(self, event: NoteEvent) -> np.ndarray:
+        # Converts NoteEvent to SubtractiveSynth parameters
+        return self.synth.create_synth_note(...)
+```
+
+**Layer 3b → GestureSynthesizer (layer3b/synthesizer.py):**
+```python
+class GestureSynthesizer:
+    """Wraps SubtractiveSynth for time-varying gestures"""
+    def __init__(self, synth_engine):
+        self.synth = synth_engine  # SubtractiveSynth instance
+
+    def synthesize(self, pitch_voices, filter_curve, envelope, texture_curve):
+        # Orchestrates time-varying synthesis using SubtractiveSynth primitives
+        # - Multi-voice oscillators
+        # - Time-varying filters
+        # - Noise textures
+```
+
+**Layer 1 & 3a:**
+- Call SubtractiveSynth directly (no wrapper needed)
+- Layer 1: Continuous drones
+- Layer 3a: Heartbeat synthesis
+
+### Design Benefits
+
+✓ **No code duplication**: All DSP in one place
+✓ **Consistent sound**: All layers use same synthesis engine
+✓ **Easy maintenance**: Bug fixes benefit all layers
+✓ **Shared optimizations**: Performance improvements benefit all layers
+✓ **Clear architecture**: Wrappers coordinate, SubtractiveSynth synthesizes
 
 ---
 
@@ -255,20 +450,25 @@ def create_narrative_process(narrative, duration, plies):
    │   ├── Generate continuous drone (supersaw or basic waveform)
    │   └── Apply LFO modulation
    │
-   ├── LAYER 2: Generative Patterns
-   │   ├── Dispatch to narrative-specific generator
-   │   ├── Execute generative algorithm (Markov/state machine)
-   │   ├── Generate probabilistic note sequence
-   │   └── Build pattern layer with random variations
+   ├── LAYER 2: Generative Patterns (via PatternCoordinator)
+   │   ├── Select pattern generator based on section narrative
+   │   ├── Execute generative algorithm (Markov/state machine/theory/outro)
+   │   ├── Generate note events with context (entropy, tension)
+   │   └── Synthesize pattern layer
    │
-   ├── LAYER 3: Sequencer
-   │   ├── Initialize pattern from config
-   │   ├── Process evolution points (key moments)
-   │   ├── Generate MIDI sequence
-   │   ├── Synthesize with supersaw
-   │   └── Apply global filter sweep
+   ├── LAYER 3a: Heartbeat
+   │   ├── Generate LUB-dub cardiac rhythm
+   │   ├── Apply entropy-driven BPM modulation
+   │   ├── Add pitch variation and timing jitter
+   │   └── Low-pass filter for sub-bass character
    │
-   └── Mix layers with sidechain compression
+   ├── LAYER 3b: Gestures (via GestureCoordinator)
+   │   ├── Identify key moments in section
+   │   ├── Select archetype for each moment
+   │   ├── Generate gesture audio (curve-based or particle-based)
+   │   └── Apply context scaling (tension, entropy)
+   │
+   └── Mix all four layers with appropriate levels
 
 3. FINALIZATION
    compose()
@@ -290,7 +490,7 @@ def create_narrative_process(narrative, duration, plies):
 
 ---
 
-## Three-Layer Synthesis System
+## Four-Layer Synthesis System
 
 ### Layer 1: Overall Narrative (Base Character)
 **Sets fundamental parameters for entire game**
@@ -317,56 +517,50 @@ def create_narrative_process(narrative, duration, plies):
 - Provides harmonic foundation
 
 ### Layer 2: Section Narrative (Generative Patterns)
-**Narrative-specific generative algorithms for each section type**
+**Modular pattern generation system via synth_composer/ package**
 
 **Implementation Approach:**
-- Each section narrative has a dedicated generative pattern generator
-- Uses probabilistic algorithms (Markov chains, state machines)
+- Pattern generators selected based on section narrative
+- Uses probabilistic algorithms (Markov chains, state machines, theory patterns)
 - Controlled randomness seeded by ECO code for reproducibility
 - Non-repetitive, evolving patterns inspired by Laurie Spiegel
 
-**Implemented Patterns:**
+**Pattern Generators:**
 
-```python
-# COMPLEX_STRUGGLE: Markov chain random walk
-- 8x8 transition matrix weighted toward tonic
-- Random durations (longer on tonic = thinking/hesitation)
-- Random velocity and filter variations
-- Increasing pauses as tension builds
-- Waveform: pulse (hollow, thoughtful)
+**MarkovPatternGenerator:**
+- Transition matrix-based note selection
+- Weighted toward tonic for stability
+- Random durations and velocity variations
+- Context-aware: responds to entropy and tension
 
-# KING_HUNT: 3-state machine (ATTACK/RETREAT/PAUSE)
-- 70% upward bias during attack state
-- Random octave jumps with increasing probability
-- Evolving aggression (faster, brighter, louder)
-- State-dependent timing and velocity
-- Waveform: saw (aggressive, bright)
+**StateMachinePatternGenerator:**
+- Multi-state patterns (e.g., ADVANCE → STRIKE → OVERWHELM)
+- State-dependent behavior (attack/retreat dynamics)
+- Evolving aggression and density
+- Directional bias (upward attacks, downward crushing)
 
-# CRUSHING_ATTACK: 3-state machine (ADVANCE/STRIKE/OVERWHELM)
-- Downward bias (crushing from above)
-- Hammer blow strikes on low notes
-- Random chord stabs (60% probability)
-- Accelerating rhythm, building power
-- Waveform: saw with power chords
-```
+**TheoryPatternGenerator:**
+- Opening theory: methodical development
+- Quiet positional: sparse, contemplative
+- Conversion: systematic simplification
+
+**OutroPatternGenerator:**
+- Final resolution patterns
+- Fadeout and closure
+- Harmonic resolution to tonic
 
 **Audio Result:**
 - Each narrative sounds completely different
 - Non-repetitive, truly generative
 - Same game produces identical output (ECO seeding)
 - Different openings produce different patterns
+- Modular: easy to add new pattern types
 
-### Layer 3: Key Moments (Split into Two Sub-Layers)
-**Redesigned as dual-layer system: biological heartbeat foundation + event-driven moments**
-
-**Architecture:**
-Layer 3 is split into two independent sub-layers with different stereo treatment:
-
-#### Layer 3a: Heartbeat Sub-Drone (Biological Foundation)
-**LUB-dub cardiac rhythm providing organic temporal anchor**
+### Layer 3a: Heartbeat (Rhythmic Pulse)
+**Biological rhythmic foundation**
 
 **Implementation:**
-- Sine wave synthesis with precise LUB-dub pattern (from `heartbeat_designer.py`)
+- Sine wave synthesis with precise LUB-dub cardiac pattern
 - Entropy-driven variation (BPM, pitch, timing jitter)
 - Low-pass filtered for sub-bass/thump character
 - Click-free using linear ADSR and dedicated filter
@@ -391,46 +585,89 @@ pause       # Rest to complete BPM cycle
 - Provides temporal/rhythmic foundation independent of chess events
 - Centered in stereo field (biological constant)
 
-#### Layer 3b: Moment Sequencer (Event-Driven)
-**Supersaw arpeggios triggered by key chess moments**
+---
 
-**Implementation:**
-- Triggered ONLY by key moments (captures, blunders, brilliant moves, etc.)
-- Supersaw synthesis with entropy-driven note selection
-- Global filter sweeps for dramatic effect
-- No continuous base pattern (heartbeat layer handles that role)
+### Layer 3b: Gestures (Key Moment Archetypes)
+**Spectromorphological gesture system via layer3b/ package**
 
-**Entropy-Driven Parameters:**
-- **Note selection**: Low entropy = root-fifth, high = chromatic
-- **Rhythm variation**: Low entropy = metronomic, high = irregular
-- **Filter modulation**: Low entropy = slow sweeps, high = fast restless
-- **Portamento**: Low entropy = smooth glides, high = jumpy nervous
-- **Harmonic density**: High entropy = add cluster harmonies
+**See:** `docs/LAYER3B_COMPLETE_REFERENCE.md` and `docs/layer3b_implementation.md` for complete documentation
 
-```python
-# Moment-triggered synthesis only
-if entropy < 0.3:
-    available_notes = [0, 4]  # Simple: root-fifth
-elif entropy < 0.7:
-    available_notes = [0, 2, 4, 5, 7]  # Moderate: diatonic
-else:
-    available_notes = [0, 1, 2, 3, 4, 5, 6, 7]  # Complex: chromatic
+**Two Gesture Approaches:**
 
-note = random.choice(available_notes)
-```
+#### Curve-Based Gestures (Deterministic)
+**Full parameter control via multi-dimensional curves**
+
+**Architecture:**
+- **Phase structure**: pre_shadow → impact → bloom → decay → residue
+- **Curve generators**: Pitch, harmony, filter, envelope, texture
+- **Spectromorphological**: Uses electroacoustic music theory classifications
+
+**Pitch Curve Types:**
+- Stable: Held frequency
+- Glissando: Smooth continuous pitch change
+- Tremor: Oscillating pitch variations
+- Drift: Slow wandering
+- Leap: Discrete pitch jumps
+
+**Harmony Types:**
+- Unison: Single voice
+- Dyad: Two-voice intervals
+- Cluster: Dense semitone groupings
+- Chord: Harmonic intervals
+- Converging: Multiple voices resolving
+
+**Filter Curve Types:**
+- Sweep: Continuous cutoff movement
+- Focus: Narrowing bandwidth
+- Opening/Closing: Spectral evolution
+- Morphing: Filter type transitions
+
+**Examples:** MOVE, BRILLIANT, BLUNDER, CHECKMATE, GAME_CHANGING
+
+#### Particle-Based Gestures (Stochastic)
+**Emission-controlled polyphonic gestures with emergent behavior**
+
+**Architecture:**
+- **Particle system**: Independent particles with lifetime, pitch, velocity, detune
+- **Emission curves**: Control spawning density over time
+- **Emergent behavior**: Complex textures from simple rules
+
+**Emission Patterns:**
+- **Gust**: Quick burst of particles
+- **Burst**: Explosive emission
+- **Drift**: Gradual sustained emission
+- **Rhythmic clusters**: Pulsed groups
+- **Dissolve**: Gradual fadeout
+
+**Particle Properties:**
+- Independent pitch evolution
+- Individual velocity envelopes
+- Variable lifetime durations
+- Detune for spectral richness
+- Exponential decay curves
+
+**Examples:** INACCURACY, FIRST_EXCHANGE, TACTICAL_SEQUENCE, FINAL_RESOLUTION
+
+#### Unified Features
+**Both approaches share:**
+- **Context-responsive**: Scale with section tension and entropy
+- **Configuration-driven**: All archetypes defined in `archetype_configs.py`
+- **Spectromorphological**: Based on electroacoustic music theory
+- **Synthesis integration**: Wraps SubtractiveSynth for DSP primitives
 
 **Audio Result:**
-- **Event-reactive**: Only plays during key chess moments
-- **Context-aware**: Entropy shapes how moments sound
-- **Spatial movement**: Entropy-driven panning (L/R position)
-- **Dramatic emphasis**: Supersaw richness highlights critical events
+- **Event-reactive**: Triggered by key chess moments
+- **Emotionally expressive**: Each archetype has distinct character
+- **Context-aware**: Responds to section tension and entropy
+- **Spectrally rich**: Complex timbral evolution
+- **Non-repetitive**: Stochastic elements provide variation
 
 **Layer 3 Design Philosophy:**
-The split addresses the original problem: Layer 3 needed both continuous presence (temporal foundation) and event emphasis (key moments). By separating these roles:
-- **3a (heartbeat)**: Continuous, biological, centered, entropy-modulated tempo
-- **3b (moments)**: Discrete, dramatic, spatially mobile, event-triggered
+The four-layer system addresses different temporal scales and narrative functions:
+- **3a (heartbeat)**: Continuous, biological, rhythmic foundation
+- **3b (gestures)**: Discrete, expressive, event-driven punctuation
 
-This creates musical depth while maintaining clarity of both continuous and discrete narrative elements.
+This creates musical depth with clear separation between continuous pulse and discrete moments.
 
 ---
 
@@ -801,25 +1038,28 @@ config.ENTROPY_CONFIG['smoothing_sigma'] = 3  # Was 2
 
 ---
 
-## Benefits of Refactored Architecture
+## Benefits of Modular Architecture
 
 ### For Developers
-✓ **Find parameters instantly**: All in `synth_config.py`
+✓ **Find parameters instantly**: All in `synth_config.py` and `archetype_configs.py`
 ✓ **No code search**: Change values without grep
 ✓ **Safe modifications**: Parameters isolated from logic
-✓ **Clear responsibilities**: Each file has one job
+✓ **Clear responsibilities**: Each module has one job
+✓ **Easy extension**: Add new patterns or archetypes via configuration
 
 ### For Musicians/Sound Designers
-✓ **Tweak without coding**: Edit `SynthConfig` dataclass
+✓ **Tweak without coding**: Edit configuration files
 ✓ **Immediate experimentation**: Change → save → run
 ✓ **Understand structure**: Clear parameter organization
 ✓ **Create presets**: Multiple config instances
+✓ **Gesture design**: Test individual archetypes with gesture_test.py and particle_test.py
 
 ### For AI Assistants
 ✓ **Clear entry points**: Import config, modify, test
 ✓ **Isolated changes**: Modify parameters without touching synthesis
 ✓ **Testable**: Easy to generate variations
-✓ **Documented**: Type hints and docstrings throughout
+✓ **Documented**: Type hints and comprehensive documentation
+✓ **Modular**: Add features without breaking existing code
 
 ---
 
@@ -905,20 +1145,26 @@ for filter_end, cfg in configs:
 
 ### Easy to Add
 - **New overall narratives (Layer 1)**: Add entry to `NARRATIVE_BASE_PARAMS`
-- **New section narratives (Layer 2)**: Implement new generative pattern function
-- **New moment types (Layer 3)**: Add entry to `MOMENT_VOICES`
+- **New section patterns (Layer 2)**: Subclass `PatternGenerator` in synth_composer/patterns/
+- **New gesture archetypes (Layer 3b)**: Add configuration to `archetype_configs.py`
+- **New curve types**: Add to `curve_generators.py`
+- **New particle emissions**: Extend `particle_system.py`
 - **New processes**: Subclass `NarrativeProcess`
 
 ### Recently Implemented (2025)
-✓ **Multi-timescale evolving drones**: MACRO (section sweep) + MESO (slow LFO) + MICRO (fast LFO)
-✓ **Generative Layer 2 patterns**: Markov chains and state machines
+✓ **Four-layer system**: Split Layer 3 into heartbeat (3a) and gestures (3b)
+✓ **Modular pattern generation**: synth_composer/ package with multiple generators
+✓ **Gesture archetype system**: layer3b/ package with curve and particle approaches
+✓ **Spectromorphological design**: Electroacoustic music theory classifications
 ✓ **ECO code seeding**: Reproducible randomness
 ✓ **Section crossfading**: Smooth 2-second transitions
-✓ **DEATH_SPIRAL narrative**: Dark saw wave with increasing chaos
-✓ **Entropy-driven Layer 3**: Evaluation volatility controls note selection, rhythm, filters, portamento, harmony
-✓ **Stereo output with entropy panning**: Layer 3 spatial position driven by evaluation entropy
+✓ **Entropy-driven composition**: Evaluation volatility controls multiple parameters
+✓ **Stereo output with entropy panning**: Spatial position driven by evaluation entropy
+✓ **Testing tools**: gesture_test.py and particle_test.py for archetype development
 
 ### Possible Enhancements
+- **More pattern generators**: Additional Layer 2 pattern types
+- **More gesture archetypes**: Expand Layer 3b moment library
 - **Multi-band processing**: Frequency-specific effects
 - **Granular synthesis**: Micro-sound textures
 - **Spectral processing**: FFT-based effects
@@ -934,6 +1180,7 @@ synth_composer.py (1,627 lines)
 ├── NarrativeProcess classes (160 lines)
 ├── SubtractiveSynth class (343 lines)
 ├── Hard-coded parameters (scattered)
+├── Pattern generation (inline)
 └── ChessSynthComposer class (1,100+ lines)
 ```
 
@@ -943,20 +1190,36 @@ synth_composer.py (1,627 lines)
 - Tight coupling between components
 - Hard to test individual parts
 - Code duplication
+- No gesture system
+- Limited pattern variety
 
 ### After (Modular)
 ```
-synth_composer.py (687 lines)
-    └── ChessSynthComposer only
+synth_composer.py
+    └── ChessSynthComposer (main orchestrator)
 
-synth_config.py (664 lines)
-    └── All parameters organized
+synth_config.py
+    └── Centralized configuration
 
-synth_engine.py (354 lines)
-    └── SubtractiveSynth only
+synth_engine.py
+    └── SubtractiveSynth (pure DSP)
 
-synth_narrative.py (199 lines)
-    └── NarrativeProcess classes
+synth_narrative.py
+    └── NarrativeProcess classes (legacy)
+
+synth_composer/
+    ├── coordinator.py (PatternCoordinator)
+    ├── core/ (timing, events, audio, synthesis)
+    └── patterns/ (markov, state machine, theory, outro)
+
+layer3b/
+    ├── coordinator.py (GestureCoordinator)
+    ├── archetype_configs.py (all archetypes)
+    ├── base.py (GestureGenerator)
+    ├── curve_generators.py (pitch/harmony/filter/envelope)
+    ├── particle_system.py (stochastic gestures)
+    ├── synthesizer.py (GestureSynthesizer)
+    └── utils.py
 ```
 
 **Benefits:**
@@ -964,17 +1227,22 @@ synth_narrative.py (199 lines)
 - Easy to find and modify parameters
 - Loosely coupled, testable modules
 - No duplication, DRY principles
-- Future-proof architecture
+- Extensible architecture
+- Comprehensive gesture system
+- Multiple pattern generators
+- Spectromorphological design principles
 
 ---
 
 ## Conclusion
 
-The refactored architecture transforms a monolithic codebase into a clean, maintainable system where:
+The modular architecture creates a maintainable system where:
 
-1. **Configuration is centralized** - One place for all parameters
+1. **Configuration is centralized** - Parameters in synth_config.py and archetype_configs.py
 2. **Synthesis is isolated** - Pure DSP with no musical decisions
-3. **Processes are modular** - Easy to add new evolution types
-4. **Composition is clear** - Orchestrates layers without buried logic
+3. **Patterns are modular** - Easy to add new Layer 2 generators
+4. **Gestures are expressive** - Comprehensive Layer 3b archetype system
+5. **Composition is clear** - Orchestrates four layers without buried logic
+6. **Testing is built-in** - Tools for development and validation
 
-This makes the system **easy to read, easy to modify, and easy to extend** - fulfilling the original goals of the refactoring.
+This makes the system **easy to read, easy to modify, easy to extend, and easy to test** - providing a solid foundation for algorithmic music composition.
