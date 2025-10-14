@@ -29,6 +29,9 @@ class SubtractiveSynth:
         self.last_signal_tail = None  # For crossfading
         self.crossfade_samples = 128  # ~1.45ms at 88.2kHz (was 64 @ 44.1kHz)
 
+        # Triangle wave integrator state
+        self.triangle_integrator = 0.0
+
         # Dedicated RNG for reproducible randomness
         self.rng = rng if rng is not None else np.random.default_rng()
 
@@ -101,11 +104,23 @@ class SubtractiveSynth:
                 signal[i] -= self.poly_blep(dt, phase_shifted)
 
             elif waveform == 'triangle':
-                # Triangle wave - no PolyBLEP needed (continuous derivatives)
+                # Band-limited triangle wave to prevent aliasing
+                # Triangle wave via band-limited square integration
+                # Generate band-limited square wave
                 if phase < 0.5:
-                    signal[i] = 4.0 * phase - 1.0      # Rising: -1 to 1
+                    square = 1.0
                 else:
-                    signal[i] = 3.0 - 4.0 * phase      # Falling: 1 to -1
+                    square = -1.0
+
+                # Apply PolyBLEP at rising edge (phase = 0)
+                square += self.poly_blep(dt, phase)
+                # Apply PolyBLEP at falling edge (phase = 0.5)
+                square -= self.poly_blep(dt, phase - 0.5 if phase >= 0.5 else phase + 0.5)
+
+                # Integrate square to get triangle (leaky integrator to prevent DC drift)
+                # Scale by frequency to normalize amplitude
+                self.triangle_integrator = 0.999 * self.triangle_integrator + square * dt * 4.0
+                signal[i] = self.triangle_integrator
 
             else:  # sine
                 # Sine wave - naturally band-limited
@@ -303,20 +318,21 @@ class SubtractiveSynth:
 
         current = 0
 
-        # Attack - exponential rise (slow start, fast finish)
+        # Attack - smooth rise with C1 continuity (zero slope at start and end)
         if attack_samples > 0:
             t = np.linspace(0, 1, attack_samples)
-            # Use exponential curve: starts slow, accelerates
-            envelope[current:current+attack_samples] = np.power(t, 1.0 - curve)
+            # Smoothstep: zero slope at t=0 and t=1 for click-free transitions
+            smooth_t = 3 * t**2 - 2 * t**3
+            envelope[current:current+attack_samples] = smooth_t
             current += attack_samples
 
-        # Decay - exponential fall (fast start, slow finish)
+        # Decay - smooth fall with C1 continuity (zero slope at end)
         if decay_samples > 0 and current < num_samples:
             end = min(current + decay_samples, num_samples)
             t = np.linspace(0, 1, end - current)
-            # Exponential decay: starts fast, slows down
-            decay_curve = 1.0 - np.power(t, curve)
-            envelope[current:end] = 1.0 - decay_curve * (1.0 - sustain)
+            # Smoothstep: zero slope at t=0 and t=1 for click-free transitions
+            smooth_t = 3 * t**2 - 2 * t**3
+            envelope[current:end] = 1.0 - (1.0 - sustain) * smooth_t
             current = end
 
         # Sustain - constant level
@@ -325,12 +341,12 @@ class SubtractiveSynth:
             envelope[current:end] = sustain
             current = end
 
-        # Release - exponential fall to zero
+        # Release - smooth fall to zero with C1 continuity (zero slope at start)
         if current < num_samples:
             t = np.linspace(0, 1, num_samples - current)
-            # Exponential release: fast start, slow finish
-            release_curve = np.power(t, curve)
-            envelope[current:] = sustain * (1.0 - release_curve)
+            # Smoothstep: zero slope at t=0 and t=1 for click-free transitions
+            smooth_t = 3 * t**2 - 2 * t**3
+            envelope[current:] = sustain * (1.0 - smooth_t)
 
         return envelope
 
@@ -427,6 +443,13 @@ class SubtractiveSynth:
         Create a complete synthesized note with filter and envelopes
         This is subtractive synthesis!
         """
+        # Reset filter state to prevent clicks from accumulated filter energy
+        # between note retriggering. Filter state must start clean for each note.
+        self.filter_z1 = 0.0
+        self.filter_z2 = 0.0
+        self.filter_z3 = 0.0
+        self.filter_z4 = 0.0
+
         # Generate oscillator
         signal = self.oscillator(freq, duration, waveform)
 

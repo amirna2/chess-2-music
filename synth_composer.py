@@ -75,7 +75,8 @@ def pan_mono_to_stereo(mono_signal, pan_position):
 
 def stereo_width(mono_signal, width, center_pan=0.0):
     """
-    Create stereo from mono using Haas effect + panning.
+    Decorrelated Haas stereo widening (safe delay-based).
+    Lowpass filter on delayed channel prevents transient clicks.
 
     Args:
         mono_signal: 1D numpy array (mono)
@@ -85,17 +86,31 @@ def stereo_width(mono_signal, width, center_pan=0.0):
     Returns:
         (N, 2) numpy array with [left, right] channels
     """
-    stereo = np.zeros((len(mono_signal), 2))
+    N = len(mono_signal)
+    stereo = np.zeros((N, 2))
 
-    # Haas effect: delay one channel slightly for width
-    delay_samples = int(width * 40)  # Up to 40 samples delay (~0.45ms at 88.2kHz)
+    # Decorrelated Haas widening (safe delay-based)
+    # Uses mild lowpass on delayed channel to prevent transient clicks
+    fs = 88200  # Match synth engine sample rate
+    max_delay = int(fs * 0.001)  # 1 ms max delay
 
-    if delay_samples == 0:
+    # Delay in samples scaled by width
+    delay = int(width * max_delay)
+
+    if delay > 0:
+        # Left = dry, Right = delayed
+        stereo[:, 0] = mono_signal
+        delayed = np.concatenate([np.zeros(delay), mono_signal[:-delay]])
+
+        # Mild lowpass on delayed channel to soften combing and prevent transient clicks
+        # Hanning window smooths sharp transients that would cause clicks
+        hanning_9 = np.hanning(9)
+        hanning_9 /= np.sum(hanning_9)
+        stereo[:, 1] = np.convolve(delayed, hanning_9, mode='same')
+    else:
+        # Pure mono when width is very small
         stereo[:, 0] = mono_signal
         stereo[:, 1] = mono_signal
-    else:
-        stereo[:, 0] = mono_signal
-        stereo[delay_samples:, 1] = mono_signal[:-delay_samples]
 
     # Apply panning on top for L/R positioning
     # Constant power pan law
