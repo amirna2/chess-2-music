@@ -146,15 +146,25 @@ def _load_layer_enable() -> Dict[str, bool]:
 def _load_mixing() -> Dict[str, float]:
     """
     Load mixing levels from YAML.
-    Combines all mixing parameters and adds _level suffix for layer levels.
+    Uses layer_budget percentages to calculate proper multipliers.
     """
     cfg = get_config()
     mixing = {}
 
-    # Layer levels - add _level suffix for backward compatibility
-    layers = cfg.get('mixing.layers', {})
-    for key, value in layers.items():
-        mixing[f'{key}_level'] = value
+    # Layer budget (percentage-based) - convert to multipliers
+    budget = cfg.get('mixing.layer_budget', {})
+    if budget:
+        # Use percentages as relative weights (divide by 100 to get 0-1 range)
+        # The final normalization stage will ensure proper output levels
+        mixing['drone_level'] = budget.get('drone', 10) / 100.0
+        mixing['patterns_level'] = budget.get('patterns', 50) / 100.0
+        mixing['sequencer_level'] = budget.get('heartbeat', 25) / 100.0
+        mixing['gestures_level'] = budget.get('gestures', 15) / 100.0
+    else:
+        # Fallback to old system if budget not defined
+        layers = cfg.get('mixing.layers', {})
+        for key, value in layers.items():
+            mixing[f'{key}_level'] = value
 
     # Dynamics
     mixing.update(cfg.get('mixing.dynamics', {}))
@@ -186,7 +196,14 @@ def _load_melodic_patterns() -> Dict[str, Dict]:
 def _load_sequencer_synth() -> Dict:
     """Load sequencer synthesis parameters from YAML"""
     cfg = get_config()
-    return cfg.get('composition.sequencer.synth', {})
+    synth_params = cfg.get('composition.sequencer.synth', {})
+
+    # Load heartbeat parameters and prefix with 'heartbeat_'
+    heartbeat_params = cfg.get('composition.sequencer.heartbeat', {})
+    for key, value in heartbeat_params.items():
+        synth_params[f'heartbeat_{key}'] = value
+
+    return synth_params
 
 
 def _load_moment_event_params() -> Dict:

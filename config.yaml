@@ -736,20 +736,21 @@ entropy:
 
 mixing:
 
-  # --- LAYER LEVELS ---
-  layers:
-    drone: 0.15  # Layer 1: Base drone
-    patterns: 0.6  # Layer 2: Melodic patterns
-    sequencer: 0.4  # Layer 3a: Heartbeat/bass
-    gestures: 0.5  # Layer 3b: Key moments
-    section: 0.7  # Section envelope
+  # --- LAYER BUDGET (percentage of overall mix) ---
+  # Specify what percentage of the final mix each layer should be
+  # These are RELATIVE weights - will be normalized automatically
+  layer_budget:
+    drone: 10         # % - Background drone
+    patterns: 50      # % - Foreground melodic patterns
+    heartbeat: 25     # % - Mid-ground pulse
+    gestures: 15      # % - Background accents
 
   # --- LAYER ENABLE/DISABLE ---
   layer_enable:
-    drone: false
+    drone: true
     patterns: true
-    sequencer: false
-    gestures: false
+    sequencer: true
+    gestures: true
 
   # --- LAYER INTERACTION ---
   layer_interaction:

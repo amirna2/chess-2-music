@@ -1765,9 +1765,19 @@ class ChessSynthComposer:
             print(f"  ⚠️  WARNING: Pattern buffer clipping! Peak: {pattern_peak:.3f} ({pattern_peak_db:.1f} dBFS)")
             print(f"      This causes distortion before normalization. Reduce pattern_note_level.")
 
-        # Mix layers 1 and 2
-        drone_contribution = base_drone * self.config.LAYER_MIXING['drone_in_supersaw']
-        pattern_contribution = section_pattern * self.config.LAYER_MIXING['pattern_in_supersaw']
+        # Mix layers 1 and 2 with budget-based mixing
+        # Step 1: Normalize each layer to same PEAK (peaks control perceived loudness)
+        drone_peak = np.max(np.abs(base_drone)) if len(base_drone) > 0 else 0.0
+        pattern_peak = np.max(np.abs(section_pattern)) if len(section_pattern) > 0 else 0.0
+
+        target_peak = 1.0  # Target peak for normalization
+
+        drone_normalized = base_drone / drone_peak * target_peak if drone_peak > 0 else base_drone
+        pattern_normalized = section_pattern / pattern_peak * target_peak if pattern_peak > 0 else section_pattern
+
+        # Step 2: Apply budget percentages
+        drone_contribution = drone_normalized * self.config.MIXING['drone_level']
+        pattern_contribution = pattern_normalized * self.config.MIXING['patterns_level']
         mixed_signal = drone_contribution + pattern_contribution
 
         # Apply section envelope
@@ -1776,7 +1786,7 @@ class ChessSynthComposer:
         section_envelope[:fade_samples] = np.linspace(0, 1, fade_samples)
         section_envelope[-fade_samples:] = np.linspace(1, 0, fade_samples)
 
-        samples = mixed_signal * section_envelope * self.config.MIXING['section_level'] * volume_multiplier
+        samples = mixed_signal * section_envelope * volume_multiplier
 
         # ENTROPY CURVE CALCULATION (Laurie Spiegel-inspired)
         # Calculate position complexity to drive Layer 3 predictability
@@ -2385,8 +2395,17 @@ class ChessSynthComposer:
         # Return layers separately for stereo processing
         # Keep Layer 3 sub-layers SEPARATE for independent stereo treatment
         if self.config.LAYER_ENABLE['sequencer']:
-            layer_3a_heartbeat = heartbeat_layer * 0.4  # Centered (will be)
-            layer_3b_moments = filtered_sequence * self.config.MIXING['filtered_sequence_level']  # Panning (will be)
+            # Normalize layers 3a and 3b to same PEAK before applying budget
+            heartbeat_peak = np.max(np.abs(heartbeat_layer)) if len(heartbeat_layer) > 0 else 0.0
+            gestures_peak = np.max(np.abs(sequencer_layer)) if len(sequencer_layer) > 0 else 0.0
+
+            target_peak = 1.0  # Same target as layers 1+2
+
+            heartbeat_normalized = heartbeat_layer / heartbeat_peak * target_peak if heartbeat_peak > 0 else heartbeat_layer
+            gestures_normalized = sequencer_layer / gestures_peak * target_peak if gestures_peak > 0 else sequencer_layer
+
+            layer_3a_heartbeat = heartbeat_normalized * self.config.MIXING['sequencer_level']  # Centered (will be)
+            layer_3b_moments = gestures_normalized * self.config.MIXING['gestures_level']  # Panning (will be)
         else:
             layer_3a_heartbeat = np.zeros_like(samples)
             layer_3b_moments = np.zeros_like(samples)
@@ -2414,7 +2433,10 @@ class ChessSynthComposer:
             'layers_1_2': np.array(layers_1_2),
             'layer_3a_heartbeat': np.array(layer_3a_heartbeat),
             'layer_3b_moments': np.array(layer_3b_moments),
-            'entropy_curve': entropy_curve if entropy_curve is not None else np.zeros(1)
+            'entropy_curve': entropy_curve if entropy_curve is not None else np.zeros(1),
+            # For analysis: return individual components
+            'base_drone': np.array(base_drone),
+            'section_pattern': np.array(section_pattern)
         }
 
     def compose(self):
