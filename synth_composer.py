@@ -1723,11 +1723,46 @@ class ChessSynthComposer:
                 total_samples=total_samples
             )
 
+        # ENTROPY CURVE CALCULATION (Laurie Spiegel-inspired)
+        # Calculate position complexity to drive Layer 2 and Layer 3
+        start_ply = section.get('start_ply', 1)
+        end_ply = section.get('end_ply', start_ply + 20)
+        entropy_curve = None
+        if self.entropy_calculator is not None:
+            try:
+                # Calculate raw entropy
+                raw_entropy = self.entropy_calculator.calculate_combined_entropy(
+                    start_ply,
+                    end_ply,
+                    weights=self.config.ENTROPY_CONFIG['calculation']['weights']
+                )
+
+                # Apply smoothing to avoid sudden jumps
+                if len(raw_entropy) > 3:
+                    sigma = self.config.ENTROPY_CONFIG['calculation']['smoothing_sigma']
+                    entropy_curve = gaussian_filter1d(raw_entropy, sigma=sigma)
+                else:
+                    entropy_curve = raw_entropy
+
+            except Exception as e:
+                print(f"      ERROR calculating entropy: {e}")
+                import traceback
+                traceback.print_exc()
+                entropy_curve = None
+        else:
+            print(f"      entropy calculator is None (no moves data)")
+
         # LAYER 2: Generate RHYTHMIC PATTERNS (using refactored PatternCoordinator)
         section_pattern = np.zeros(total_samples)
 
         if self.config.LAYER_ENABLE['patterns']:
             print(f"  → Layer 2: {narrative} pattern")
+            # Debug: Check entropy curve before passing
+            if entropy_curve is not None and len(entropy_curve) > 0:
+                print(f"      passing entropy curve: {len(entropy_curve)} values to Layer 2")
+            else:
+                print(f"      WARNING: No entropy curve available for Layer 2")
+
             # Use refactored pattern coordinator
             params = {
                 'sample_rate': self.sample_rate,
@@ -1740,6 +1775,9 @@ class ChessSynthComposer:
                 'config': self.config,
                 'mix_level': 1.0,
                 'overall_narrative': self.overall_narrative,
+                'entropy_curve': entropy_curve,  # Add entropy curve for game-specific behavior
+                'section_start_ply': start_ply,
+                'section_end_ply': end_ply,
             }
 
             section_pattern = self.pattern_coordinator.generate_pattern(
@@ -1794,36 +1832,8 @@ class ChessSynthComposer:
 
         samples = mixed_signal * section_envelope * volume_multiplier
 
-        # ENTROPY CURVE CALCULATION (Laurie Spiegel-inspired)
-        # Calculate position complexity to drive Layer 3 predictability
-        start_ply = section.get('start_ply', 1)
-        end_ply = section.get('end_ply', start_ply + 20)
-        entropy_curve = None
-        if self.entropy_calculator is not None:
-
-            try:
-                # Calculate raw entropy
-                raw_entropy = self.entropy_calculator.calculate_combined_entropy(
-                    start_ply,
-                    end_ply,
-                    weights=self.config.ENTROPY_CONFIG['weights']
-                )
-
-                # Apply smoothing to avoid sudden jumps
-                if len(raw_entropy) > 3:
-                    sigma = self.config.ENTROPY_CONFIG['smoothing_sigma']
-                    entropy_curve = gaussian_filter1d(raw_entropy, sigma=sigma)
-                else:
-                    entropy_curve = raw_entropy
-
-                avg_entropy = np.mean(entropy_curve)
-                # Don't print here - will be printed under Layer 3 header
-
-            except Exception as e:
-                # Don't print here - will be printed under Layer 3 header
-                entropy_curve = None
-
         # LAYER 3: TWO SUB-LAYERS
+        # entropy_curve was already calculated before Layer 2 (reused here)
         # 3a: Heartbeat sub-drone (sine, entropy-driven, continuous)
         # 3b: Moment sequencer (supersaw, event-driven)
 

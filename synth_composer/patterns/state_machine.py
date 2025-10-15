@@ -251,7 +251,13 @@ class DesperateDefensePattern(PatternGenerator):
                        duration: float,
                        scale: List[float],
                        params: Dict[str, Any]) -> List[NoteEvent]:
-        """Generate note events using defensive hesitant state machine."""
+        """
+        Generate note events using defensive hesitant state machine.
+
+        Now entropy-driven (Laurie Spiegel-inspired):
+        - Low entropy: Simple, resigned, slow
+        - High entropy: Complex, desperate complications, faster
+        """
         events = []
 
         timing = TimingEngine(
@@ -262,22 +268,40 @@ class DesperateDefensePattern(PatternGenerator):
         total_samples = int(duration * params['sample_rate'])
         base_note_dur = params['note_duration'] * 1.4  # Slower, more deliberate
 
+        # Extract entropy curve (game-specific complexity)
+        entropy_curve = params.get('entropy_curve', None)
+        start_ply = params.get('section_start_ply', 1)
+        end_ply = params.get('section_end_ply', start_ply + 20)
+
         current_state = self.STATE_RETREAT
         tension_accumulator = 0
 
         while not timing.is_finished(total_samples):
             progress = timing.current_sample / total_samples
 
-            # State transitions based on accumulated tension
-            tension_accumulator += self.rng.uniform(0, params['tension'] * 2)
+            # Get current entropy value for this position
+            if entropy_curve is not None and len(entropy_curve) > 0:
+                # Map progress to ply index
+                ply_index = int(progress * len(entropy_curve))
+                ply_index = min(ply_index, len(entropy_curve) - 1)
+                current_entropy = entropy_curve[ply_index]
+            else:
+                current_entropy = 0.5  # Default medium entropy
+
+            # ENTROPY-DRIVEN STATE TRANSITIONS
+            # Higher entropy = more tactical complexity = faster state changes
+            entropy_rate = 1.0 + current_entropy * 2.0  # 1.0 to 3.0 multiplier
+            tension_accumulator += self.rng.uniform(0, params['tension'] * 2 * entropy_rate)
 
             if current_state == self.STATE_RETREAT:
                 if tension_accumulator > 3:
                     current_state = self.STATE_BLOCKADE
                     tension_accumulator = 0
             elif current_state == self.STATE_BLOCKADE:
-                if tension_accumulator > 5 and self.rng.random() < 0.2:
-                    current_state = self.STATE_COUNTER  # Rare counter
+                # Higher entropy = more likely to try counter-attacks (desperate complications)
+                counter_prob = 0.2 + current_entropy * 0.3  # 0.2 to 0.5
+                if tension_accumulator > 5 and self.rng.random() < counter_prob:
+                    current_state = self.STATE_COUNTER
                     tension_accumulator = 0
                 elif tension_accumulator > 4:
                     current_state = self.STATE_RETREAT
@@ -288,7 +312,7 @@ class DesperateDefensePattern(PatternGenerator):
                     current_state = self.STATE_RETREAT
                     tension_accumulator = 0
 
-            # Note selection by defensive state
+            # ENTROPY-DRIVEN NOTE SELECTION
             if current_state == self.STATE_RETREAT:
                 # Descending patterns, lower register
                 note_idx = self.rng.choice([0, 1, 2, 3], p=[0.4, 0.3, 0.2, 0.1])
@@ -299,21 +323,36 @@ class DesperateDefensePattern(PatternGenerator):
                 octave_mult = 1.0
             elif current_state == self.STATE_COUNTER:
                 # Brief ascending attempt
-                note_idx = self.rng.choice([4, 5, 6, 7], p=[0.25, 0.25, 0.25, 0.25])
+                # Higher entropy = more chromatic (desperate, reaching for anything)
+                if current_entropy > 0.6:
+                    note_idx = self.rng.choice([3, 4, 5, 6, 7])  # Wider range
+                else:
+                    note_idx = self.rng.choice([4, 5, 6, 7], p=[0.25, 0.25, 0.25, 0.25])
                 octave_mult = 1.0
 
             note_freq = scale[note_idx] * octave_mult
 
-            # Hesitant timing - random pauses before notes
-            if self.rng.random() < 0.4:  # 40% chance of hesitation
+            # ENTROPY-DRIVEN HESITATION
+            # Low entropy: predictable pauses (resignation)
+            # High entropy: chaotic timing (frantic, tactical complexity)
+            hesitation_prob = 0.4 - current_entropy * 0.2  # 0.4 to 0.2 (less hesitation in tactics)
+            if self.rng.random() < hesitation_prob:
                 hesitation_samples = int(base_note_dur * 0.3 * params['sample_rate'] * self.rng.random())
                 timing.advance(hesitation_samples)
 
             if timing.is_finished(total_samples):
                 break
 
-            note_dur = base_note_dur * self.rng.uniform(0.7, 1.1)
-            velocity = 0.5 - progress * 0.15  # Fade as defense crumbles
+            # ENTROPY-DRIVEN NOTE DURATION
+            # High entropy = faster notes (tactical sequences, more moves)
+            duration_mult = 1.0 - current_entropy * 0.4  # 1.0 to 0.6
+            note_dur = base_note_dur * duration_mult * self.rng.uniform(0.7, 1.1)
+
+            # ENTROPY-DRIVEN VELOCITY (replaces linear fade)
+            # Low entropy: quiet, resigned
+            # High entropy: louder, fighting back
+            base_velocity = 0.45 + current_entropy * 0.2  # 0.45 to 0.65
+            velocity = base_velocity - progress * 0.1  # Still slight fade overall
 
             note_samples = int(note_dur * params['sample_rate'])
             note_samples = min(note_samples, timing.remaining_samples(total_samples))
@@ -321,8 +360,12 @@ class DesperateDefensePattern(PatternGenerator):
             if note_samples > 0:
                 note_dur_quantized = note_samples / params['sample_rate']
 
-                # Darker waveform, lower filter for defensive sound
-                waveform = 'saw' if current_state == self.STATE_RETREAT else 'triangle'  # Triangle less nasal than pulse
+                # Waveform selection by state
+                waveform = 'saw' if current_state == self.STATE_RETREAT else 'triangle'
+
+                # ENTROPY-DRIVEN FILTER
+                # High entropy = brighter (more activity, tactical tension)
+                filter_mult = 0.5 + progress * 0.3 + current_entropy * 0.4
 
                 events.append(NoteEvent(
                     freq=note_freq,
@@ -330,9 +373,9 @@ class DesperateDefensePattern(PatternGenerator):
                     timestamp=timing.get_timestamp(),
                     velocity=velocity,
                     waveform=waveform,
-                    filter_base=params['filter'] * (0.5 + progress * 0.3),  # Dark, opening slightly
+                    filter_base=params['filter'] * filter_mult,
                     filter_env_amount=params['filter_env'] * 0.5,
-                    resonance=params['resonance'] * (0.8 + params['tension'] * 0.4),
+                    resonance=params['resonance'] * (0.8 + params['tension'] * 0.4 + current_entropy * 0.3),
                     amp_env=get_envelope('sustained', params['config']),
                     filter_env=get_filter_envelope('closing', params['config']),
                     amp_env_name='sustained',
@@ -342,26 +385,39 @@ class DesperateDefensePattern(PatternGenerator):
                         'note_idx': note_idx,
                         'octave_mult': octave_mult,
                         'tension_accumulator': tension_accumulator,
-                        'velocity': velocity
+                        'velocity': velocity,
+                        'entropy': current_entropy,  # Track entropy for debugging
+                        'level': params['config'].LAYER_MIXING['pattern_note_level'] * velocity
                     }
                 ))
 
             # Advance timeline
             timing.advance(note_samples)
 
-            # Variable pauses (uncertainty)
-            pause_dur = base_note_dur * self.rng.uniform(0.15, 0.35)
+            # ENTROPY-DRIVEN PAUSES
+            # High entropy = shorter pauses (rapid tactical exchanges)
+            # Low entropy = longer pauses (slow, thoughtful defense)
+            pause_mult = 1.5 - current_entropy * 0.8  # 1.5 to 0.7
+            pause_dur = base_note_dur * pause_mult * self.rng.uniform(0.15, 0.35)
             timing.add_pause(pause_dur)
 
         # Debug output
         if events:
             # Count states
             state_counts = {}
+            entropy_values = []
             for e in events:
                 state = e.extra_context.get('state', 'unknown')
                 state_counts[state] = state_counts.get(state, 0) + 1
+                if 'entropy' in e.extra_context:
+                    entropy_values.append(e.extra_context['entropy'])
 
-            self.print_debug_summary(events, extra_stats={'states': state_counts})
+            # Build stats dict
+            extra_stats = {'states': state_counts}
+            if entropy_values:
+                extra_stats['entropy'] = f"mean={np.mean(entropy_values):.3f}, range=[{np.min(entropy_values):.3f}, {np.max(entropy_values):.3f}]"
+
+            self.print_debug_summary(events, extra_stats=extra_stats)
 
         return events
 
