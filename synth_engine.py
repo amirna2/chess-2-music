@@ -450,6 +450,9 @@ class SubtractiveSynth:
         self.filter_z3 = 0.0
         self.filter_z4 = 0.0
 
+        # Reset triangle integrator to prevent DC offset accumulation across notes
+        self.triangle_integrator = 0.0
+
         # Generate oscillator
         signal = self.oscillator(freq, duration, waveform)
 
