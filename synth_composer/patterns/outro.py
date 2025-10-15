@@ -38,23 +38,35 @@ class DecisiveOutroPattern(PatternGenerator):
         config = params['config']
         sample_rate = params['sample_rate']
 
+        # Get articulation multipliers from config
+        note_mult, pause_mult = self.get_articulation_multipliers(params)
+
         # Play the phrase
         timing = TimingEngine(sample_rate)
         events = []
-        note_dur = duration / (len(phrase_notes) + 1)  # Leave space at end
+        base_note_dur = duration / (len(phrase_notes) + 1)  # Leave space at end
 
         for i, note_idx in enumerate(phrase_notes):
             if note_idx >= len(scale):
                 note_idx = 0
+
+            # Apply melodic bias
+            note_idx = self.apply_melodic_bias(note_idx, len(scale), i / len(phrase_notes), params)
+
             note_freq = scale[note_idx]
 
             # Fade out over the phrase
             progress = i / len(phrase_notes)
             velocity = 0.7 * (1.0 - progress * 0.5)  # Gentle fadeout
 
+            note_dur = base_note_dur * note_mult
             note_samples = int(note_dur * sample_rate)
             if note_samples > 0:
                 duration_quantized = note_samples / sample_rate
+
+                # Select envelopes based on articulation
+                amp_env_name = self.select_envelope(params, 'amp')
+                filter_env_name = self.select_envelope(params, 'filter')
 
                 event = NoteEvent(
                     freq=note_freq,
@@ -65,10 +77,10 @@ class DecisiveOutroPattern(PatternGenerator):
                     filter_base=final_filter * (1.0 - progress * 0.3),  # Close filter
                     filter_env_amount=filter_env_amount * 0.5,
                     resonance=final_resonance * 0.7,
-                    amp_env=get_envelope('sustained', config),
-                    filter_env=get_filter_envelope('closing', config),
-                    amp_env_name='sustained',
-                    filter_env_name='closing',
+                    amp_env=get_envelope(amp_env_name, config),
+                    filter_env=get_filter_envelope(filter_env_name, config),
+                    amp_env_name=amp_env_name,
+                    filter_env_name=filter_env_name,
                     extra_context={
                         'mix_level': velocity,
                         'decay_curve': 'exp',  # Signal that we need exponential decay
@@ -107,22 +119,34 @@ class DrawOutroPattern(PatternGenerator):
         config = params['config']
         sample_rate = params['sample_rate']
 
+        # Get articulation multipliers from config
+        note_mult, pause_mult = self.get_articulation_multipliers(params)
+
         timing = TimingEngine(sample_rate)
         events = []
-        note_dur = duration / (len(phrase_notes) + 2)  # Extra space
+        base_note_dur = duration / (len(phrase_notes) + 2)  # Extra space
 
         for i, note_idx in enumerate(phrase_notes):
             if note_idx >= len(scale):
                 note_idx = 0
+
+            # Apply melodic bias
+            note_idx = self.apply_melodic_bias(note_idx, len(scale), i / len(phrase_notes), params)
+
             note_freq = scale[note_idx]
 
             # Gradual fadeout
             progress = i / len(phrase_notes)
             velocity = 0.6 * (1.0 - progress * 0.6)  # Faster fadeout
 
+            note_dur = base_note_dur * note_mult
             note_samples = int(note_dur * sample_rate)
             if note_samples > 0:
                 duration_quantized = note_samples / sample_rate
+
+                # Select envelopes based on articulation
+                amp_env_name = self.select_envelope(params, 'amp')
+                filter_env_name = self.select_envelope(params, 'filter')
 
                 event = NoteEvent(
                     freq=note_freq,
@@ -133,10 +157,10 @@ class DrawOutroPattern(PatternGenerator):
                     filter_base=final_filter * (1.0 - progress * 0.4),
                     filter_env_amount=filter_env_amount * 0.3,
                     resonance=final_resonance * 0.5,
-                    amp_env=get_envelope('pad', config),
-                    filter_env=get_filter_envelope('slow', config),
-                    amp_env_name='pad',
-                    filter_env_name='slow',
+                    amp_env=get_envelope(amp_env_name, config),
+                    filter_env=get_filter_envelope(filter_env_name, config),
+                    amp_env_name=amp_env_name,
+                    filter_env_name=filter_env_name,
                     extra_context={
                         'mix_level': velocity,
                         'decay_curve': 'exp',  # Signal that we need exponential decay

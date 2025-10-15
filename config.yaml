@@ -64,6 +64,33 @@ synthesis:
       standard: {a: 0.001, d: 0.01, s: 0.8, r: 0.05}
       sustained: {a: 0.001, d: 0.1, s: 0.8, r: 0.5}
 
+  # --- ARTICULATION ---
+  # Defines how individual notes are executed (attack, duration, release)
+  articulation:
+    staccato:
+      # Short, detached notes - "bouncing ball"
+      amp_envelopes: [pluck, percussive, short_pluck, quick]  # Fast attack, short release
+      filter_envelopes: [sharp, sweep]  # Bright, articulated
+      note_duration_mult: 0.7  # Shorter notes
+      gap_mult: 1.5  # Longer gaps between notes
+      overlap: 0.0  # No overlap - notes fully separate
+
+    legato:
+      # Smooth, connected notes - "singing"
+      amp_envelopes: [sustained, pad, soft, gentle]  # Slow attack, long sustain
+      filter_envelopes: [gentle, smooth, minimal]  # Smooth, flowing
+      note_duration_mult: 1.2  # Longer notes
+      gap_mult: 0.3  # Minimal gaps
+      overlap: 0.3  # 30% overlap - notes blend together
+
+    mixed:
+      # Varied articulation
+      amp_envelopes: [soft, stab, pluck, gentle, sustained]  # Mix of all types
+      filter_envelopes: [gentle, sweep, smooth]
+      note_duration_mult: 1.0  # Neutral
+      gap_mult: 1.0  # Neutral
+      overlap: 0.1  # Slight overlap (10%)
+
 # === 2. COMPOSITION: Temporal Hierarchy ===
 
 composition:

@@ -26,6 +26,10 @@ class FlawlessConversionPattern(PatternGenerator):
         events = []
 
         base_note_dur = params['note_duration'] * 1.3
+
+        # Get articulation multipliers from config
+        note_mult, pause_mult = self.get_articulation_multipliers(params)
+
         current_state = self.STATE_ADVANCE
         current_note_idx = 0
         advance_progress = 0  # Track how far we've advanced
@@ -67,8 +71,11 @@ class FlawlessConversionPattern(PatternGenerator):
                 # Decisive moves - octave relationships
                 current_note_idx = self.rng.choice([0, 4, 7], p=[0.3, 0.4, 0.3])  # Tonic, fifth, seventh
 
+            # Apply melodic bias
+            current_note_idx = self.apply_melodic_bias(current_note_idx, len(scale), progress, params)
+
             note_freq = scale[current_note_idx]
-            duration_float = base_note_dur * self.rng.uniform(0.96, 1.04)
+            duration_float = base_note_dur * self.rng.uniform(0.96, 1.04) * note_mult
             velocity = 0.55 + progress * 0.15
 
             note_samples = int(duration_float * params['sample_rate'])
@@ -76,6 +83,10 @@ class FlawlessConversionPattern(PatternGenerator):
 
             if note_samples > 0:
                 duration_quantized = note_samples / params['sample_rate']
+
+                # Select envelopes based on articulation
+                amp_env_name = self.select_envelope(params, 'amp')
+                filter_env_name = self.select_envelope(params, 'filter')
 
                 event = NoteEvent(
                     freq=note_freq,
@@ -86,15 +97,15 @@ class FlawlessConversionPattern(PatternGenerator):
                     filter_base=final_filter * (0.7 + progress * 0.6),
                     filter_env_amount=filter_env_amount * 0.7,
                     resonance=final_resonance * 0.6,
-                    amp_env=get_envelope('sustained', config),
-                    filter_env=get_filter_envelope('closing', config),
-                    amp_env_name='sustained',
-                    filter_env_name='closing',
+                    amp_env=get_envelope(amp_env_name, config),
+                    filter_env=get_filter_envelope(filter_env_name, config),
+                    amp_env_name=amp_env_name,
+                    filter_env_name=filter_env_name,
                     extra_context={'mix_level': config.LAYER_MIXING['pattern_note_level'] * velocity * 0.85}
                 )
                 events.append(event)
 
-            pause_samples = int(base_note_dur * 0.18 * params['sample_rate'])
+            pause_samples = int(base_note_dur * 0.18 * pause_mult * params['sample_rate'])
             timing.advance(note_samples + pause_samples)
 
         # Debug output

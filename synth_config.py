@@ -24,7 +24,7 @@ Example: A blunder in a defeat sounds like doom, but in a masterpiece it's a bri
 """
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List, Tuple, Optional, Any
 from config_service import get_config
 
 
@@ -61,6 +61,21 @@ def _load_filter_envelopes() -> Dict[str, Tuple[float, float, float, float]]:
         envelopes[name] = (env.get('a', 0.01), env.get('d', 0.15),
                           env.get('s', 0.3), env.get('r', 0.2))
     return envelopes
+
+
+def _load_articulation_params() -> Dict[str, Dict[str, Any]]:
+    """
+    Load articulation parameters from YAML config.
+
+    Returns nested structure containing:
+    - amp_envelopes: List[str]
+    - filter_envelopes: List[str]
+    - note_duration_mult: float
+    - gap_mult: float
+    - overlap: float
+    """
+    cfg = get_config()
+    return cfg.get('synthesis.articulation', {})
 
 
 def _load_narrative_params() -> Dict[str, Dict]:
@@ -274,6 +289,9 @@ class SynthConfig:
     ENVELOPES: Dict[str, Tuple[float, float, float, float]] = field(default_factory=_load_envelopes)
 
     FILTER_ENVELOPES: Dict[str, Tuple[float, float, float, float]] = field(default_factory=_load_filter_envelopes)
+
+    # === ARTICULATION PARAMETERS ===
+    ARTICULATION_PARAMS: Dict[str, Dict[str, Any]] = field(default_factory=_load_articulation_params)
 
     # === OVERALL NARRATIVE BASE PARAMETERS ===
     # These define the fundamental character of the entire piece

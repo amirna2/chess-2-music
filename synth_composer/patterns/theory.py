@@ -26,6 +26,10 @@ class SharpTheoryPattern(PatternGenerator):
         events = []
 
         base_note_dur = params['note_duration'] * 0.4
+
+        # Get articulation multipliers from config
+        note_mult, pause_mult = self.get_articulation_multipliers(params)
+
         current_state = self.STATE_ATTACK
         current_note_idx = 0
 
@@ -70,8 +74,11 @@ class SharpTheoryPattern(PatternGenerator):
                 else:
                     current_note_idx = 4  # Dominant
 
+            # Apply melodic bias
+            current_note_idx = self.apply_melodic_bias(current_note_idx, len(scale), progress, params)
+
             note_freq = scale[current_note_idx]
-            duration_float = base_note_dur * self.rng.uniform(0.6, 1.0)
+            duration_float = base_note_dur * self.rng.uniform(0.6, 1.0) * note_mult
             velocity = self.rng.uniform(0.75, 1.0)
 
             note_samples = int(duration_float * params['sample_rate'])
@@ -79,6 +86,10 @@ class SharpTheoryPattern(PatternGenerator):
 
             if note_samples > 0:
                 duration_quantized = note_samples / params['sample_rate']
+
+                # Select envelopes based on articulation
+                amp_env_name = self.select_envelope(params, 'amp')
+                filter_env_name = self.select_envelope(params, 'filter')
 
                 event = NoteEvent(
                     freq=note_freq,
@@ -89,15 +100,15 @@ class SharpTheoryPattern(PatternGenerator):
                     filter_base=final_filter * (1.5 + tension * 0.5),
                     filter_env_amount=filter_env_amount,
                     resonance=final_resonance * 0.8,
-                    amp_env=get_envelope('pluck', config),
-                    filter_env=get_filter_envelope('sweep', config),
-                    amp_env_name='pluck',
-                    filter_env_name='sweep',
+                    amp_env=get_envelope(amp_env_name, config),
+                    filter_env=get_filter_envelope(filter_env_name, config),
+                    amp_env_name=amp_env_name,
+                    filter_env_name=filter_env_name,
                     extra_context={'mix_level': config.LAYER_MIXING['pattern_note_level'] * velocity}
                 )
                 events.append(event)
 
-            pause_samples = int(base_note_dur * 0.05 * params['sample_rate'])
+            pause_samples = int(base_note_dur * 0.05 * pause_mult * params['sample_rate'])
             timing.advance(note_samples + pause_samples)
 
         # Debug output
@@ -128,6 +139,9 @@ class PositionalTheoryPattern(PatternGenerator):
 
         base_note_dur = params['note_duration'] * 1.2  # Slower notes for calm, patient play
 
+        # Get articulation multipliers from config
+        note_mult, pause_mult = self.get_articulation_multipliers(params)
+
         final_filter = params['filter']
         filter_env_amount = params['filter_env']
         final_resonance = params['resonance']
@@ -154,8 +168,11 @@ class PositionalTheoryPattern(PatternGenerator):
         current_note_idx = 0  # Start on tonic
 
         while not timing.is_finished(total_samples):
+            # Apply melodic bias
+            current_note_idx = self.apply_melodic_bias(current_note_idx, len(scale), timing.current_sample / total_samples, params)
+
             note_freq = scale[current_note_idx]
-            duration_float = base_note_dur * self.rng.uniform(0.8, 1.0)  # Shorter notes, more space
+            duration_float = base_note_dur * self.rng.uniform(0.8, 1.0) * note_mult  # Shorter notes, more space
             velocity = 0.35 + self.rng.uniform(-0.1, 0.15)  # Much quieter (25-50% vs 60-80%)
 
             note_samples = int(duration_float * params['sample_rate'])
@@ -163,6 +180,10 @@ class PositionalTheoryPattern(PatternGenerator):
 
             if note_samples > 0:
                 duration_quantized = note_samples / params['sample_rate']
+
+                # Select envelopes based on articulation
+                amp_env_name = self.select_envelope(params, 'amp')
+                filter_env_name = self.select_envelope(params, 'filter')
 
                 event = NoteEvent(
                     freq=note_freq,
@@ -173,16 +194,16 @@ class PositionalTheoryPattern(PatternGenerator):
                     filter_base=final_filter * 0.7,  # Darker, less bright
                     filter_env_amount=filter_env_amount * 0.5,  # Less filter movement
                     resonance=final_resonance * 0.5,  # Softer resonance
-                    amp_env=get_envelope('soft', config),
-                    filter_env=get_filter_envelope('gentle', config),
-                    amp_env_name='soft',
-                    filter_env_name='gentle',
+                    amp_env=get_envelope(amp_env_name, config),
+                    filter_env=get_filter_envelope(filter_env_name, config),
+                    amp_env_name=amp_env_name,
+                    filter_env_name=filter_env_name,
                     extra_context={'mix_level': config.LAYER_MIXING['pattern_note_level'] * velocity}
                 )
                 events.append(event)
 
             # Much longer pause for contemplative, strategic feel
-            pause_samples = int(base_note_dur * 0.6 * params['sample_rate'])  # 60% pause vs 15%
+            pause_samples = int(base_note_dur * 0.6 * pause_mult * params['sample_rate'])  # 60% pause vs 15%
             timing.advance(note_samples + pause_samples)
 
             # Markov transition
@@ -216,6 +237,9 @@ class SolidTheoryPattern(PatternGenerator):
 
         base_note_dur = params['note_duration'] * 1.2  # Slower, grounded
 
+        # Get articulation multipliers from config
+        note_mult, pause_mult = self.get_articulation_multipliers(params)
+
         final_filter = params['filter']
         filter_env_amount = params['filter_env']
         final_resonance = params['resonance']
@@ -230,10 +254,14 @@ class SolidTheoryPattern(PatternGenerator):
 
             # Get note from pattern (lower octave for grounded feel)
             scale_idx = pattern_sequence[pattern_idx % len(pattern_sequence)]
+
+            # Apply melodic bias
+            scale_idx = self.apply_melodic_bias(scale_idx, len(scale), progress, params)
+
             note_freq = scale[scale_idx] * 0.75  # Lower by perfect fourth
 
             # Duration: very consistent for stability
-            duration_float = base_note_dur * self.rng.uniform(0.95, 1.05)
+            duration_float = base_note_dur * self.rng.uniform(0.95, 1.05) * note_mult
 
             # Generate note
             note_samples = int(duration_float * params['sample_rate'])
@@ -248,6 +276,10 @@ class SolidTheoryPattern(PatternGenerator):
 
                 duration_quantized = note_samples / params['sample_rate']
 
+                # Select envelopes based on articulation
+                amp_env_name = self.select_envelope(params, 'amp')
+                filter_env_name = self.select_envelope(params, 'filter')
+
                 event = NoteEvent(
                     freq=note_freq,
                     duration=duration_quantized,
@@ -257,16 +289,16 @@ class SolidTheoryPattern(PatternGenerator):
                     filter_base=final_filter * filter_mult,
                     filter_env_amount=filter_env_amount * 0.6,
                     resonance=final_resonance * 0.5,  # Low resonance for solid feel
-                    amp_env=get_envelope('soft', config),
-                    filter_env=get_filter_envelope('gentle', config),
-                    amp_env_name='soft',
-                    filter_env_name='gentle',
+                    amp_env=get_envelope(amp_env_name, config),
+                    filter_env=get_filter_envelope(filter_env_name, config),
+                    amp_env_name=amp_env_name,
+                    filter_env_name=filter_env_name,
                     extra_context={'mix_level': config.LAYER_MIXING['pattern_note_level'] * velocity}
                 )
                 events.append(event)
 
             # Consistent pause
-            pause_samples = int(base_note_dur * 0.2 * params['sample_rate'])
+            pause_samples = int(base_note_dur * 0.2 * pause_mult * params['sample_rate'])
             timing.advance(note_samples + pause_samples)
 
             # Advance pattern

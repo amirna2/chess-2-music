@@ -76,6 +76,136 @@ class PatternGenerator(ABC):
         """
         return params.get('layer2_config', {}).get('melodic_bias', 'neutral')
 
+    def get_articulation_params(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Get full articulation configuration for current layer2 config.
+
+        Returns complete articulation settings including envelope choices,
+        timing multipliers, and overlap amount.
+
+        Args:
+            params: Pattern parameters dict containing:
+                - layer2_config: Dict with 'articulation' key
+                - config: SynthConfig object with ARTICULATION_PARAMS
+
+        Returns:
+            Dict containing:
+                - amp_envelopes: List[str] - envelope names to choose from
+                - filter_envelopes: List[str] - filter envelope names
+                - note_duration_mult: float - duration multiplier
+                - gap_mult: float - gap between notes multiplier
+                - overlap: float - note overlap amount (0.0-1.0)
+        """
+        articulation = self.get_articulation(params)
+        return params['config'].ARTICULATION_PARAMS[articulation]
+
+    def get_articulation_multipliers(
+            self,
+            params: Dict[str, Any]) -> tuple[float, float]:
+        """
+        Get timing multipliers for current articulation.
+
+        Convenience method that extracts just the timing multipliers
+        from full articulation configuration.
+
+        Args:
+            params: Pattern parameters dict
+
+        Returns:
+            Tuple of (note_duration_mult, gap_mult)
+            - note_duration_mult: Multiplier for note durations
+            - gap_mult: Multiplier for gaps between notes
+        """
+        art_params = self.get_articulation_params(params)
+        return (
+            art_params['note_duration_mult'],
+            art_params['gap_mult']
+        )
+
+    def select_envelope(
+            self,
+            params: Dict[str, Any],
+            envelope_type: str = 'amp') -> str:
+        """
+        Select appropriate envelope based on articulation.
+
+        Randomly selects from the envelope pool defined by the
+        current articulation style.
+
+        Args:
+            params: Pattern parameters dict
+            envelope_type: 'amp' or 'filter'
+
+        Returns:
+            Envelope name (str)
+        """
+        art_params = self.get_articulation_params(params)
+
+        if envelope_type == 'amp':
+            choices = art_params['amp_envelopes']
+        else:  # filter
+            choices = art_params['filter_envelopes']
+
+        return self.rng.choice(choices)
+
+    def apply_melodic_bias(
+            self,
+            current_idx: int,
+            scale_len: int,
+            progress: float,
+            params: Dict[str, Any]) -> int:
+        """
+        Apply melodic bias to note selection.
+
+        Biases note selection toward ascending, descending, or arch
+        contours based on layer2_config melodic_bias setting.
+
+        Research-based: Arch contour is most common in melodies,
+        followed by descending, ascending, and concave shapes.
+
+        Args:
+            current_idx: Current scale degree index (0-7)
+            scale_len: Length of scale (usually 8)
+            progress: Progress through pattern (0.0-1.0)
+            params: Pattern parameters dict
+
+        Returns:
+            Adjusted scale degree index (0 to scale_len-1)
+
+        Note:
+            This is a probabilistic nudge (30% probability),
+            not a hard constraint. Pattern's own logic still dominates.
+        """
+        bias = self.get_melodic_bias(params)
+
+        # Only apply bias 30% of the time (Spiegel-style: gentle influence)
+        if self.rng.random() > 0.3:
+            return current_idx
+
+        if bias == 'ascending':
+            # Bias upward - 60% chance to increase index
+            if current_idx < scale_len - 1 and self.rng.random() < 0.6:
+                return min(current_idx + 1, scale_len - 1)
+
+        elif bias == 'descending':
+            # Bias downward - 60% chance to decrease index
+            if current_idx > 0 and self.rng.random() < 0.6:
+                return max(current_idx - 1, 0)
+
+        elif bias == 'arch':
+            # Rise in first half, fall in second half
+            if progress < 0.5:
+                # First half: bias upward
+                if current_idx < scale_len - 1 and self.rng.random() < 0.6:
+                    return min(current_idx + 1, scale_len - 1)
+            else:
+                # Second half: bias downward
+                if current_idx > 0 and self.rng.random() < 0.6:
+                    return max(current_idx - 1, 0)
+
+        # 'neutral' or no bias applied
+        return current_idx
+
     @abstractmethod
     def generate_events(self,
                        duration: float,

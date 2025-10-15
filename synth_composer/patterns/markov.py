@@ -62,10 +62,16 @@ class MarkovChainPattern(PatternGenerator):
         current_note_idx = 0  # Start on tonic
         base_note_dur = params['note_duration'] * 1.5
 
+        # Get articulation multipliers from config
+        note_mult, pause_mult = self.get_articulation_multipliers(params)
+
         while not timing.is_finished(total_samples):
             # CRITICAL: progress calculated at loop start (match original line 279)
             # Used for pause calculation later in this iteration
             progress = timing.current_sample / total_samples
+
+            # Apply melodic bias
+            current_note_idx = self.apply_melodic_bias(current_note_idx, len(scale), progress, params)
 
             note_freq = scale[current_note_idx] if current_note_idx < len(scale) else scale[0]
 
@@ -73,7 +79,8 @@ class MarkovChainPattern(PatternGenerator):
             note_dur = self._calculate_note_duration(
                 current_note_idx,
                 base_note_dur,
-                params['tension']
+                params['tension'],
+                note_mult
             )
 
             # Quantize to samples (CRITICAL: match original behavior exactly)
@@ -87,6 +94,10 @@ class MarkovChainPattern(PatternGenerator):
                 filter_mult = 0.7 + (current_note_idx / len(scale)) * 0.8
                 velocity = self.rng.uniform(0.6, 1.0)
 
+                # Select envelopes based on articulation
+                amp_env_name = self.select_envelope(params, 'amp')
+                filter_env_name = self.select_envelope(params, 'filter')
+
                 events.append(NoteEvent(
                     freq=note_freq,
                     duration=note_dur_quantized,  # Use quantized duration
@@ -96,10 +107,10 @@ class MarkovChainPattern(PatternGenerator):
                     filter_base=params['filter'] * filter_mult,
                     filter_env_amount=params['filter_env'] * self.rng.uniform(0.4, 0.8),
                     resonance=params['resonance'] * self.rng.uniform(0.7, 0.9),
-                    amp_env=get_envelope('soft', params['config']),
-                    filter_env=get_filter_envelope('gentle', params['config']),
-                    amp_env_name='soft',
-                    filter_env_name='gentle',
+                    amp_env=get_envelope(amp_env_name, params['config']),
+                    filter_env=get_filter_envelope(filter_env_name, params['config']),
+                    amp_env_name=amp_env_name,
+                    filter_env_name=filter_env_name,
                     extra_context={
                         'state': 'markov_walk',
                         'scale_degree': current_note_idx,
@@ -117,7 +128,8 @@ class MarkovChainPattern(PatternGenerator):
             pause_dur = self._calculate_pause_duration(
                 base_note_dur,
                 progress,
-                params['tension']
+                params['tension'],
+                pause_mult
             )
             timing.add_pause(pause_dur)
 
@@ -146,16 +158,16 @@ class MarkovChainPattern(PatternGenerator):
         matrix = np.divide(matrix, row_sums, where=row_sums != 0)
         return matrix
 
-    def _calculate_note_duration(self, note_idx: int, base_duration: float, tension: float) -> float:
+    def _calculate_note_duration(self, note_idx: int, base_duration: float, tension: float, note_mult: float) -> float:
         """Calculate note duration based on scale position."""
         if note_idx == 0:  # Tonic = thinking
-            return base_duration * self.rng.uniform(1.2, 2.5 + tension)
+            return base_duration * self.rng.uniform(1.2, 2.5 + tension) * note_mult
         else:
-            return base_duration * self.rng.uniform(0.6, 1.2)
+            return base_duration * self.rng.uniform(0.6, 1.2) * note_mult
 
-    def _calculate_pause_duration(self, base_duration: float, progress: float, tension: float) -> float:
+    def _calculate_pause_duration(self, base_duration: float, progress: float, tension: float, pause_mult: float) -> float:
         """Calculate pause duration between notes."""
-        return base_duration * self.rng.uniform(0.2, 0.8 + progress * tension)
+        return base_duration * self.rng.uniform(0.2, 0.8 + progress * tension) * pause_mult
 
     def _next_note(self, current_idx: int) -> int:
         """Choose next note using Markov transition probabilities."""

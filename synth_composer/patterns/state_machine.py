@@ -64,6 +64,9 @@ class KingHuntPattern(PatternGenerator):
         total_samples = int(duration * params['sample_rate'])
         base_note_dur = params['note_duration'] * 0.5  # Fast, aggressive
 
+        # Get articulation multipliers from config
+        note_mult, pause_mult = self.get_articulation_multipliers(params)
+
         # State machine initialization
         current_state = self.STATE_ATTACK
         current_note_idx = 0  # Position in scale [0-7]
@@ -129,17 +132,26 @@ class KingHuntPattern(PatternGenerator):
                 else:
                     current_note_idx = 4  # Dominant
 
+            # Apply melodic bias from layer2_config (research-based contour shaping)
+            # This gently nudges note selection toward ascending/descending/arch patterns
+            current_note_idx = self.apply_melodic_bias(
+                current_note_idx,
+                len(scale),
+                progress,
+                params
+            )
+
             # Get frequency
             note_freq = scale[current_note_idx] * (2 ** current_octave)
 
             # Duration varies by state and progress
             if current_state == self.STATE_ATTACK:
                 # Faster as hunt intensifies
-                note_dur = base_note_dur * self.rng.uniform(0.4, 0.8) * (1.0 - progress * 0.3)
+                note_dur = base_note_dur * self.rng.uniform(0.4, 0.8) * (1.0 - progress * 0.3) * note_mult
             elif current_state == self.STATE_RETREAT:
-                note_dur = base_note_dur * self.rng.uniform(0.5, 1.0)
+                note_dur = base_note_dur * self.rng.uniform(0.5, 1.0) * note_mult
             else:  # PAUSE
-                note_dur = base_note_dur * self.rng.uniform(1.5, 2.5)
+                note_dur = base_note_dur * self.rng.uniform(1.5, 2.5) * note_mult
 
             # Velocity varies by state
             if current_state == self.STATE_ATTACK:
@@ -164,6 +176,11 @@ class KingHuntPattern(PatternGenerator):
 
                 resonance_mult = 1.0 + progress * 0.8
 
+                # Select envelopes based on articulation (research-based)
+                # Staccato → pluck/percussive, Legato → sustained/pad
+                amp_env_name = self.select_envelope(params, 'amp')
+                filter_env_name = self.select_envelope(params, 'filter')
+
                 events.append(NoteEvent(
                     freq=note_freq,
                     duration=note_dur_quantized,
@@ -173,10 +190,10 @@ class KingHuntPattern(PatternGenerator):
                     filter_base=params['filter'] * filter_mult,
                     filter_env_amount=params['filter_env'] * self.rng.uniform(0.8, 1.2),
                     resonance=params['resonance'] * resonance_mult,
-                    amp_env=get_envelope('stab', params['config']),
-                    filter_env=get_filter_envelope('sweep', params['config']),
-                    amp_env_name='stab',
-                    filter_env_name='sweep',
+                    amp_env=get_envelope(amp_env_name, params['config']),
+                    filter_env=get_filter_envelope(filter_env_name, params['config']),
+                    amp_env_name=amp_env_name,
+                    filter_env_name=filter_env_name,
                     extra_context={
                         'state': self._state_name(current_state),
                         'scale_degree': current_note_idx,
@@ -195,11 +212,11 @@ class KingHuntPattern(PatternGenerator):
             # Pause between notes (minimal in attack, longer in pause)
             # Uses progress from START of this iteration
             if current_state == self.STATE_ATTACK:
-                pause_dur = base_note_dur * 0.05 * (1.0 - progress * 0.5)
+                pause_dur = base_note_dur * 0.05 * (1.0 - progress * 0.5) * pause_mult
             elif current_state == self.STATE_RETREAT:
-                pause_dur = base_note_dur * 0.15
+                pause_dur = base_note_dur * 0.15 * pause_mult
             else:  # PAUSE
-                pause_dur = base_note_dur * 0.5
+                pause_dur = base_note_dur * 0.5 * pause_mult
 
             timing.add_pause(pause_dur)
 
@@ -267,6 +284,9 @@ class DesperateDefensePattern(PatternGenerator):
 
         total_samples = int(duration * params['sample_rate'])
         base_note_dur = params['note_duration'] * 1.4  # Slower, more deliberate
+
+        # Get articulation multipliers from config
+        note_mult, pause_mult = self.get_articulation_multipliers(params)
 
         # Extract entropy curve (game-specific complexity)
         entropy_curve = params.get('entropy_curve', None)
@@ -343,10 +363,13 @@ class DesperateDefensePattern(PatternGenerator):
             if timing.is_finished(total_samples):
                 break
 
+            # Apply melodic bias
+            note_idx = self.apply_melodic_bias(note_idx, len(scale), progress, params)
+
             # ENTROPY-DRIVEN NOTE DURATION
             # High entropy = faster notes (tactical sequences, more moves)
             duration_mult = 1.0 - current_entropy * 0.4  # 1.0 to 0.6
-            note_dur = base_note_dur * duration_mult * self.rng.uniform(0.7, 1.1)
+            note_dur = base_note_dur * duration_mult * self.rng.uniform(0.7, 1.1) * note_mult
 
             # ENTROPY-DRIVEN VELOCITY (replaces linear fade)
             # Low entropy: quiet, resigned
@@ -364,6 +387,10 @@ class DesperateDefensePattern(PatternGenerator):
                 # High entropy = brighter (more activity, tactical tension)
                 filter_mult = 0.5 + progress * 0.3 + current_entropy * 0.4
 
+                # Select envelopes based on articulation
+                amp_env_name = self.select_envelope(params, 'amp')
+                filter_env_name = self.select_envelope(params, 'filter')
+
                 events.append(NoteEvent(
                     freq=note_freq,
                     duration=note_dur_quantized,
@@ -373,10 +400,10 @@ class DesperateDefensePattern(PatternGenerator):
                     filter_base=params['filter'] * filter_mult,
                     filter_env_amount=params['filter_env'] * 0.5,
                     resonance=params['resonance'] * (0.8 + params['tension'] * 0.4 + current_entropy * 0.3),
-                    amp_env=get_envelope('sustained', params['config']),
-                    filter_env=get_filter_envelope('closing', params['config']),
-                    amp_env_name='sustained',
-                    filter_env_name='closing',
+                    amp_env=get_envelope(amp_env_name, params['config']),
+                    filter_env=get_filter_envelope(filter_env_name, params['config']),
+                    amp_env_name=amp_env_name,
+                    filter_env_name=filter_env_name,
                     extra_context={
                         'state': self._state_name(current_state),
                         'note_idx': note_idx,
@@ -394,8 +421,8 @@ class DesperateDefensePattern(PatternGenerator):
             # ENTROPY-DRIVEN PAUSES
             # High entropy = shorter pauses (rapid tactical exchanges)
             # Low entropy = longer pauses (slow, thoughtful defense)
-            pause_mult = 1.5 - current_entropy * 0.8  # 1.5 to 0.7
-            pause_dur = base_note_dur * pause_mult * self.rng.uniform(0.15, 0.35)
+            pause_duration_mult = 1.5 - current_entropy * 0.8  # 1.5 to 0.7
+            pause_dur = base_note_dur * pause_duration_mult * self.rng.uniform(0.15, 0.35) * pause_mult
             timing.add_pause(pause_dur)
 
         # Debug output
@@ -460,6 +487,9 @@ class TacticalChaosPattern(PatternGenerator):
         total_samples = int(duration * params['sample_rate'])
         base_note_dur = params['note_duration'] * 0.6  # Fast exchanges
 
+        # Get articulation multipliers from config
+        note_mult, pause_mult = self.get_articulation_multipliers(params)
+
         # Chaos parameters
         burst_mode = False
         burst_countdown = 0
@@ -493,12 +523,15 @@ class TacticalChaosPattern(PatternGenerator):
 
             note_freq = scale[note_idx] * octave_mult
 
+            # Apply melodic bias
+            note_idx = self.apply_melodic_bias(note_idx, len(scale), progress, params)
+
             # Timing - erratic in bursts, steadier between
             if burst_mode:
-                note_dur = base_note_dur * self.rng.uniform(0.4, 0.7)
+                note_dur = base_note_dur * self.rng.uniform(0.4, 0.7) * note_mult
                 velocity = 0.7 + self.rng.random() * 0.2
             else:
-                note_dur = base_note_dur * self.rng.uniform(1.0, 1.5)
+                note_dur = base_note_dur * self.rng.uniform(1.0, 1.5) * note_mult
                 velocity = 0.5 + self.rng.random() * 0.15
 
             note_samples = int(note_dur * params['sample_rate'])
@@ -507,9 +540,9 @@ class TacticalChaosPattern(PatternGenerator):
             if note_samples > 0:
                 note_dur_quantized = note_samples / params['sample_rate']
 
-                # Wide filter sweeps, state-dependent envelopes
-                amp_env_name = 'percussive' if burst_mode else 'stab'
-                filter_env_name = 'sharp' if burst_mode else 'smooth'
+                # Select envelopes based on articulation
+                amp_env_name = self.select_envelope(params, 'amp')
+                filter_env_name = self.select_envelope(params, 'filter')
 
                 events.append(NoteEvent(
                     freq=note_freq,
@@ -538,9 +571,9 @@ class TacticalChaosPattern(PatternGenerator):
 
             # Minimal pause in bursts, longer between
             if burst_mode:
-                pause_dur = base_note_dur * 0.05  # Almost no pause
+                pause_dur = base_note_dur * 0.05 * pause_mult  # Almost no pause
             else:
-                pause_dur = base_note_dur * self.rng.uniform(0.2, 0.5)
+                pause_dur = base_note_dur * self.rng.uniform(0.2, 0.5) * pause_mult
 
             timing.add_pause(pause_dur)
 
@@ -586,6 +619,9 @@ class CrushingAttackPattern(PatternGenerator):
         total_samples = int(duration * params['sample_rate'])
         base_note_dur = params['note_duration'] * 0.4  # Fast, aggressive
 
+        # Get articulation multipliers from config
+        note_mult, pause_mult = self.get_articulation_multipliers(params)
+
         # State machine initialization
         current_state = self.STATE_ADVANCE
         current_note_idx = 7  # Start high (crushing down from above)
@@ -629,6 +665,9 @@ class CrushingAttackPattern(PatternGenerator):
                 # Chaotic attacks across entire range
                 current_note_idx = self.rng.integers(0, 8)
 
+            # Apply melodic bias
+            current_note_idx = self.apply_melodic_bias(current_note_idx, len(scale), progress, params)
+
             # Get base frequency
             note_freq = scale[current_note_idx]
 
@@ -646,13 +685,13 @@ class CrushingAttackPattern(PatternGenerator):
 
             # Duration varies by state and progress
             if current_state == self.STATE_ADVANCE:
-                note_dur = base_note_dur * self.rng.uniform(0.8, 1.2) * (1.0 - progress * 0.3)
+                note_dur = base_note_dur * self.rng.uniform(0.8, 1.2) * (1.0 - progress * 0.3) * note_mult
             elif current_state == self.STATE_STRIKE:
                 # Short, sharp attacks
-                note_dur = base_note_dur * self.rng.uniform(0.3, 0.5)
+                note_dur = base_note_dur * self.rng.uniform(0.3, 0.5) * note_mult
             else:  # OVERWHELM
                 # Very fast, relentless
-                note_dur = base_note_dur * self.rng.uniform(0.2, 0.4) * (1.0 - progress * 0.2)
+                note_dur = base_note_dur * self.rng.uniform(0.2, 0.4) * (1.0 - progress * 0.2) * note_mult
 
             # Velocity increases with progress and state
             # Capped to prevent clipping when multiple notes overlap
@@ -690,6 +729,10 @@ class CrushingAttackPattern(PatternGenerator):
                 base_level = params['config'].LAYER_MIXING['pattern_note_level'] * 0.3
                 level = base_level * velocity
 
+                # Select envelopes based on articulation
+                amp_env_name = self.select_envelope(params, 'amp')
+                filter_env_name = self.select_envelope(params, 'filter')
+
                 # Create main note event
                 events.append(NoteEvent(
                     freq=note_freq,
@@ -700,10 +743,10 @@ class CrushingAttackPattern(PatternGenerator):
                     filter_base=params['filter'] * filter_mult,
                     filter_env_amount=params['filter_env'] * self.rng.uniform(1.0, 1.5),
                     resonance=params['resonance'] * resonance_mult,
-                    amp_env=get_envelope('stab', params['config']),
-                    filter_env=get_filter_envelope('sweep', params['config']),
-                    amp_env_name='stab',
-                    filter_env_name='sweep',
+                    amp_env=get_envelope(amp_env_name, params['config']),
+                    filter_env=get_filter_envelope(filter_env_name, params['config']),
+                    amp_env_name=amp_env_name,
+                    filter_env_name=filter_env_name,
                     extra_context={
                         'state': self._state_name(current_state),
                         'scale_degree': current_note_idx,
@@ -734,10 +777,10 @@ class CrushingAttackPattern(PatternGenerator):
                         filter_base=params['filter'] * filter_mult,
                         filter_env_amount=params['filter_env'] * self.rng.uniform(1.0, 1.5),
                         resonance=params['resonance'] * resonance_mult,
-                        amp_env=get_envelope('stab', params['config']),
-                        filter_env=get_filter_envelope('sweep', params['config']),
-                        amp_env_name='stab',
-                        filter_env_name='sweep',
+                        amp_env=get_envelope(amp_env_name, params['config']),
+                        filter_env=get_filter_envelope(filter_env_name, params['config']),
+                        amp_env_name=amp_env_name,
+                        filter_env_name=filter_env_name,
                         extra_context={
                             'state': self._state_name(current_state),
                             'is_chord_note': True,
@@ -759,11 +802,11 @@ class CrushingAttackPattern(PatternGenerator):
 
             # Pause between notes (decreases as attack intensifies)
             if current_state == self.STATE_ADVANCE:
-                pause_dur = base_note_dur * 0.2 * (1.0 - progress * 0.5)
+                pause_dur = base_note_dur * 0.2 * (1.0 - progress * 0.5) * pause_mult
             elif current_state == self.STATE_STRIKE:
-                pause_dur = base_note_dur * 0.05  # Minimal pause
+                pause_dur = base_note_dur * 0.05 * pause_mult  # Minimal pause
             else:  # OVERWHELM
-                pause_dur = base_note_dur * 0.02  # Almost no pause
+                pause_dur = base_note_dur * 0.02 * pause_mult  # Almost no pause
 
             timing.add_pause(pause_dur)
 
