@@ -126,9 +126,37 @@ def analyze_section(tags_file, section_name='OPENING'):
     print(f"{'-'*80}")
     print(f"{'FINAL MIX':<35} {final_rms:<12.6f} {final_peak:<12.6f} {final_rms_db:<12.2f} {final_peak_db:<12.2f}")
 
-    # Print config values as percentages
+    # Calculate ACTUAL power percentages in final mix
+    power_12 = results['Layer 1+2 (COMBINED)']['rms'] ** 2
+    power_3a = results['Layer 3a (Heartbeat)']['rms'] ** 2
+    power_3b = results['Layer 3b (Gestures)']['rms'] ** 2
+    total_power = power_12 + power_3a + power_3b
+
+    actual_pct_12 = (power_12 / total_power * 100) if total_power > 0 else 0
+    actual_pct_3a = (power_3a / total_power * 100) if total_power > 0 else 0
+    actual_pct_3b = (power_3b / total_power * 100) if total_power > 0 else 0
+
+    # Print config values vs actual
     print(f"\n{'='*70}")
-    print(f"LAYER BUDGET (your settings)")
+    print(f"POWER BUDGET VERIFICATION")
+    print(f"{'='*70}")
+    print(f"{'Layer':<20} {'Target %':<12} {'Actual %':<12} {'Match':<10}")
+    print(f"{'-'*54}")
+
+    target_12 = (config.MIXING['drone_level'] + config.MIXING['patterns_level']) * 100
+    target_3a = config.MIXING['sequencer_level'] * 100
+    target_3b = config.MIXING['gestures_level'] * 100
+
+    match_12 = "✓" if abs(actual_pct_12 - target_12) < 5 else "✗"
+    match_3a = "✓" if abs(actual_pct_3a - target_3a) < 5 else "✗"
+    match_3b = "✓" if abs(actual_pct_3b - target_3b) < 5 else "✗"
+
+    print(f"{'Layers 1+2':<20} {target_12:<12.1f} {actual_pct_12:<12.1f} {match_12:<10}")
+    print(f"{'Heartbeat':<20} {target_3a:<12.1f} {actual_pct_3a:<12.1f} {match_3a:<10}")
+    print(f"{'Gestures':<20} {target_3b:<12.1f} {actual_pct_3b:<12.1f} {match_3b:<10}")
+
+    print(f"\n{'='*70}")
+    print(f"INDIVIDUAL LAYER TARGETS")
     print(f"{'='*70}")
     print(f"  Drone:      {config.MIXING['drone_level'] * 100:.0f}%")
     print(f"  Patterns:   {config.MIXING['patterns_level'] * 100:.0f}%")

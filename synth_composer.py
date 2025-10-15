@@ -5,6 +5,7 @@ Electronic music synthesis with filters and envelopes
 Refactored for clarity and maintainability
 """
 
+import os
 import json
 import wave
 import struct
@@ -1765,19 +1766,24 @@ class ChessSynthComposer:
             print(f"  ⚠️  WARNING: Pattern buffer clipping! Peak: {pattern_peak:.3f} ({pattern_peak_db:.1f} dBFS)")
             print(f"      This causes distortion before normalization. Reduce pattern_note_level.")
 
-        # Mix layers 1 and 2 with budget-based mixing
-        # Step 1: Normalize each layer to same PEAK (peaks control perceived loudness)
-        drone_peak = np.max(np.abs(base_drone)) if len(base_drone) > 0 else 0.0
-        pattern_peak = np.max(np.abs(section_pattern)) if len(section_pattern) > 0 else 0.0
+        # Mix layers 1 and 2 with power-budget mixing (RMS-based)
+        # Step 1: Measure RMS power of each layer
+        drone_rms = np.sqrt(np.mean(base_drone**2)) if len(base_drone) > 0 else 0.0
+        pattern_rms = np.sqrt(np.mean(section_pattern**2)) if len(section_pattern) > 0 else 0.0
 
-        target_peak = 1.0  # Target peak for normalization
+        # Step 2: Calculate gains to achieve target power ratios
+        # Use patterns as reference (gain = 1.0)
+        gain_patterns = 1.0
 
-        drone_normalized = base_drone / drone_peak * target_peak if drone_peak > 0 else base_drone
-        pattern_normalized = section_pattern / pattern_peak * target_peak if pattern_peak > 0 else section_pattern
+        if pattern_rms > 0 and drone_rms > 0:
+            # Calculate gain for drone to achieve target power ratio relative to patterns
+            gain_drone = np.sqrt((self.config.MIXING['drone_level'] / self.config.MIXING['patterns_level']) * (pattern_rms**2 / drone_rms**2))
+        else:
+            gain_drone = 1.0
 
-        # Step 2: Apply budget percentages
-        drone_contribution = drone_normalized * self.config.MIXING['drone_level']
-        pattern_contribution = pattern_normalized * self.config.MIXING['patterns_level']
+        # Step 3: Apply gains and mix
+        drone_contribution = base_drone * gain_drone
+        pattern_contribution = section_pattern * gain_patterns
         mixed_signal = drone_contribution + pattern_contribution
 
         # Apply section envelope
@@ -2395,17 +2401,29 @@ class ChessSynthComposer:
         # Return layers separately for stereo processing
         # Keep Layer 3 sub-layers SEPARATE for independent stereo treatment
         if self.config.LAYER_ENABLE['sequencer']:
-            # Normalize layers 3a and 3b to same PEAK before applying budget
-            heartbeat_peak = np.max(np.abs(heartbeat_layer)) if len(heartbeat_layer) > 0 else 0.0
-            gestures_peak = np.max(np.abs(sequencer_layer)) if len(sequencer_layer) > 0 else 0.0
+            # Power-budget mixing for layers 3a and 3b (RMS-based)
+            # Measure RMS power of each layer
+            heartbeat_rms = np.sqrt(np.mean(heartbeat_layer**2)) if len(heartbeat_layer) > 0 else 0.0
+            gestures_rms = np.sqrt(np.mean(sequencer_layer**2)) if len(sequencer_layer) > 0 else 0.0
 
-            target_peak = 1.0  # Same target as layers 1+2
+            # Calculate total power from layers 1+2 for reference
+            layers_1_2_rms = np.sqrt(np.mean((drone_contribution + pattern_contribution)**2))
 
-            heartbeat_normalized = heartbeat_layer / heartbeat_peak * target_peak if heartbeat_peak > 0 else heartbeat_layer
-            gestures_normalized = sequencer_layer / gestures_peak * target_peak if gestures_peak > 0 else sequencer_layer
+            # Calculate gains relative to layers 1+2 combined power
+            target_pct_12 = self.config.MIXING['drone_level'] + self.config.MIXING['patterns_level']
 
-            layer_3a_heartbeat = heartbeat_normalized * self.config.MIXING['sequencer_level']  # Centered (will be)
-            layer_3b_moments = gestures_normalized * self.config.MIXING['gestures_level']  # Panning (will be)
+            if layers_1_2_rms > 0 and heartbeat_rms > 0:
+                gain_heartbeat = np.sqrt((self.config.MIXING['sequencer_level'] / target_pct_12) * (layers_1_2_rms**2 / heartbeat_rms**2))
+            else:
+                gain_heartbeat = 1.0
+
+            if layers_1_2_rms > 0 and gestures_rms > 0:
+                gain_gestures = np.sqrt((self.config.MIXING['gestures_level'] / target_pct_12) * (layers_1_2_rms**2 / gestures_rms**2))
+            else:
+                gain_gestures = 1.0
+
+            layer_3a_heartbeat = heartbeat_layer * gain_heartbeat  # Centered (will be)
+            layer_3b_moments = sequencer_layer * gain_gestures  # Panning (will be)
         else:
             layer_3a_heartbeat = np.zeros_like(samples)
             layer_3b_moments = np.zeros_like(samples)
@@ -2579,11 +2597,9 @@ class ChessSynthComposer:
         # Measure pre-normalized levels
         pre_peak = np.max(np.abs(composition))
         pre_peak_db = 20 * np.log10(pre_peak) if pre_peak > 0 else -100
-        pre_rms = np.sqrt(np.mean(composition**2))
-        pre_rms_db = 20 * np.log10(pre_rms) if pre_rms > 0 else -100
 
-        # Calculate how much gain needed to reach -3dBFS target
-        target_db = -3.0
+        # Calculate how much gain needed to reach target peak level
+        target_db = self.config.WAV_OUTPUT.get('target_peak_db', -3.0)
         target_linear = 10 ** (target_db / 20.0)
 
         if pre_peak > 0:
@@ -2642,8 +2658,6 @@ class ChessSynthComposer:
                                     min(self.config.WAV_OUTPUT['clamp_max'], int_sample))
                     wav.writeframes(struct.pack('<h', int_sample))
 
-        # Get file size
-        import os
         file_size = os.path.getsize(filename)
         size_mb = file_size / (1024 * 1024)
 

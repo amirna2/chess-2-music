@@ -743,7 +743,7 @@ mixing:
     drone: 10         # % - Background drone
     patterns: 50      # % - Foreground melodic patterns
     heartbeat: 25     # % - Mid-ground pulse
-    gestures: 15      # % - Background accents
+    gestures: 1      # % - Background accents
 
   # --- LAYER ENABLE/DISABLE ---
   layer_enable:
@@ -791,3 +791,4 @@ mixing:
     amplitude_multiplier: 30000
     clamp_range: [-32000, 32000]
     normalization_threshold: 0.9
+    target_peak_db: -0.3  # Master output peak level in dBFS (-1.0 = loud/clear, -3.0 = quieter, -0.1 = maximum)
