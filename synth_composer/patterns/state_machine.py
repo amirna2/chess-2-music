@@ -169,7 +169,7 @@ class KingHuntPattern(PatternGenerator):
                     duration=note_dur_quantized,
                     timestamp=timing.get_timestamp(),
                     velocity=velocity,
-                    waveform='saw',  # Aggressive, bright
+                    waveform=self.get_waveform(params),
                     filter_base=params['filter'] * filter_mult,
                     filter_env_amount=params['filter_env'] * self.rng.uniform(0.8, 1.2),
                     resonance=params['resonance'] * resonance_mult,
@@ -360,9 +360,6 @@ class DesperateDefensePattern(PatternGenerator):
             if note_samples > 0:
                 note_dur_quantized = note_samples / params['sample_rate']
 
-                # Waveform selection by state
-                waveform = 'saw' if current_state == self.STATE_RETREAT else 'triangle'
-
                 # ENTROPY-DRIVEN FILTER
                 # High entropy = brighter (more activity, tactical tension)
                 filter_mult = 0.5 + progress * 0.3 + current_entropy * 0.4
@@ -372,7 +369,7 @@ class DesperateDefensePattern(PatternGenerator):
                     duration=note_dur_quantized,
                     timestamp=timing.get_timestamp(),
                     velocity=velocity,
-                    waveform=waveform,
+                    waveform=self.get_waveform(params),
                     filter_base=params['filter'] * filter_mult,
                     filter_env_amount=params['filter_env'] * 0.5,
                     resonance=params['resonance'] * (0.8 + params['tension'] * 0.4 + current_entropy * 0.3),
@@ -510,8 +507,7 @@ class TacticalChaosPattern(PatternGenerator):
             if note_samples > 0:
                 note_dur_quantized = note_samples / params['sample_rate']
 
-                # Aggressive waveform, wide filter sweeps
-                waveform = 'square' if burst_mode else 'pulse'
+                # Wide filter sweeps, state-dependent envelopes
                 amp_env_name = 'percussive' if burst_mode else 'stab'
                 filter_env_name = 'sharp' if burst_mode else 'smooth'
 
@@ -520,7 +516,7 @@ class TacticalChaosPattern(PatternGenerator):
                     duration=note_dur_quantized,
                     timestamp=timing.get_timestamp(),
                     velocity=velocity,
-                    waveform=waveform,
+                    waveform=self.get_waveform(params),
                     filter_base=params['filter'] * (0.6 + progress * 0.8),
                     filter_env_amount=params['filter_env'] * (1.5 if burst_mode else 0.8),
                     resonance=params['resonance'] * (1.3 if burst_mode else 0.9),
@@ -700,7 +696,7 @@ class CrushingAttackPattern(PatternGenerator):
                     duration=note_dur_quantized,
                     timestamp=timing.get_timestamp(),
                     velocity=velocity,
-                    waveform='saw',
+                    waveform=self.get_waveform(params),
                     filter_base=params['filter'] * filter_mult,
                     filter_env_amount=params['filter_env'] * self.rng.uniform(1.0, 1.5),
                     resonance=params['resonance'] * resonance_mult,
@@ -734,7 +730,7 @@ class CrushingAttackPattern(PatternGenerator):
                         duration=note_dur_quantized,
                         timestamp=timing.get_timestamp(),
                         velocity=velocity,
-                        waveform='saw',
+                        waveform=self.get_waveform(params),
                         filter_base=params['filter'] * filter_mult,
                         filter_env_amount=params['filter_env'] * self.rng.uniform(1.0, 1.5),
                         resonance=params['resonance'] * resonance_mult,

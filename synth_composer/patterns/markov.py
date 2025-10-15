@@ -92,7 +92,7 @@ class MarkovChainPattern(PatternGenerator):
                     duration=note_dur_quantized,  # Use quantized duration
                     timestamp=timing.get_timestamp(),
                     velocity=velocity,
-                    waveform='pulse',
+                    waveform=self.get_waveform(params),
                     filter_base=params['filter'] * filter_mult,
                     filter_env_amount=params['filter_env'] * self.rng.uniform(0.4, 0.8),
                     resonance=params['resonance'] * self.rng.uniform(0.7, 0.9),

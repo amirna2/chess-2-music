@@ -119,6 +119,11 @@ composition:
       temporal:
         tempo: {start: 1.0, end: 0.7}  # Slowing down
       voices: 3  # Default drone voices
+      layer2:
+        waveform: saw
+        articulation: legato
+        phrase_style: connected
+        melodic_bias: descending
 
     FIGHTING_DEFEAT:
       description: "Fighting back despite losing position"
@@ -132,6 +137,11 @@ composition:
       temporal:
         tempo: {start: 1.0, end: 0.7}
       voices: 3
+      layer2:
+        waveform: saw
+        articulation: staccato
+        phrase_style: detached
+        melodic_bias: arch
 
     ATTACKING_MASTERPIECE:
       description: "Aggressive, winning attacking game"
@@ -145,6 +155,11 @@ composition:
       temporal:
         tempo: {start: 0.8, end: 1.2}  # Accelerating
       voices: 3
+      layer2:
+        waveform: square
+        articulation: staccato
+        phrase_style: connected
+        melodic_bias: ascending
 
     TACTICAL_MASTERPIECE:
       description: "Precise, tactical winning game"
@@ -158,6 +173,11 @@ composition:
       temporal:
         tempo: {start: 0.8, end: 1.2}
       voices: 3
+      layer2:
+        waveform: pulse
+        articulation: staccato
+        phrase_style: detached
+        melodic_bias: arch
 
     PEACEFUL_DRAW:
       description: "Balanced, calm drawn position"
@@ -171,6 +191,11 @@ composition:
       temporal:
         tempo: {start: 1.0, end: 1.0}  # Steady
       voices: 3
+      layer2:
+        waveform: sine
+        articulation: legato
+        phrase_style: connected
+        melodic_bias: neutral
 
     QUIET_PRECISION:
       description: "Subtle, precise maneuvering"
@@ -184,6 +209,11 @@ composition:
       temporal:
         tempo: {start: 0.9, end: 1.0}
       voices: 3
+      layer2:
+        waveform: triangle
+        articulation: legato
+        phrase_style: connected
+        melodic_bias: neutral
 
     DEATH_SPIRAL:
       description: "Rapid collapse, catastrophic defeat"
@@ -197,6 +227,11 @@ composition:
       temporal:
         tempo: {start: 1.0, end: 0.6}  # Slowing dramatically
       voices: 3
+      layer2:
+        waveform: saw
+        articulation: mixed
+        phrase_style: detached
+        melodic_bias: descending
 
     DEFAULT:
       description: "Neutral, balanced game"
@@ -210,6 +245,11 @@ composition:
       temporal:
         tempo: {start: 1.0, end: 1.0}
       voices: 3
+      layer2:
+        waveform: triangle
+        articulation: mixed
+        phrase_style: mixed
+        melodic_bias: neutral
 
   # --- MESO: SECTION MODULATION (30s - 2min sections) ---
   meso_section_modulation:

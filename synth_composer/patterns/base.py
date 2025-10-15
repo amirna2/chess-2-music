@@ -28,6 +28,54 @@ class PatternGenerator(ABC):
         """
         self.rng = rng
 
+    def get_waveform(self, params: Dict[str, Any]) -> str:
+        """
+        Extract waveform from layer2_config (Spiegel-style: constant timbre).
+
+        Args:
+            params: Pattern parameters dict containing layer2_config
+
+        Returns:
+            Waveform name (saw, triangle, square, sine, pulse)
+        """
+        return params.get('layer2_config', {}).get('waveform', 'triangle')
+
+    def get_articulation(self, params: Dict[str, Any]) -> str:
+        """
+        Extract articulation style from layer2_config.
+
+        Args:
+            params: Pattern parameters dict containing layer2_config
+
+        Returns:
+            Articulation style (staccato, legato, mixed)
+        """
+        return params.get('layer2_config', {}).get('articulation', 'mixed')
+
+    def get_phrase_style(self, params: Dict[str, Any]) -> str:
+        """
+        Extract phrase style from layer2_config.
+
+        Args:
+            params: Pattern parameters dict containing layer2_config
+
+        Returns:
+            Phrase style (connected, detached, mixed)
+        """
+        return params.get('layer2_config', {}).get('phrase_style', 'mixed')
+
+    def get_melodic_bias(self, params: Dict[str, Any]) -> str:
+        """
+        Extract melodic bias from layer2_config.
+
+        Args:
+            params: Pattern parameters dict containing layer2_config
+
+        Returns:
+            Melodic bias (ascending, descending, arch, neutral)
+        """
+        return params.get('layer2_config', {}).get('melodic_bias', 'neutral')
+
     @abstractmethod
     def generate_events(self,
                        duration: float,

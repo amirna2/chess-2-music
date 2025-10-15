@@ -85,7 +85,7 @@ class SharpTheoryPattern(PatternGenerator):
                     duration=duration_quantized,
                     timestamp=timing.current_time,
                     velocity=velocity,
-                    waveform='saw',
+                    waveform=self.get_waveform(params),
                     filter_base=final_filter * (1.5 + tension * 0.5),
                     filter_env_amount=filter_env_amount,
                     resonance=final_resonance * 0.8,
@@ -169,7 +169,7 @@ class PositionalTheoryPattern(PatternGenerator):
                     duration=duration_quantized,
                     timestamp=timing.current_time,
                     velocity=velocity,
-                    waveform='triangle',  # Warmer, less nasal than pulse
+                    waveform=self.get_waveform(params),
                     filter_base=final_filter * 0.7,  # Darker, less bright
                     filter_env_amount=filter_env_amount * 0.5,  # Less filter movement
                     resonance=final_resonance * 0.5,  # Softer resonance
@@ -253,7 +253,7 @@ class SolidTheoryPattern(PatternGenerator):
                     duration=duration_quantized,
                     timestamp=timing.current_time,
                     velocity=velocity,
-                    waveform='sine',  # Pure, smooth, solid bass
+                    waveform=self.get_waveform(params),
                     filter_base=final_filter * filter_mult,
                     filter_env_amount=filter_env_amount * 0.6,
                     resonance=final_resonance * 0.5,  # Low resonance for solid feel

@@ -61,7 +61,7 @@ class DecisiveOutroPattern(PatternGenerator):
                     duration=duration_quantized,
                     timestamp=timing.current_time,
                     velocity=velocity,
-                    waveform='triangle',
+                    waveform=self.get_waveform(params),
                     filter_base=final_filter * (1.0 - progress * 0.3),  # Close filter
                     filter_env_amount=filter_env_amount * 0.5,
                     resonance=final_resonance * 0.7,
@@ -129,7 +129,7 @@ class DrawOutroPattern(PatternGenerator):
                     duration=duration_quantized,
                     timestamp=timing.current_time,
                     velocity=velocity,
-                    waveform='sine',  # Pure, simple tone for neutrality
+                    waveform=self.get_waveform(params),
                     filter_base=final_filter * (1.0 - progress * 0.4),
                     filter_env_amount=filter_env_amount * 0.3,
                     resonance=final_resonance * 0.5,

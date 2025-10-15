@@ -1763,6 +1763,15 @@ class ChessSynthComposer:
             else:
                 print(f"      WARNING: No entropy curve available for Layer 2")
 
+            # Extract layer2 config from overall narrative (Spiegel-style: constant timbre)
+            narrative_params = self.config.NARRATIVE_BASE_PARAMS.get(self.overall_narrative, {})
+            layer2_config = narrative_params.get('layer2', {
+                'waveform': 'triangle',
+                'articulation': 'mixed',
+                'phrase_style': 'mixed',
+                'melodic_bias': 'neutral'
+            })
+
             # Use refactored pattern coordinator
             params = {
                 'sample_rate': self.sample_rate,
@@ -1775,9 +1784,10 @@ class ChessSynthComposer:
                 'config': self.config,
                 'mix_level': 1.0,
                 'overall_narrative': self.overall_narrative,
-                'entropy_curve': entropy_curve,  # Add entropy curve for game-specific behavior
+                'entropy_curve': entropy_curve,
                 'section_start_ply': start_ply,
                 'section_end_ply': end_ply,
+                'layer2_config': layer2_config,
             }
 
             section_pattern = self.pattern_coordinator.generate_pattern(

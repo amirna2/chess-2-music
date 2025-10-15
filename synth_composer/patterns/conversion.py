@@ -82,7 +82,7 @@ class FlawlessConversionPattern(PatternGenerator):
                     duration=duration_quantized,
                     timestamp=timing.current_time,
                     velocity=velocity,
-                    waveform='triangle',
+                    waveform=self.get_waveform(params),
                     filter_base=final_filter * (0.7 + progress * 0.6),
                     filter_env_amount=filter_env_amount * 0.7,
                     resonance=final_resonance * 0.6,
