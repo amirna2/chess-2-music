@@ -105,8 +105,10 @@ class FlawlessConversionPattern(PatternGenerator):
                 )
                 events.append(event)
 
+            # Advance with overlap, then add pause
+            advance_samples = self.calculate_advance_with_overlap(note_samples, params)
             pause_samples = int(base_note_dur * 0.18 * pause_mult * params['sample_rate'])
-            timing.advance(note_samples + pause_samples)
+            timing.advance(advance_samples + pause_samples)
 
         # Debug output
         self.print_debug_summary(events)

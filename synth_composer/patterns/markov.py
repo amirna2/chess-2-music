@@ -121,7 +121,9 @@ class MarkovChainPattern(PatternGenerator):
 
             # Advance timeline (CRITICAL: outside if block, match original line 321)
             # Original does: current_sample += note_samples + pause_samples
-            timing.advance(note_samples)
+            # Apply overlap for legato articulation
+            advance_samples = self.calculate_advance_with_overlap(note_samples, params)
+            timing.advance(advance_samples)
 
             # Add pause (more hesitation as tension builds)
             # Uses progress from START of this iteration (matches original)

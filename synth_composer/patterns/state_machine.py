@@ -207,7 +207,9 @@ class KingHuntPattern(PatternGenerator):
                 ))
 
             # Advance timeline (CRITICAL: outside if block, match original line 473)
-            timing.advance(note_samples)
+            # Apply overlap for legato articulation
+            advance_samples = self.calculate_advance_with_overlap(note_samples, params)
+            timing.advance(advance_samples)
 
             # Pause between notes (minimal in attack, longer in pause)
             # Uses progress from START of this iteration
@@ -415,8 +417,9 @@ class DesperateDefensePattern(PatternGenerator):
                     }
                 ))
 
-            # Advance timeline
-            timing.advance(note_samples)
+            # Advance timeline with overlap
+            advance_samples = self.calculate_advance_with_overlap(note_samples, params)
+            timing.advance(advance_samples)
 
             # ENTROPY-DRIVEN PAUSES
             # High entropy = shorter pauses (rapid tactical exchanges)
@@ -566,8 +569,9 @@ class TacticalChaosPattern(PatternGenerator):
                     }
                 ))
 
-            # Advance timeline
-            timing.advance(note_samples)
+            # Advance timeline with overlap
+            advance_samples = self.calculate_advance_with_overlap(note_samples, params)
+            timing.advance(advance_samples)
 
             # Minimal pause in bursts, longer between
             if burst_mode:
@@ -797,8 +801,9 @@ class CrushingAttackPattern(PatternGenerator):
                         }
                     ))
 
-            # Advance timeline
-            timing.advance(note_samples)
+            # Advance timeline with overlap
+            advance_samples = self.calculate_advance_with_overlap(note_samples, params)
+            timing.advance(advance_samples)
 
             # Pause between notes (decreases as attack intensifies)
             if current_state == self.STATE_ADVANCE:

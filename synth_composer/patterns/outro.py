@@ -89,7 +89,9 @@ class DecisiveOutroPattern(PatternGenerator):
                 )
                 events.append(event)
 
-            timing.advance(note_samples)
+            # Advance with overlap for smooth outro
+            advance_samples = self.calculate_advance_with_overlap(note_samples, params)
+            timing.advance(advance_samples)
 
         # Debug output
         if events:
@@ -169,7 +171,9 @@ class DrawOutroPattern(PatternGenerator):
                 )
                 events.append(event)
 
-            timing.advance(note_samples)
+            # Advance with overlap for smooth outro
+            advance_samples = self.calculate_advance_with_overlap(note_samples, params)
+            timing.advance(advance_samples)
 
         # Debug output
         if events:

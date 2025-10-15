@@ -814,10 +814,10 @@ mixing:
 
   # --- LAYER ENABLE/DISABLE ---
   layer_enable:
-    drone: false
+    drone: true
     patterns: true
-    sequencer: false
-    gestures: false
+    sequencer: true
+    gestures: true
 
   # --- LAYER INTERACTION ---
   layer_interaction:

@@ -108,8 +108,10 @@ class SharpTheoryPattern(PatternGenerator):
                 )
                 events.append(event)
 
+            # Advance with overlap, then add pause
+            advance_samples = self.calculate_advance_with_overlap(note_samples, params)
             pause_samples = int(base_note_dur * 0.05 * pause_mult * params['sample_rate'])
-            timing.advance(note_samples + pause_samples)
+            timing.advance(advance_samples + pause_samples)
 
         # Debug output
         if events:
@@ -202,9 +204,11 @@ class PositionalTheoryPattern(PatternGenerator):
                 )
                 events.append(event)
 
+            # Advance with overlap, then add pause
+            advance_samples = self.calculate_advance_with_overlap(note_samples, params)
             # Much longer pause for contemplative, strategic feel
             pause_samples = int(base_note_dur * 0.6 * pause_mult * params['sample_rate'])  # 60% pause vs 15%
-            timing.advance(note_samples + pause_samples)
+            timing.advance(advance_samples + pause_samples)
 
             # Markov transition
             if current_note_idx < len(transition_matrix):
@@ -297,9 +301,11 @@ class SolidTheoryPattern(PatternGenerator):
                 )
                 events.append(event)
 
+            # Advance with overlap, then add pause
+            advance_samples = self.calculate_advance_with_overlap(note_samples, params)
             # Consistent pause
             pause_samples = int(base_note_dur * 0.2 * pause_mult * params['sample_rate'])
-            timing.advance(note_samples + pause_samples)
+            timing.advance(advance_samples + pause_samples)
 
             # Advance pattern
             pattern_idx += 1

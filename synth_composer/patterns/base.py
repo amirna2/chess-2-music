@@ -148,6 +148,36 @@ class PatternGenerator(ABC):
 
         return self.rng.choice(choices)
 
+    def calculate_advance_with_overlap(
+            self,
+            note_samples: int,
+            params: Dict[str, Any]) -> int:
+        """
+        Calculate timeline advance amount considering note overlap.
+
+        For legato articulation, notes should overlap (blend together).
+        For staccato, notes are fully separated (no overlap).
+
+        Args:
+            note_samples: Full duration of the note in samples
+            params: Pattern parameters dict
+
+        Returns:
+            Number of samples to advance timeline
+            - If overlap=0.0 (staccato): returns note_samples (full separation)
+            - If overlap=0.3 (legato): returns 70% of note_samples (30% overlap)
+        """
+        art_params = self.get_articulation_params(params)
+        overlap = art_params['overlap']
+
+        # Advance by (1 - overlap) of the note duration
+        # overlap=0.0 → advance 100% (no overlap)
+        # overlap=0.3 → advance 70% (30% overlap with next note)
+        # overlap=1.0 → advance 0% (complete overlap, notes stack)
+        advance_samples = int(note_samples * (1.0 - overlap))
+
+        return max(1, advance_samples)  # At least 1 sample to prevent infinite loop
+
     def apply_melodic_bias(
             self,
             current_idx: int,
